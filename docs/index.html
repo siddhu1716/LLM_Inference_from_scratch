@@ -1,0 +1,1364 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="An original, systems-first guide to LLM inference engines: token loops, caches, scheduling, kernels, serving, and 90 interview questions."
+    >
+    <meta name="theme-color" content="#3156d3">
+    <title>LLM Inference from Scratch | Systems Guide</title>
+    <link rel="stylesheet" href="styles.css?v=1">
+    <script src="app.js?v=2" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="#overview" aria-label="LLM Inference from Scratch home">
+          <span class="brand-mark" aria-hidden="true">LLM</span>
+          <span class="brand-text">Inference from Scratch</span>
+        </a>
+
+        <div class="search-wrap">
+          <label for="site-search" aria-hidden="true">⌕</label>
+          <input
+            id="site-search"
+            type="search"
+            placeholder="Search concepts and questions"
+            autocomplete="off"
+            aria-controls="search-results"
+            aria-label="Search the guide"
+          >
+          <kbd class="search-key" aria-hidden="true">Ctrl K</kbd>
+          <ul id="search-results" class="search-results" aria-label="Search results" hidden></ul>
+        </div>
+
+        <div class="top-actions">
+          <button
+            class="icon-button theme-button"
+            type="button"
+            data-theme-toggle
+            aria-label="Change color theme"
+          >
+            <span data-theme-icon aria-hidden="true">◐</span>
+          </button>
+          <button
+            class="icon-button menu-button"
+            type="button"
+            data-menu-toggle
+            aria-label="Open section navigation"
+            aria-controls="section-navigation"
+            aria-expanded="false"
+          >
+            <span aria-hidden="true">☰</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside id="section-navigation" class="sidebar" aria-label="Section navigation">
+        <p class="sidebar-title">Systems journey</p>
+        <nav>
+          <ul class="nav-list">
+            <li><a href="#overview" aria-current="true">Overview</a></li>
+            <li><a href="#architecture">Architecture</a></li>
+            <li><a href="#token-loop">Prefill &amp; decode</a></li>
+            <li><a href="#attention">Attention, RoPE &amp; GQA</a></li>
+            <li><a href="#memory">KV &amp; prefix caches</a></li>
+            <li><a href="#scheduling">Batching &amp; scheduling</a></li>
+            <li><a href="#flash-attention">FlashAttention</a></li>
+            <li><a href="#quantization">Quantization</a></li>
+            <li><a href="#speculation">Speculative decoding</a></li>
+            <li><a href="#scale-out">Parallelism &amp; MoE</a></li>
+            <li><a href="#gpu-execution">CUDA execution</a></li>
+            <li><a href="#structured-output">Structured outputs</a></li>
+            <li><a href="#serving">Serving &amp; metrics</a></li>
+            <li><a href="#learning-paths">Learning paths</a></li>
+            <li><a href="#limitations">Limitations</a></li>
+            <li><a href="#source-map">Source map</a></li>
+            <li><a href="#interview-bank">Interview bank</a></li>
+            <li><a href="#references">References</a></li>
+          </ul>
+        </nav>
+        <div class="sidebar-note">
+          <strong>Scope marker</strong><br>
+          “Implemented” means code exists in this checkout. “Concept” means the
+          “Simulation” means executable learning-scale code, not a production kernel.
+        </div>
+      </aside>
+
+      <main id="main-content">
+        <section id="overview" class="hero" data-search-group="Overview">
+          <p class="eyebrow">A systems-first field guide</p>
+          <h1>Follow every token.</h1>
+          <p class="hero-copy">
+            Trace an LLM request from prompt admission to streamed output. Learn why
+            inference is a memory-management and scheduling problem as much as it is
+            a matrix-multiplication problem.
+          </p>
+          <div class="hero-actions">
+            <a class="button" href="#architecture">Start with the architecture</a>
+            <a class="button button-secondary" href="#interview-bank">Practice 90 questions</a>
+          </div>
+        </section>
+
+        <div class="metric-strip" aria-label="Guide summary">
+          <div class="metric"><strong>18</strong><span>connected systems topics</span></div>
+          <div class="metric"><strong>2</strong><span>paired learning paths</span></div>
+          <div class="metric"><strong>90</strong><span>interview questions</span></div>
+          <div class="metric"><strong>0</strong><span>site build dependencies</span></div>
+        </div>
+
+        <section id="architecture" class="content-section" data-search-group="Architecture">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">01 · Architecture</p>
+              <h2>The engine is a control plane around a token loop</h2>
+            </div>
+            <p>
+              Model math creates logits. The engine decides whose math runs, where
+              state lives, and when bytes cross process or network boundaries.
+            </p>
+          </div>
+
+          <ol class="flow" aria-label="Inference request lifecycle">
+            <li><strong>Admit</strong>Validate input, tokenize, apply quotas, and create request state.</li>
+            <li><strong>Schedule</strong>Choose prefill or decode work within token and memory budgets.</li>
+            <li><strong>Execute</strong>Run model layers while reading weights and cache pages.</li>
+            <li><strong>Sample</strong>Transform logits, enforce constraints, and select token IDs.</li>
+            <li><strong>Stream</strong>Decode text, emit events, record metrics, and reclaim state.</li>
+          </ol>
+
+          <div class="card-grid three">
+            <article id="architecture-model" class="card" data-search-item data-keywords="weights tokenizer runner executor">
+              <span class="tag implemented">Implemented</span>
+              <h3>Model executor</h3>
+              <p>
+                Owns weights, kernels, device placement, collectives, and the forward
+                pass. It should accept explicit batch metadata rather than silently
+                owning request policy.
+              </p>
+            </article>
+            <article id="architecture-scheduler" class="card" data-search-item data-keywords="queue policy fairness preemption">
+              <span class="tag implemented">Implemented</span>
+              <h3>Scheduler</h3>
+              <p>
+                Converts queued requests into token work. It balances throughput,
+                time to first token, inter-token latency, fairness, and available KV
+                blocks.
+              </p>
+            </article>
+            <article id="architecture-cache" class="card" data-search-item data-keywords="memory allocator kv blocks pages">
+              <span class="tag implemented">Simulation</span>
+              <h3>Cache manager</h3>
+              <p>
+                Maps logical sequence positions to physical KV storage, tracks
+                ownership and reference counts, and makes allocation failure an
+                explicit scheduling signal.
+              </p>
+            </article>
+            <article id="architecture-decoder" class="card" data-search-item data-keywords="logits sampler penalties stop">
+              <span class="tag implemented">Implemented</span>
+              <h3>Decoder</h3>
+              <p>
+                Applies penalties, temperature, top-k/top-p or constrained masks,
+                samples the next token, and detects stop conditions deterministically.
+              </p>
+            </article>
+            <article id="architecture-api" class="card" data-search-item data-keywords="HTTP OpenAI SSE health">
+              <span class="tag implemented">Implemented</span>
+              <h3>Serving edge</h3>
+              <p>
+                This checkout includes a tiny stdlib HTTP handler, request schema,
+                chat renderer, health route, model list, completion response, and
+                server-sent-event stream.
+              </p>
+            </article>
+            <article id="architecture-observability" class="card" data-search-item data-keywords="telemetry tracing logs metrics">
+              <span class="tag implemented">Implemented</span>
+              <h3>Observability</h3>
+              <p>
+                Measures queue, prefill, decode, streaming, and cleanup separately.
+                Request IDs and model/version labels connect traces to user-visible
+                behavior.
+              </p>
+            </article>
+          </div>
+
+          <div class="callout">
+            <strong>Core invariant:</strong> request lifecycle and cache lifecycle
+            must agree. A request cannot execute without owned cache capacity, and
+            every terminal path—success, cancellation, timeout, or error—must release it.
+          </div>
+        </section>
+
+        <section id="token-loop" class="content-section" data-search-group="Token loop">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">02 · Token loop</p>
+              <h2>Prefill and decode are different workloads</h2>
+            </div>
+            <p>
+              Treating them as one generic forward pass hides the most important
+              latency, arithmetic-intensity, and scheduling differences.
+            </p>
+          </div>
+
+          <div class="table-wrap">
+            <table class="comparison">
+              <thead>
+                <tr>
+                  <th>Property</th>
+                  <th>Prefill</th>
+                  <th>Decode</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Input per sequence</td>
+                  <td>Many prompt tokens</td>
+                  <td>Usually one new token</td>
+                </tr>
+                <tr>
+                  <td>Primary output</td>
+                  <td>KV entries for every prompt position plus final logits</td>
+                  <td>One KV entry per layer plus next-token logits</td>
+                </tr>
+                <tr>
+                  <td>Hardware tendency</td>
+                  <td>Large matrix operations; often compute-friendly</td>
+                  <td>Repeated weight reads; often memory-bandwidth limited</td>
+                </tr>
+                <tr>
+                  <td>User metric</td>
+                  <td>Time to first token (TTFT)</td>
+                  <td>Inter-token latency (ITL) and tokens per second</td>
+                </tr>
+                <tr>
+                  <td>Scheduler pressure</td>
+                  <td>Long prompts can monopolize a step</td>
+                  <td>Many active sequences compete for regular cadence</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card-grid">
+            <article id="prefill" class="card" data-search-item data-keywords="prompt processing ttft compute bound">
+              <span class="tag implemented">Implemented</span>
+              <h3>Prefill</h3>
+              <p>
+                All prompt positions pass through the model in parallel under a
+                causal mask. Attention still computes each position from its visible
+                prefix, but hardware sees wide tensor operations. The engine stores
+                the resulting keys and values for later reuse.
+              </p>
+            </article>
+            <article id="decode" class="card" data-search-item data-keywords="autoregressive generation itl memory bandwidth">
+              <span class="tag implemented">Implemented</span>
+              <h3>Decode</h3>
+              <p>
+                The newest token is projected through every layer and attends to all
+                cached positions. The query is tiny while weights and a growing cache
+                must be read repeatedly, so batching is essential for amortizing
+                weight traffic.
+              </p>
+            </article>
+          </div>
+
+          <pre><code>state = admit(prompt)
+prefill_logits, state.kv = model.prefill(state.prompt_tokens)
+token = sample(prefill_logits[-1], state.sampling)
+
+while not state.should_stop(token):
+    emit(token)
+    logits, state.kv = model.decode(token, state.kv)
+    token = sample(logits, state.sampling)
+
+release(state.kv)</code></pre>
+        </section>
+
+        <section id="attention" class="content-section" data-search-group="Attention">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">03 · Attention</p>
+              <h2>Position, head sharing, and causality</h2>
+            </div>
+            <p>
+              Attention is simple as an equation and demanding as a memory-access
+              pattern. Shape discipline is the bridge between the two.
+            </p>
+          </div>
+
+          <div class="formula" aria-label="Scaled dot-product attention formula">
+            Attention(Q, K, V) = softmax((QKᵀ / √d) + causal_mask) V
+          </div>
+
+          <div class="card-grid three">
+            <article id="multi-head-attention" class="card" data-search-item data-keywords="MHA query key value heads">
+              <h3>Multi-head attention</h3>
+              <p>
+                Each query head has its own key and value head. This maximizes
+                representational independence but makes KV cache size proportional
+                to the number of query heads.
+              </p>
+            </article>
+            <article id="gqa" class="card" data-search-item data-keywords="GQA MQA grouped query attention kv heads">
+              <h3>GQA and MQA</h3>
+              <p>
+                Grouped-query attention lets several query heads share one KV head;
+                multi-query attention shares a single KV head across all query heads.
+                Both reduce cache bytes and decode bandwidth.
+              </p>
+            </article>
+            <article id="rope" class="card" data-search-item data-keywords="RoPE rotary positional embedding phase rotation">
+              <h3>RoPE</h3>
+              <p>
+                Rotary position embedding rotates pairs of query and key dimensions
+                by position-dependent angles. Their dot product then contains
+                relative-position structure without adding a position vector.
+              </p>
+            </article>
+          </div>
+
+          <div class="callout">
+            <strong>Debugging rule:</strong> cache keys after applying the model’s
+            required positional transform, and ensure decode uses the absolute
+            sequence position. A one-token offset can produce fluent-looking but
+            incorrect output.
+          </div>
+        </section>
+
+        <section id="memory" class="content-section" data-search-group="Memory and caches">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">04 · Memory</p>
+              <h2>The KV cache is the engine’s dynamic heap</h2>
+            </div>
+            <p>
+              Weights are mostly static. Request-dependent KV state grows token by
+              token, dominates capacity planning, and couples memory policy to scheduling.
+            </p>
+          </div>
+
+          <div class="formula">
+            KV bytes ≈ 2 × layers × sequence_tokens × kv_heads × head_dim × bytes_per_element
+          </div>
+
+          <div class="card-grid">
+            <article id="contiguous-kv-cache" class="card" data-search-item data-keywords="contiguous allocation fragmentation overprovision">
+              <span class="tag implemented">Reference</span>
+              <h3>Contiguous KV cache</h3>
+              <p>
+                A simple implementation reserves a maximum-length tensor per
+                sequence. Addressing is cheap, but unused capacity and variable
+                sequence lengths create internal and external fragmentation.
+              </p>
+            </article>
+            <article id="paged-kv-cache" class="card" data-search-item data-keywords="PagedAttention page table blocks physical logical">
+              <span class="tag implemented">Simulation</span>
+              <h3>Paged KV cache</h3>
+              <p>
+                Fixed-size physical blocks are assigned on demand. A block table maps
+                each sequence’s logical token blocks to noncontiguous storage. Growth,
+                forked sequences, and reclamation become allocator operations.
+              </p>
+            </article>
+            <article id="prefix-cache" class="card" data-search-item data-keywords="prefix caching prompt reuse hash blocks">
+              <span class="tag implemented">Simulation</span>
+              <h3>Prefix caching</h3>
+              <p>
+                Hash complete token blocks with model and adapter identity. A matching
+                prompt can attach to immutable, reference-counted blocks and prefill
+                only the uncached suffix. Exact token identity matters; decoded text
+                equality is not sufficient.
+              </p>
+            </article>
+            <article id="radix-cache" class="card" data-search-item data-keywords="RadixAttention trie longest prefix SGLang">
+              <span class="tag implemented">Simulation</span>
+              <h3>Radix caching</h3>
+              <p>
+                A radix tree indexes variable-length token prefixes and supports
+                longest-prefix matching. Shared nodes point to reusable KV ranges.
+                Eviction removes cold, unreferenced leaves while preserving live branches.
+              </p>
+            </article>
+          </div>
+
+          <h3>Allocator invariants</h3>
+          <ul>
+            <li>A physical block is free, exclusively writable, or immutable and shared.</li>
+            <li>Reference counts cover queued, running, and cached-prefix ownership.</li>
+            <li>Copy-on-write occurs before a shared partial block is modified.</li>
+            <li>Cancellation and failures enter the same idempotent cleanup path as success.</li>
+            <li>Block metadata and kernel-visible tables change atomically at a step boundary.</li>
+          </ul>
+        </section>
+
+        <section id="scheduling" class="content-section" data-search-group="Scheduling">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">05 · Scheduling</p>
+              <h2>Batch tokens, not just requests</h2>
+            </div>
+            <p>
+              Modern engines continuously rebuild work around token and memory
+              budgets instead of waiting for a fixed batch to finish.
+            </p>
+          </div>
+
+          <div class="card-grid three">
+            <article id="static-batching" class="card" data-search-item data-keywords="fixed batch padding head of line">
+              <h3>Static batching</h3>
+              <p>
+                Requests start and end together. It is easy to reason about but wastes
+                slots when output lengths differ and amplifies head-of-line blocking.
+              </p>
+            </article>
+            <article id="continuous-batching" class="card" data-search-item data-keywords="inflight iteration dynamic batching">
+              <h3>Continuous batching</h3>
+              <p>
+                At each scheduling boundary, finished requests leave and new work
+                enters. Active decodes keep a steady cadence while capacity is reused
+                immediately.
+              </p>
+            </article>
+            <article id="chunked-prefill" class="card" data-search-item data-keywords="chunked prefill token budget interleave">
+              <h3>Chunked prefill</h3>
+              <p>
+                Split long prompts into bounded token chunks and interleave them with
+                decode. This protects ITL and limits temporary activations, at the cost
+                of more scheduling and kernel boundaries.
+              </p>
+            </article>
+          </div>
+
+          <div class="callout">
+            <strong>A useful policy shape:</strong> reserve a decode budget first,
+            spend remaining token capacity on prefills, age waiting requests to avoid
+            starvation, and refuse admission before cache exhaustion makes progress
+            impossible.
+          </div>
+        </section>
+
+        <section id="flash-attention" class="content-section" data-search-group="Kernels">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">06 · IO-aware attention</p>
+              <h2>FlashAttention avoids materializing the score matrix</h2>
+            </div>
+            <p>
+              The mathematical result remains exact attention (within floating-point
+              effects); the algorithm changes the order and location of work.
+            </p>
+          </div>
+
+          <article class="card" data-search-item id="online-softmax" data-keywords="FlashAttention tiles SRAM HBM online softmax">
+            <h3>Tile, summarize, and rescale</h3>
+            <p>
+              Query blocks stay in fast on-chip memory while key/value blocks stream
+              through. For each row, the kernel carries a running maximum
+              <code>m</code>, a running exponential sum <code>l</code>, and a partial
+              weighted value <code>o</code>. When a new tile has a larger maximum,
+              earlier accumulators are rescaled before merging.
+            </p>
+            <div class="formula">
+              m′ = max(m, m_tile)<br>
+              l′ = exp(m − m′)l + exp(m_tile − m′)l_tile<br>
+              o′ = exp(m − m′)o + exp(m_tile − m′)o_tile
+            </div>
+            <p>
+              The final output is <code>o / l</code>. No full
+              sequence-by-sequence score tensor needs a round trip to high-bandwidth
+              memory, which reduces IO and temporary storage.
+            </p>
+          </article>
+        </section>
+
+        <section id="quantization" class="content-section" data-search-group="Quantization">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">07 · Quantization</p>
+              <h2>Fewer bits only help when kernels and accuracy agree</h2>
+            </div>
+            <p>
+              Quantization is a representation, calibration, kernel, and quality
+              decision—not a file-size switch.
+            </p>
+          </div>
+
+          <div class="card-grid">
+            <article id="int8" class="card" data-search-item data-keywords="INT8 SmoothQuant activations weights scales">
+              <h3>INT8</h3>
+              <p>
+                Eight-bit weights roughly halve storage relative to FP16/BF16.
+                Weight-and-activation INT8 can also reduce bandwidth and use integer
+                tensor cores, but activation outliers require careful scaling.
+                SmoothQuant shifts difficulty from activations into weights offline.
+              </p>
+            </article>
+            <article id="int4" class="card" data-search-item data-keywords="INT4 packing group size dequantization">
+              <h3>INT4</h3>
+              <p>
+                Four-bit weights offer larger memory savings and may let a model fit
+                on fewer devices. Small groups improve fidelity by using more local
+                scales but add metadata and dequantization work. Actual speed depends
+                on a fused, shape-compatible kernel.
+              </p>
+            </article>
+            <article id="gptq" class="card" data-search-item data-keywords="GPTQ Hessian second order post training">
+              <h3>GPTQ</h3>
+              <p>
+                A post-training, weight-only method that quantizes columns while
+                compensating remaining weights using approximate second-order
+                information. It targets reconstruction error without full retraining.
+              </p>
+            </article>
+            <article id="awq" class="card" data-search-item data-keywords="AWQ salient activation aware channels">
+              <h3>AWQ</h3>
+              <p>
+                Activation-aware weight quantization observes calibration activations
+                to identify salient channels, then applies scaling that protects those
+                weights before low-bit quantization. It remains weight-only at runtime.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="speculation" class="content-section" data-search-group="Speculative decoding">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">08 · Speculation</p>
+              <h2>Spend cheap guesses to reduce serial target steps</h2>
+            </div>
+            <p>
+              Speculative methods accelerate generation only when proposals are cheap,
+              acceptance is high, and verification uses hardware efficiently.
+            </p>
+          </div>
+
+          <div class="card-grid three">
+            <article id="draft-model-speculation" class="card" data-search-item data-keywords="draft target rejection sampling">
+              <h3>Draft model</h3>
+              <p>
+                A smaller model proposes several tokens. The target verifies them in
+                one pass, accepts a prefix using a distribution-correct rejection
+                rule, and samples a correction at the first rejection.
+              </p>
+            </article>
+            <article id="self-speculation" class="card" data-search-item data-keywords="self speculative early exit layers">
+              <h3>Self-speculation</h3>
+              <p>
+                The target’s early layers or a reduced computation path produce
+                proposals; the full model verifies them. Weight sharing lowers memory
+                overhead, but the proposal path must be substantially cheaper.
+              </p>
+            </article>
+            <article id="multi-token-heads" class="card" data-search-item data-keywords="Medusa multi token heads tree attention">
+              <h3>Multi-token heads</h3>
+              <p>
+                Extra heads predict multiple future positions or branches from one
+                hidden state. Tree-style verification tests candidates together.
+                Training and branch management replace the separate draft model.
+              </p>
+            </article>
+          </div>
+          <div class="formula">
+            useful speedup ≈ accepted target tokens / (draft cost + verification cost + control overhead)
+          </div>
+        </section>
+
+        <section id="scale-out" class="content-section" data-search-group="Distributed inference">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">09 · Scale out</p>
+              <h2>Partition the bottleneck you actually have</h2>
+            </div>
+            <p>
+              Parallel strategies trade memory capacity and local compute for
+              communication, bubbles, routing complexity, and failure surface.
+            </p>
+          </div>
+
+          <div class="card-grid three">
+            <article id="tensor-parallelism" class="card" data-search-item data-keywords="tensor parallel all reduce sharding">
+              <h3>Tensor parallelism</h3>
+              <p>
+                Shard matrix dimensions across devices and combine partial results
+                with collectives inside each layer. It lowers per-device weight
+                memory but makes interconnect latency part of every token.
+              </p>
+            </article>
+            <article id="pipeline-parallelism" class="card" data-search-item data-keywords="pipeline stages microbatch bubble">
+              <h3>Pipeline parallelism</h3>
+              <p>
+                Place consecutive layer groups on different devices. Microbatches
+                improve utilization, but decode dependencies and uneven stages can
+                create bubbles.
+              </p>
+            </article>
+            <article id="expert-parallelism" class="card" data-search-item data-keywords="MoE expert parallel all to all routing">
+              <h3>Expert parallelism / MoE</h3>
+              <p>
+                Distribute experts and route each token to a sparse subset. Capacity
+                improves, while all-to-all traffic, load imbalance, and hot experts
+                become first-class operational concerns.
+              </p>
+            </article>
+            <article id="data-parallelism" class="card" data-search-item data-keywords="replica routing data parallel">
+              <h3>Replica parallelism</h3>
+              <p>
+                Run independent model replicas and route requests among them. It is
+                operationally simple when one replica fits, but prefix locality and
+                uneven sequence lengths complicate load balancing.
+              </p>
+            </article>
+            <article id="prefill-decode-disaggregation" class="card" data-search-item data-keywords="disaggregated serving KV transfer prefill decode">
+              <h3>Prefill/decode disaggregation</h3>
+              <p>
+                Separate prompt workers from decode workers so each pool can optimize
+                its workload. The cost is KV transfer, routing, failure coordination,
+                and queueing across an extra boundary.
+              </p>
+            </article>
+            <article id="distributed-cost" class="card" data-search-item data-keywords="communication latency bandwidth topology">
+              <h3>Communication budget</h3>
+              <p>
+                Compare collective or transfer time with local kernel time at the
+                target batch. Fast peak links do not help if messages are tiny,
+                synchronization is frequent, or topology forces slow hops.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="gpu-execution" class="content-section" data-search-group="GPU execution">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">10 · GPU execution</p>
+              <h2>Remove launch and memory traffic without freezing flexibility</h2>
+            </div>
+            <p>
+              Decode performs many small, repeated operations. CPU scheduling and
+              kernel boundaries can become visible in every token’s critical path.
+            </p>
+          </div>
+
+          <div class="card-grid">
+            <article id="cuda-graphs" class="card" data-search-item data-keywords="CUDA Graph capture replay static shapes buckets">
+              <h3>CUDA Graphs</h3>
+              <p>
+                Capture a stable sequence of GPU operations and replay it with very
+                low CPU launch overhead. Engines bucket batch shapes, keep addresses
+                stable, and copy dynamic metadata into preallocated buffers. Eager
+                fallback handles uncaptured shapes.
+              </p>
+            </article>
+            <article id="kernel-fusion" class="card" data-search-item data-keywords="fused kernel RMSNorm activation residual">
+              <h3>Kernel fusion</h3>
+              <p>
+                Combine adjacent operations such as residual addition, normalization,
+                activation, bias, or dequantization so intermediate values remain in
+                registers or on-chip memory. Fusion can reduce traffic and launches,
+                but excessive specialization increases compile and maintenance cost.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="structured-output" class="content-section" data-search-group="Structured output">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">11 · Constraints</p>
+              <h2>Make invalid next tokens impossible</h2>
+            </div>
+            <p>
+              Structured generation moves validation into decoding instead of asking
+              users to repair arbitrary text after generation.
+            </p>
+          </div>
+
+          <article class="card" data-search-item id="constrained-decoding" data-keywords="JSON schema grammar DFA FSM token mask">
+            <h3>Grammar-guided decoding</h3>
+            <p>
+              Compile a grammar, regular expression, or supported JSON Schema subset
+              into a state machine. At each step, intersect valid byte or character
+              continuations with tokenizer tokens, mask invalid logits, sample, and
+              advance the grammar state.
+            </p>
+            <p>
+              The hard part is the tokenizer boundary: one token can contain multiple
+              characters, partial UTF-8 sequences, or text that crosses grammar
+              transitions. Cache valid-token sets by grammar state, report unsupported
+              schema features, and define behavior when the allowed set is empty.
+            </p>
+          </article>
+        </section>
+
+        <section id="serving" class="content-section" data-search-group="Serving">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">12 · Serving</p>
+              <h2>The API is part of the inference pipeline</h2>
+            </div>
+            <p>
+              Queueing, cancellation, backpressure, serialization, and telemetry can
+              dominate user experience even when kernels are fast.
+            </p>
+          </div>
+
+          <div class="card-grid three">
+            <article id="serving-contract" class="card" data-search-item data-keywords="OpenAI API validation request response">
+              <span class="tag implemented">Partial</span>
+              <h3>Request contract</h3>
+              <p>
+                Validate types and bounds before admission. Preserve model identity,
+                finish reason, usage semantics, and stable error shapes. This checkout
+                implements only a small completion-compatible subset.
+              </p>
+            </article>
+            <article id="streaming" class="card" data-search-item data-keywords="SSE streaming backpressure disconnect cancellation">
+              <span class="tag implemented">Basic SSE</span>
+              <h3>Streaming</h3>
+              <p>
+                Emit ordered deltas, flush deliberately, propagate disconnects into
+                cancellation, and bound per-client buffers. Slow consumers must not
+                retain scarce KV pages forever.
+              </p>
+            </article>
+            <article id="metrics" class="card" data-search-item data-keywords="TTFT ITL throughput queue observability prometheus">
+              <span class="tag implemented">Implemented</span>
+              <h3>Metrics</h3>
+              <p>
+                Track request rate, queue delay, TTFT, ITL, end-to-end latency, prompt
+                and generated tokens, batch occupancy, cache usage, prefix hit rate,
+                acceptance rate, errors, cancellations, and GPU health.
+              </p>
+            </article>
+          </div>
+
+          <h3>Measure distributions, not averages</h3>
+          <div class="table-wrap">
+            <table class="comparison">
+              <thead>
+                <tr><th>Signal</th><th>What it isolates</th><th>Typical failure clue</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Queue delay</td><td>Admission and capacity pressure</td><td>Rising before GPU saturation suggests policy or routing imbalance.</td></tr>
+                <tr><td>TTFT</td><td>Queue plus prompt processing</td><td>Scales sharply with prompt length when chunking or prefix reuse is ineffective.</td></tr>
+                <tr><td>ITL</td><td>Decode cadence</td><td>Periodic spikes suggest prefill interference, collectives, or host stalls.</td></tr>
+                <tr><td>Cache occupancy</td><td>Dynamic memory pressure</td><td>High occupancy with low active tokens suggests leaks or fragmentation.</td></tr>
+                <tr><td>Goodput</td><td>Tokens meeting an SLO</td><td>Throughput can rise while goodput falls under aggressive batching.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="learning-paths" class="content-section" data-search-group="Learning paths">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">13 · Learn by pairing</p>
+              <h2>One transparent path, one tensor path</h2>
+            </div>
+            <p>
+              Share fixtures and invariants so every optimization can be checked
+              against a readable reference.
+            </p>
+          </div>
+
+          <div class="path-grid">
+            <article id="pure-python-path" class="path-card" data-search-item data-keywords="dependency free reference implementation">
+              <span class="tag concept">Pure Python</span>
+              <h3>Optimize for observability</h3>
+              <ol>
+                <li>Represent shapes and token positions explicitly.</li>
+                <li>Implement normalization, linear layers, RoPE, and attention with loops.</li>
+                <li>Split prefill from decode and append to a simple KV cache.</li>
+                <li>Simulate page allocation and continuous scheduling with tiny inputs.</li>
+                <li>Add online softmax, low-bit packing, and speculative verification.</li>
+                <li>Assert invariants after every state transition.</li>
+              </ol>
+            </article>
+            <article id="pytorch-path" class="path-card" data-search-item data-keywords="PyTorch tensor GPU profiling">
+              <span class="tag concept">PyTorch</span>
+              <h3>Optimize with evidence</h3>
+              <ol>
+                <li>Port each reference operation to batched tensors.</li>
+                <li>Compare outputs, cache contents, and sampled tokens.</li>
+                <li>Move to accelerators and choose dtypes deliberately.</li>
+                <li>Profile eager kernels before adding fusion or graphs.</li>
+                <li>Add realistic page tables, batch metadata, and collectives.</li>
+                <li>Benchmark fixed workloads and preserve differential tests.</li>
+              </ol>
+            </article>
+          </div>
+        </section>
+
+        <section id="limitations" class="content-section" data-search-group="Project scope">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">14 · Honest scope</p>
+              <h2>What this checkout does—and does not—contain</h2>
+            </div>
+            <p>
+              The site and Python package form an executable learning resource.
+              Production kernels, distributed collectives, and operational controls
+              remain deliberately out of scope.
+            </p>
+          </div>
+
+          <ul class="status-list">
+            <li>
+              <span class="status-dot done" aria-hidden="true"></span>
+              <span><strong>Serving helpers exist</strong><small>Minimal request parsing, chat rendering, HTTP routes, JSON, and SSE.</small></span>
+            </li>
+            <li>
+              <span class="status-dot done" aria-hidden="true"></span>
+              <span><strong>Broad deterministic tests exist</strong><small>They cover models, caches, decoding, scheduling, optimizations, and serving.</small></span>
+            </li>
+            <li>
+              <span class="status-dot done" aria-hidden="true"></span>
+              <span><strong>Paired model backends exist</strong><small>Pure Python and PyTorch implement the same decoder-only architecture and incremental cache path.</small></span>
+            </li>
+            <li>
+              <span class="status-dot done" aria-hidden="true"></span>
+              <span><strong>Engine techniques are executable</strong><small>Scheduling, batching, paged and prefix caches, decoding, metrics, and optimization simulations are implemented.</small></span>
+            </li>
+            <li>
+              <span class="status-dot done" aria-hidden="true"></span>
+              <span><strong>Walkthroughs are runnable</strong><small>Examples compare backends, trace engine state, and demonstrate optimization math.</small></span>
+            </li>
+            <li>
+              <span class="status-dot" aria-hidden="true"></span>
+              <span><strong>No production guarantees</strong><small>No GPU kernels, distributed runtime, auth, rate limiting, durable queue, or complete API.</small></span>
+            </li>
+          </ul>
+        </section>
+
+        <section id="source-map" class="content-section" data-search-group="Source map">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">15 · Source map</p>
+              <h2>Where concepts meet this repository</h2>
+            </div>
+            <p>
+              Paths describe the current checkout. Status labels prevent conceptual
+              documentation from being mistaken for implemented behavior.
+            </p>
+          </div>
+
+          <div class="source-tree">
+            <div class="source-row" data-search-item id="source-readme">
+              <code>README.md</code><span class="tag implemented">Present</span>
+              <span>Project goals, feature matrix, quickstart, repository map, tests, Pages, and primary references.</span>
+            </div>
+            <div class="source-row" data-search-item id="source-http-server">
+              <code>src/mini_infer/serving/http_server.py</code><span class="tag implemented">Implemented</span>
+              <span>Threaded stdlib server with health, model list, completion, JSON, request-size limit, and SSE.</span>
+            </div>
+            <div class="source-row" data-search-item id="source-schema">
+              <code>src/mini_infer/serving/openai_schema.py</code><span class="tag implemented">Implemented</span>
+              <span>Completion request validation and a compact completion response shape.</span>
+            </div>
+            <div class="source-row" data-search-item id="source-chat">
+              <code>src/mini_infer/serving/chat_template.py</code><span class="tag implemented">Implemented</span>
+              <span>Educational system/user/assistant prompt rendering with role and content checks.</span>
+            </div>
+            <div class="source-row" data-search-item id="source-tests">
+              <code>tests/</code><span class="tag implemented">Present</span>
+              <span>Backend, decoding, engine, optimization, and serving tests with deterministic fixtures.</span>
+            </div>
+            <div class="source-row" data-search-item id="source-placeholders">
+              <code>src/mini_infer/{backends,common,decoding,engine,optimizations}/</code><span class="tag implemented">Implemented</span>
+              <span>Paired models, samplers, engine control plane, caches, and executable optimization references.</span>
+            </div>
+            <div class="source-row" data-search-item id="source-docs">
+              <code>docs/{index.html,styles.css,app.js}</code><span class="tag implemented">Present</span>
+              <span>Dependency-free, responsive documentation site with local assets, search, filters, and accessible controls.</span>
+            </div>
+          </div>
+        </section>
+
+        <section id="interview-bank" class="content-section" data-search-group="Interview bank">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">16 · Interview bank</p>
+              <h2>Explain tradeoffs, not vocabulary</h2>
+            </div>
+            <p>
+              Ninety concise questions move from foundations to diagnosis. Filter by
+              level, search within answers, and expand only the set you are studying.
+            </p>
+          </div>
+
+          <div class="interview-toolbar" aria-label="Interview question controls">
+            <label class="sr-only" for="interview-search">Search interview questions</label>
+            <input
+              id="interview-search"
+              class="interview-search"
+              type="search"
+              placeholder="Filter questions and answers"
+            >
+            <div class="filter-group" aria-label="Filter by interview category">
+              <button class="filter-button" type="button" data-filter="all" aria-pressed="true">All</button>
+              <button class="filter-button" type="button" data-filter="beginner" aria-pressed="false">Beginner</button>
+              <button class="filter-button" type="button" data-filter="intermediate" aria-pressed="false">Intermediate</button>
+              <button class="filter-button" type="button" data-filter="advanced" aria-pressed="false">Advanced</button>
+              <button class="filter-button" type="button" data-filter="system-design" aria-pressed="false">System design</button>
+              <button class="filter-button" type="button" data-filter="performance" aria-pressed="false">Performance</button>
+              <button class="filter-button" type="button" data-filter="debugging" aria-pressed="false">Debugging</button>
+            </div>
+            <button id="expand-visible" class="filter-button" type="button">Expand visible</button>
+            <span id="question-count" class="question-count" aria-live="polite">90 of 90 questions</span>
+          </div>
+
+          <div id="qa-empty" class="empty-state" hidden>
+            No questions match this filter. Try fewer or broader words.
+          </div>
+
+          <section class="qa-group" data-qa-group="beginner" aria-labelledby="beginner-title">
+            <h3 id="beginner-title">Beginner <span>15 questions</span></h3>
+
+            <details id="q-b01" class="qa-item" data-category="beginner" data-search-item>
+              <summary>1. What is LLM inference?</summary>
+              <div class="qa-answer"><p>Inference applies trained model weights to input tokens to produce output-token probabilities. A serving engine adds tokenization, batching, cache management, sampling, streaming, and lifecycle control around that forward computation.</p></div>
+            </details>
+            <details id="q-b02" class="qa-item" data-category="beginner" data-search-item>
+              <summary>2. What is a token?</summary>
+              <div class="qa-answer"><p>A token is an integer ID selected by a tokenizer for a byte, character fragment, word piece, or special marker. Models operate on IDs; displayed text appears only after decoding IDs through the same tokenizer.</p></div>
+            </details>
+            <details id="q-b03" class="qa-item" data-category="beginner" data-search-item>
+              <summary>3. Why is generation called autoregressive?</summary>
+              <div class="qa-answer"><p>The model generates one token conditioned on all earlier tokens, then feeds the selected token back to predict the next. This serial dependency limits parallelism across output positions.</p></div>
+            </details>
+            <details id="q-b04" class="qa-item" data-category="beginner" data-search-item>
+              <summary>4. What are logits?</summary>
+              <div class="qa-answer"><p>Logits are unnormalized scores, one per vocabulary item. Sampling transforms them with penalties or constraints, converts the remaining scores into a probability distribution, and selects a token.</p></div>
+            </details>
+            <details id="q-b05" class="qa-item" data-category="beginner" data-search-item>
+              <summary>5. What does temperature do?</summary>
+              <div class="qa-answer"><p>Temperature divides logits before softmax. Values below one sharpen the distribution; values above one flatten it. Temperature zero is commonly treated as greedy selection rather than literal division by zero.</p></div>
+            </details>
+            <details id="q-b06" class="qa-item" data-category="beginner" data-search-item>
+              <summary>6. How do top-k and top-p sampling differ?</summary>
+              <div class="qa-answer"><p>Top-k retains a fixed number of highest-scoring tokens. Top-p retains the smallest sorted set whose cumulative probability reaches a threshold, so its candidate count adapts to distribution shape.</p></div>
+            </details>
+            <details id="q-b07" class="qa-item" data-category="beginner" data-search-item>
+              <summary>7. What happens during prefill?</summary>
+              <div class="qa-answer"><p>The engine processes all prompt tokens, computes their hidden states, writes per-layer keys and values, and obtains logits for the first generated token. Wide prompt tensors usually make prefill more compute-efficient than decode.</p></div>
+            </details>
+            <details id="q-b08" class="qa-item" data-category="beginner" data-search-item>
+              <summary>8. What happens during decode?</summary>
+              <div class="qa-answer"><p>The engine processes the newest token, reads cached keys and values for its entire context, appends one new KV entry per layer, and produces logits for the following token.</p></div>
+            </details>
+            <details id="q-b09" class="qa-item" data-category="beginner" data-search-item>
+              <summary>9. What is time to first token?</summary>
+              <div class="qa-answer"><p>TTFT is the delay from request arrival until the first output token becomes available. It includes queueing, tokenization or preprocessing, prefill, first-token sampling, and often initial network flush.</p></div>
+            </details>
+            <details id="q-b10" class="qa-item" data-category="beginner" data-search-item>
+              <summary>10. What is inter-token latency?</summary>
+              <div class="qa-answer"><p>ITL measures time between successive streamed output tokens. It reflects decode scheduling cadence, model execution, sampling, serialization, and backpressure after the first token.</p></div>
+            </details>
+            <details id="q-b11" class="qa-item" data-category="beginner" data-search-item>
+              <summary>11. How is throughput different from latency?</summary>
+              <div class="qa-answer"><p>Throughput measures completed work per unit time, often tokens per second across all requests. Latency measures how long one request or token waits. Larger batches may raise throughput while worsening latency.</p></div>
+            </details>
+            <details id="q-b12" class="qa-item" data-category="beginner" data-search-item>
+              <summary>12. What does self-attention compute?</summary>
+              <div class="qa-answer"><p>Each query scores visible keys, normalizes those scores, and forms a weighted sum of values. In causal inference, position <em>i</em> cannot attend to positions after <em>i</em>.</p></div>
+            </details>
+            <details id="q-b13" class="qa-item" data-category="beginner" data-search-item>
+              <summary>13. Why keep a KV cache?</summary>
+              <div class="qa-answer"><p>Past keys and values do not change during ordinary autoregressive decoding. Caching them avoids recomputing every previous token at every step, reducing repeated work dramatically.</p></div>
+            </details>
+            <details id="q-b14" class="qa-item" data-category="beginner" data-search-item>
+              <summary>14. When does generation stop?</summary>
+              <div class="qa-answer"><p>It stops on a configured token limit, end-of-sequence token, matched stop sequence, grammar completion, cancellation, timeout, or error. The engine should return a precise finish reason.</p></div>
+            </details>
+            <details id="q-b15" class="qa-item" data-category="beginner" data-search-item>
+              <summary>15. Why batch inference requests?</summary>
+              <div class="qa-answer"><p>Batching lets many sequences share each weight read and fills more GPU execution lanes. It improves throughput until padding, memory pressure, or queueing and synchronization costs outweigh the utilization gain.</p></div>
+            </details>
+          </section>
+
+          <section class="qa-group" data-qa-group="intermediate" aria-labelledby="intermediate-title">
+            <h3 id="intermediate-title">Intermediate <span>15 questions</span></h3>
+
+            <details id="q-i01" class="qa-item" data-category="intermediate" data-search-item>
+              <summary>16. How do MHA, GQA, and MQA differ?</summary>
+              <div class="qa-answer"><p>MHA assigns each query head its own KV head. GQA shares each KV head among a group of query heads. MQA shares one KV head across all query heads. More sharing reduces cache size and bandwidth.</p></div>
+            </details>
+            <details id="q-i02" class="qa-item" data-category="intermediate" data-search-item>
+              <summary>17. How does RoPE encode position?</summary>
+              <div class="qa-answer"><p>RoPE rotates paired query and key dimensions with angles derived from absolute position and frequency. Dot products between rotated vectors depend on relative displacement, giving attention position information.</p></div>
+            </details>
+            <details id="q-i03" class="qa-item" data-category="intermediate" data-search-item>
+              <summary>18. Why is a causal mask needed during prefill?</summary>
+              <div class="qa-answer"><p>Prompt positions are processed in parallel, but each must behave as though only earlier tokens exist. The causal mask sets future-position scores to negative infinity before softmax.</p></div>
+            </details>
+            <details id="q-i04" class="qa-item" data-category="intermediate" data-search-item>
+              <summary>19. What determines KV-cache memory?</summary>
+              <div class="qa-answer"><p>Approximately two tensors times layer count, cached token count, KV-head count, head dimension, and bytes per element. Batch composition, reserved block granularity, and metadata add overhead.</p></div>
+            </details>
+            <details id="q-i05" class="qa-item" data-category="intermediate" data-search-item>
+              <summary>20. What problem does a paged KV cache solve?</summary>
+              <div class="qa-answer"><p>It avoids reserving one large contiguous maximum-length region per sequence. Fixed blocks allocated on demand reduce wasted capacity, support noncontiguous growth, and simplify sharing and reclamation.</p></div>
+            </details>
+            <details id="q-i06" class="qa-item" data-category="intermediate" data-search-item>
+              <summary>21. What are internal and external fragmentation?</summary>
+              <div class="qa-answer"><p>Internal fragmentation is unused space inside allocated blocks, such as the tail of a partial page. External fragmentation is free capacity split into pieces that cannot satisfy a contiguous allocation.</p></div>
+            </details>
+            <details id="q-i07" class="qa-item" data-category="intermediate" data-search-item>
+              <summary>22. How does continuous batching work?</summary>
+              <div class="qa-answer"><p>The scheduler rebuilds the batch at token-step boundaries. Finished requests leave, active decodes continue, and new prefills or decodes enter whenever token and memory budgets allow.</p></div>
+            </details>
+            <details id="q-i08" class="qa-item" data-category="intermediate" data-search-item>
+              <summary>23. What causes head-of-line blocking?</summary>
+              <div class="qa-answer"><p>A long or expensive request delays shorter work queued behind it or sharing a fixed batch. Continuous batching, chunking, separate queues, aging, and budget-aware policies can reduce it.</p></div>
+            </details>
+            <details id="q-i09" class="qa-item" data-category="intermediate" data-search-item>
+              <summary>24. Why use chunked prefill?</summary>
+              <div class="qa-answer"><p>Breaking a long prompt into bounded chunks prevents one prefill from delaying every active decoder and caps transient activation memory. Too-small chunks add launch and scheduling overhead.</p></div>
+            </details>
+            <details id="q-i10" class="qa-item" data-category="intermediate" data-search-item>
+              <summary>25. When is prefix caching safe?</summary>
+              <div class="qa-answer"><p>When token IDs, model and adapter identity, positional semantics, and any prompt-affecting configuration match. Shared blocks must be immutable or use copy-on-write before divergence.</p></div>
+            </details>
+            <details id="q-i11" class="qa-item" data-category="intermediate" data-search-item>
+              <summary>26. Why use a radix tree for prefixes?</summary>
+              <div class="qa-answer"><p>A radix tree compactly shares common token spans and finds the longest matching prefix, including partial paths longer than a fixed hash lookup. It also gives eviction a natural tree structure.</p></div>
+            </details>
+            <details id="q-i12" class="qa-item" data-category="intermediate" data-search-item>
+              <summary>27. What is online softmax?</summary>
+              <div class="qa-answer"><p>It computes softmax incrementally using a running maximum and normalized sum. New blocks rescale earlier contributions when needed, enabling exact tiled attention without storing all scores.</p></div>
+            </details>
+            <details id="q-i13" class="qa-item" data-category="intermediate" data-search-item>
+              <summary>28. What is streaming backpressure?</summary>
+              <div class="qa-answer"><p>A client or network consumes output more slowly than the server produces it. The service must bound buffers and either slow, cancel, or disconnect the request so memory and KV state do not grow without limit.</p></div>
+            </details>
+            <details id="q-i14" class="qa-item" data-category="intermediate" data-search-item>
+              <summary>29. What is a quantization calibration set?</summary>
+              <div class="qa-answer"><p>It is a representative sample used to observe activation ranges or estimate reconstruction sensitivity before choosing scales and low-bit values. Poor domain coverage can hide damaging outliers.</p></div>
+            </details>
+            <details id="q-i15" class="qa-item" data-category="intermediate" data-search-item>
+              <summary>30. How do structured outputs affect sampling?</summary>
+              <div class="qa-answer"><p>A grammar state determines which tokens can validly continue the output. Invalid logits are masked before selection, and the grammar state advances after each accepted token.</p></div>
+            </details>
+          </section>
+
+          <section class="qa-group" data-qa-group="advanced" aria-labelledby="advanced-title">
+            <h3 id="advanced-title">Advanced <span>15 questions</span></h3>
+
+            <details id="q-a01" class="qa-item" data-category="advanced" data-search-item>
+              <summary>31. Why is FlashAttention exact rather than approximate?</summary>
+              <div class="qa-answer"><p>It evaluates the same scaled scores, softmax normalization, and weighted values, but tiles and reorders the computation using online normalization. Differences are floating-point ordering effects, not an approximate attention rule.</p></div>
+            </details>
+            <details id="q-a02" class="qa-item" data-category="advanced" data-search-item>
+              <summary>32. What is the KV page-size tradeoff?</summary>
+              <div class="qa-answer"><p>Large pages reduce page-table entries and improve contiguous access but waste more tail space and make sharing less granular. Small pages reduce waste but increase metadata, allocation, and gather overhead.</p></div>
+            </details>
+            <details id="q-a03" class="qa-item" data-category="advanced" data-search-item>
+              <summary>33. How much can GQA reduce KV storage?</summary>
+              <div class="qa-answer"><p>Ignoring metadata, the reduction relative to MHA is roughly query-head count divided by KV-head count. For 32 query heads and 8 KV heads, KV tensors are about one quarter the MHA size.</p></div>
+            </details>
+            <details id="q-a04" class="qa-item" data-category="advanced" data-search-item>
+              <summary>34. Why do CUDA Graphs prefer stable shapes and addresses?</summary>
+              <div class="qa-answer"><p>A captured graph records a concrete operation and dependency topology over memory addresses. Engines use shape buckets and persistent buffers so dynamic requests can reuse that topology safely.</p></div>
+            </details>
+            <details id="q-a05" class="qa-item" data-category="advanced" data-search-item>
+              <summary>35. When can kernel fusion hurt?</summary>
+              <div class="qa-answer"><p>A fused kernel may increase register pressure, reduce occupancy, duplicate variants, lengthen compilation, or perform poorly on uncommon shapes. Fusion needs workload-specific measurement and a fallback.</p></div>
+            </details>
+            <details id="q-a06" class="qa-item" data-category="advanced" data-search-item>
+              <summary>36. What distinguishes GPTQ from naive rounding?</summary>
+              <div class="qa-answer"><p>GPTQ uses approximate second-order information to quantize weights sequentially and compensate unquantized weights for introduced error. Naive rounding treats each value independently.</p></div>
+            </details>
+            <details id="q-a07" class="qa-item" data-category="advanced" data-search-item>
+              <summary>37. What insight drives AWQ?</summary>
+              <div class="qa-answer"><p>A small set of channels matters disproportionately for output quality, as indicated by activation statistics. Per-channel scaling protects those salient weights before groupwise low-bit quantization.</p></div>
+            </details>
+            <details id="q-a08" class="qa-item" data-category="advanced" data-search-item>
+              <summary>38. How can speculative decoding preserve the target distribution?</summary>
+              <div class="qa-answer"><p>Each draft token is accepted with a probability based on target and draft probabilities. At the first rejection, a correction distribution accounts for excess target mass. This rejection-sampling construction leaves target probabilities unchanged.</p></div>
+            </details>
+            <details id="q-a09" class="qa-item" data-category="advanced" data-search-item>
+              <summary>39. How do multi-token heads differ from a draft model?</summary>
+              <div class="qa-answer"><p>They attach proposal heads to the target representation and may predict several positions or branches at once. They share the target backbone but require special training and tree verification.</p></div>
+            </details>
+            <details id="q-a10" class="qa-item" data-category="advanced" data-search-item>
+              <summary>40. When choose tensor parallelism over pipeline parallelism?</summary>
+              <div class="qa-answer"><p>Choose tensor parallelism when layer weights must be split and a fast interconnect can support frequent collectives. Pipeline parallelism fits when stages can be balanced and less frequent activation transfers beat per-layer reductions.</p></div>
+            </details>
+            <details id="q-a11" class="qa-item" data-category="advanced" data-search-item>
+              <summary>41. What makes expert parallelism difficult?</summary>
+              <div class="qa-answer"><p>Token routing creates all-to-all traffic and input-dependent load. Hot experts, capacity limits, padding, dropped tokens, and topology-aware placement can dominate sparse-compute savings.</p></div>
+            </details>
+            <details id="q-a12" class="qa-item" data-category="advanced" data-search-item>
+              <summary>42. When does prefill/decode disaggregation help?</summary>
+              <div class="qa-answer"><p>When the workloads need different hardware or batching policies and KV transfer is small enough relative to saved queueing and improved utilization. It hurts when transfer and cross-pool coordination dominate.</p></div>
+            </details>
+            <details id="q-a13" class="qa-item" data-category="advanced" data-search-item>
+              <summary>43. What is a good prefix-cache eviction policy?</summary>
+              <div class="qa-answer"><p>Evict unreferenced entries using recency, recomputation cost, size, and expected reuse. Never evict live blocks, and avoid letting one tenant’s large cold prefix flush broadly useful entries.</p></div>
+            </details>
+            <details id="q-a14" class="qa-item" data-category="advanced" data-search-item>
+              <summary>44. How can a scheduler balance fairness and throughput?</summary>
+              <div class="qa-answer"><p>Use token budgets and efficient batching, then add aging, per-tenant quotas, deadline or priority classes, and preemption rules. Report policy-induced latency separately from model execution.</p></div>
+            </details>
+            <details id="q-a15" class="qa-item" data-category="advanced" data-search-item>
+              <summary>45. Why subtract a maximum before softmax?</summary>
+              <div class="qa-answer"><p>Softmax is invariant to adding the same constant to every logit. Subtracting the maximum keeps exponentials at or below one, preventing overflow and reducing underflow damage.</p></div>
+            </details>
+          </section>
+
+          <section class="qa-group" data-qa-group="system-design" aria-labelledby="system-design-title">
+            <h3 id="system-design-title">System design <span>15 questions</span></h3>
+
+            <details id="q-s01" class="qa-item" data-category="system-design" data-search-item>
+              <summary>46. How would you serve a model that does not fit on one GPU?</summary>
+              <div class="qa-answer"><p>First quantify weights, KV cache, activations, and runtime workspace. Consider lower precision, then shard with tensor or pipeline parallelism across a topology that can meet communication latency. Replicate that multi-GPU unit only after measuring.</p></div>
+            </details>
+            <details id="q-s02" class="qa-item" data-category="system-design" data-search-item>
+              <summary>47. How would you define a serving SLO?</summary>
+              <div class="qa-answer"><p>Define workload-specific percentiles for TTFT, ITL, end-to-end latency, availability, and output limits. Include prompt/output length distributions and concurrency; a latency number without workload shape is not actionable.</p></div>
+            </details>
+            <details id="q-s03" class="qa-item" data-category="system-design" data-search-item>
+              <summary>48. Where should admission control happen?</summary>
+              <div class="qa-answer"><p>Before expensive tokenization or allocation when possible, using tenant quota, estimated token work, queue delay, and KV capacity. Reject or defer explicitly rather than accepting work the engine cannot complete within policy.</p></div>
+            </details>
+            <details id="q-s04" class="qa-item" data-category="system-design" data-search-item>
+              <summary>49. What signal should drive autoscaling?</summary>
+              <div class="qa-answer"><p>Use a combination of queued token work, projected KV demand, SLO error, and sustained utilization. Request count alone ignores prompt length, output length, cache hits, and model size.</p></div>
+            </details>
+            <details id="q-s05" class="qa-item" data-category="system-design" data-search-item>
+              <summary>50. How should a router account for prefix caching?</summary>
+              <div class="qa-answer"><p>Prefer replicas holding the longest reusable prefix when the expected saved prefill exceeds added queue delay. Bound stickiness so cache affinity does not overload one replica.</p></div>
+            </details>
+            <details id="q-s06" class="qa-item" data-category="system-design" data-search-item>
+              <summary>51. How do you design for worker failure?</summary>
+              <div class="qa-answer"><p>Treat in-flight KV state as ephemeral unless explicitly replicated. Detect failure, stop routing, fail or retry only requests whose semantics allow it, reclaim coordinator state, and replace the worker from immutable model artifacts.</p></div>
+            </details>
+            <details id="q-s07" class="qa-item" data-category="system-design" data-search-item>
+              <summary>52. How should streaming cancellation propagate?</summary>
+              <div class="qa-answer"><p>A disconnect or explicit cancel marks request state, prevents future scheduling, removes pending stream writes, and releases cache blocks through an idempotent cleanup path. Measure cancellation-to-reclamation delay.</p></div>
+            </details>
+            <details id="q-s08" class="qa-item" data-category="system-design" data-search-item>
+              <summary>53. How would you isolate multiple tenants?</summary>
+              <div class="qa-answer"><p>Apply authenticated quotas for requests, input/output tokens, queue share, and cache use. Separate priority classes, redact payloads from telemetry, partition or fairly evict shared prefixes, and enforce bounded request fields.</p></div>
+            </details>
+            <details id="q-s09" class="qa-item" data-category="system-design" data-search-item>
+              <summary>54. How would you roll out new model weights?</summary>
+              <div class="qa-answer"><p>Load a versioned worker pool, run health and golden-output checks, shadow representative traffic, canary a small share, compare quality and SLO metrics, then ramp gradually. Keep routing and cache keys version-aware.</p></div>
+            </details>
+            <details id="q-s10" class="qa-item" data-category="system-design" data-search-item>
+              <summary>55. Which metrics belong on the primary dashboard?</summary>
+              <div class="qa-answer"><p>Traffic and errors; queue delay; TTFT and ITL percentiles; prompt/generated token rates; active sequences; cache occupancy and hit rate; batch tokens; GPU utilization and memory; cancellation; and goodput under the SLO.</p></div>
+            </details>
+            <details id="q-s11" class="qa-item" data-category="system-design" data-search-item>
+              <summary>56. How would you offer JSON-schema output safely?</summary>
+              <div class="qa-answer"><p>Validate a documented schema subset, compile with resource limits, cache compiled grammars, enforce constrained sampling, detect empty valid-token sets, and return explicit errors for unsupported or pathological schemas.</p></div>
+            </details>
+            <details id="q-s12" class="qa-item" data-category="system-design" data-search-item>
+              <summary>57. How would you support very long contexts?</summary>
+              <div class="qa-answer"><p>Budget KV memory at admission, use paged allocation and chunked prefill, exploit safe prefix reuse, cap concurrency by tokens, and consider context parallelism or offload only after measuring transfer cost and quality implications.</p></div>
+            </details>
+            <details id="q-s13" class="qa-item" data-category="system-design" data-search-item>
+              <summary>58. What does OpenAI-compatible really require?</summary>
+              <div class="qa-answer"><p>Compatibility includes request defaults and validation, tokenizer-dependent usage, stream event ordering and termination, finish reasons, error shapes, model identifiers, cancellation, and unsupported-field behavior—not just matching endpoint names.</p></div>
+            </details>
+            <details id="q-s14" class="qa-item" data-category="system-design" data-search-item>
+              <summary>59. How would you design disaggregated prefill and decode?</summary>
+              <div class="qa-answer"><p>Route prompts to prefill workers, transfer versioned KV blocks and sequence metadata over a high-bandwidth path, admit them to decode workers with capacity reservations, and handle partial transfer, retries, and worker loss explicitly.</p></div>
+            </details>
+            <details id="q-s15" class="qa-item" data-category="system-design" data-search-item>
+              <summary>60. How do you estimate capacity?</summary>
+              <div class="qa-answer"><p>Measure separate prefill and decode token costs over realistic lengths and batches, calculate weight and KV memory limits, include SLO-driven headroom and failures, then validate with arrival traces rather than multiplying peak benchmark throughput.</p></div>
+            </details>
+          </section>
+
+          <section class="qa-group" data-qa-group="performance" aria-labelledby="performance-title">
+            <h3 id="performance-title">Performance <span>15 questions</span></h3>
+
+            <details id="q-p01" class="qa-item" data-category="performance" data-search-item>
+              <summary>61. What should you profile first?</summary>
+              <div class="qa-answer"><p>Start with an end-to-end trace split into queue, prefill, decode, sampling, and streaming. Then inspect CPU launch gaps, GPU kernels, memory, and collectives for the phase that dominates the target workload.</p></div>
+            </details>
+            <details id="q-p02" class="qa-item" data-category="performance" data-search-item>
+              <summary>62. What can cause low GPU utilization?</summary>
+              <div class="qa-answer"><p>Small batches, CPU launch gaps, synchronization, slow input preparation, unsupported shapes, excessive kernel count, communication stalls, load imbalance, or a metric that averages bursty decode work over idle time.</p></div>
+            </details>
+            <details id="q-p03" class="qa-item" data-category="performance" data-search-item>
+              <summary>63. Why is decode often memory-bandwidth bound?</summary>
+              <div class="qa-answer"><p>Each step has few input tokens but must read large weight matrices and an expanding KV cache. The amount of arithmetic per byte is low unless batching reuses each weight read across many sequences.</p></div>
+            </details>
+            <details id="q-p04" class="qa-item" data-category="performance" data-search-item>
+              <summary>64. Why can prefill be compute bound?</summary>
+              <div class="qa-answer"><p>Many prompt tokens turn projections and feed-forward layers into large matrix multiplications with high data reuse. At sufficient size, tensor-core arithmetic can become the limiting resource.</p></div>
+            </details>
+            <details id="q-p05" class="qa-item" data-category="performance" data-search-item>
+              <summary>65. How do you choose a batch-token limit?</summary>
+              <div class="qa-answer"><p>Sweep token budgets under realistic mixes while recording throughput, TTFT, ITL, and memory. Choose a limit that meets tail-latency and headroom requirements, not simply the highest-throughput point.</p></div>
+            </details>
+            <details id="q-p06" class="qa-item" data-category="performance" data-search-item>
+              <summary>66. Why do tensor-core-friendly dimensions matter?</summary>
+              <div class="qa-answer"><p>Aligned matrix dimensions and supported dtypes let kernels use specialized high-throughput units efficiently. Awkward shapes may require padding, slower instructions, or kernels with lower occupancy.</p></div>
+            </details>
+            <details id="q-p07" class="qa-item" data-category="performance" data-search-item>
+              <summary>67. How do CUDA Graphs improve decode?</summary>
+              <div class="qa-answer"><p>They replay a captured operation graph with far fewer CPU submissions, removing gaps between many short decode kernels. The benefit is largest when launch overhead is a meaningful fraction of token time.</p></div>
+            </details>
+            <details id="q-p08" class="qa-item" data-category="performance" data-search-item>
+              <summary>68. What is the performance case for kernel fusion?</summary>
+              <div class="qa-answer"><p>Fusion avoids writing and rereading intermediates and reduces launch count. Estimate bytes and launches removed, then verify that register pressure and specialization do not reduce occupancy enough to erase the gain.</p></div>
+            </details>
+            <details id="q-p09" class="qa-item" data-category="performance" data-search-item>
+              <summary>69. When does quantization fail to speed up inference?</summary>
+              <div class="qa-answer"><p>When dequantization is not fused, kernels do not support the shape, metadata traffic is large, compute was not the bottleneck, or conversion overhead dominates. Smaller memory use does not guarantee lower latency.</p></div>
+            </details>
+            <details id="q-p10" class="qa-item" data-category="performance" data-search-item>
+              <summary>70. What determines speculative-decoding speedup?</summary>
+              <div class="qa-answer"><p>Draft cost, proposed length, acceptance-length distribution, target verification efficiency, batch interaction, and control overhead. A high token acceptance percentage can still lose if proposal generation is expensive.</p></div>
+            </details>
+            <details id="q-p11" class="qa-item" data-category="performance" data-search-item>
+              <summary>71. How does a roofline model help?</summary>
+              <div class="qa-answer"><p>Compare an operation’s arithmetic intensity with hardware compute and memory-bandwidth ceilings. It predicts whether reducing bytes or reducing arithmetic is more likely to improve performance.</p></div>
+            </details>
+            <details id="q-p12" class="qa-item" data-category="performance" data-search-item>
+              <summary>72. When does pinned host memory help?</summary>
+              <div class="qa-answer"><p>Page-locked buffers enable efficient asynchronous host-device transfer. They help when transfers overlap compute, but overuse consumes a limited system resource and can hurt overall memory behavior.</p></div>
+            </details>
+            <details id="q-p13" class="qa-item" data-category="performance" data-search-item>
+              <summary>73. How do collectives show up in decode latency?</summary>
+              <div class="qa-answer"><p>Tensor or expert parallel layers introduce synchronization and communication on every token. Profile collective duration, exposed wait time, message size, rank skew, and link topology rather than looking only at aggregate bandwidth.</p></div>
+            </details>
+            <details id="q-p14" class="qa-item" data-category="performance" data-search-item>
+              <summary>74. Why optimize tail latency separately?</summary>
+              <div class="qa-answer"><p>Rare long prompts, cache misses, allocator stalls, retries, noisy neighbors, and synchronization outliers disappear in averages but determine p95 or p99 user experience. Preserve distributions by workload class.</p></div>
+            </details>
+            <details id="q-p15" class="qa-item" data-category="performance" data-search-item>
+              <summary>75. What makes an inference benchmark credible?</summary>
+              <div class="qa-answer"><p>It states hardware, software versions, model and precision, prompt/output distributions, concurrency or arrival process, warmup, cache policy, sampling, latency percentiles, throughput, and whether tokens satisfy an SLO.</p></div>
+            </details>
+          </section>
+
+          <section class="qa-group" data-qa-group="debugging" aria-labelledby="debugging-title">
+            <h3 id="debugging-title">Debugging <span>15 questions</span></h3>
+
+            <details id="q-d01" class="qa-item" data-category="debugging" data-search-item>
+              <summary>76. How would you debug NaNs in logits?</summary>
+              <div class="qa-answer"><p>Reproduce deterministically, find the first layer and operation producing non-finite values, inspect input ranges and dtype, compare with a higher-precision reference, and check normalization, masks, quantization scales, and fused-kernel assumptions.</p></div>
+            </details>
+            <details id="q-d02" class="qa-item" data-category="debugging" data-search-item>
+              <summary>77. Why might output be fluent but wrong?</summary>
+              <div class="qa-answer"><p>Likely causes include wrong weights or tokenizer, chat-template drift, RoPE position errors, KV writes at the wrong offset, stale cache reuse, incorrect attention head mapping, or quantization outside calibration.</p></div>
+            </details>
+            <details id="q-d03" class="qa-item" data-category="debugging" data-search-item>
+              <summary>78. How do you detect a KV position bug?</summary>
+              <div class="qa-answer"><p>Compare full recomputation with cached decode token by token. Dump logical positions, block-table entries, and selected KV slices. The first divergent token localizes the position or write-offset error.</p></div>
+            </details>
+            <details id="q-d04" class="qa-item" data-category="debugging" data-search-item>
+              <summary>79. What does a RoPE mismatch look like?</summary>
+              <div class="qa-answer"><p>Short prompts may look plausible while quality degrades with length or after cache reuse. Verify base, scaling variant, rotary dimensions, pair layout, absolute offsets, and whether keys are rotated exactly once.</p></div>
+            </details>
+            <details id="q-d05" class="qa-item" data-category="debugging" data-search-item>
+              <summary>80. How would you find paged-cache corruption?</summary>
+              <div class="qa-answer"><p>Add ownership, generation, bounds, and reference-count assertions; poison freed blocks; log block-table transitions; compare against contiguous-cache output; and stress cancellation, fork, copy-on-write, and rapid reuse.</p></div>
+            </details>
+            <details id="q-d06" class="qa-item" data-category="debugging" data-search-item>
+              <summary>81. What causes nondeterministic token differences?</summary>
+              <div class="qa-answer"><p>Sampling RNG order, asynchronous batch membership, non-deterministic reductions, race conditions, uninitialized memory, unstable ties, or floating-point reordering near decision boundaries. Record seeds and exact scheduler inputs.</p></div>
+            </details>
+            <details id="q-d07" class="qa-item" data-category="debugging" data-search-item>
+              <summary>82. Why can allocation fail when monitoring shows free memory?</summary>
+              <div class="qa-answer"><p>Free memory may be fragmented, reserved by an allocator, unavailable as a required contiguous block, needed for workspace, or observed after failure-time cleanup. Correlate allocator internals with device-level metrics.</p></div>
+            </details>
+            <details id="q-d08" class="qa-item" data-category="debugging" data-search-item>
+              <summary>83. How do you debug a stalled SSE stream?</summary>
+              <div class="qa-answer"><p>Trace token production, queue insertion, serializer output, socket writes, proxy buffering, and client reads. Verify event delimiters and flushing, disable unintended compression or buffering, and test disconnect handling.</p></div>
+            </details>
+            <details id="q-d09" class="qa-item" data-category="debugging" data-search-item>
+              <summary>84. How do distributed deadlocks arise?</summary>
+              <div class="qa-answer"><p>Ranks enter different collectives, use inconsistent tensor shapes, skip work after a local error, or wait on circular queues. Log ordered collective sequence numbers and fail all ranks when one rank violates the protocol.</p></div>
+            </details>
+            <details id="q-d10" class="qa-item" data-category="debugging" data-search-item>
+              <summary>85. What causes stale-pointer failures with CUDA Graphs?</summary>
+              <div class="qa-answer"><p>Captured operations reference buffers that were reallocated, freed, resized, or reused with incompatible metadata. Use stable pools, explicit lifetime ownership, and eager fallback when a request does not fit a capture bucket.</p></div>
+            </details>
+            <details id="q-d11" class="qa-item" data-category="debugging" data-search-item>
+              <summary>86. How do you investigate a quantization quality regression?</summary>
+              <div class="qa-answer"><p>Compare per-layer outputs with a high-precision baseline, inspect scale and clipping distributions, test representative prompts, isolate sensitive layers for higher precision, and verify that packing and runtime group semantics match calibration.</p></div>
+            </details>
+            <details id="q-d12" class="qa-item" data-category="debugging" data-search-item>
+              <summary>87. How do you validate speculative decoding correctness?</summary>
+              <div class="qa-answer"><p>For deterministic greedy mode, compare exact token streams. For sampling, test the acceptance and correction implementation on tiny known distributions and compare empirical output frequencies with direct target sampling.</p></div>
+            </details>
+            <details id="q-d13" class="qa-item" data-category="debugging" data-search-item>
+              <summary>88. How can tokenizer mismatch be diagnosed?</summary>
+              <div class="qa-answer"><p>Record tokenizer version and special-token IDs, round-trip representative strings, compare prompt token IDs with a trusted implementation, and inspect byte-level differences rather than only rendered text.</p></div>
+            </details>
+            <details id="q-d14" class="qa-item" data-category="debugging" data-search-item>
+              <summary>89. How do you prove a request-state memory leak?</summary>
+              <div class="qa-answer"><p>Run repeated bounded workloads to steady state, count live requests, KV blocks, stream queues, and allocator reservations after every terminal path, then isolate success, timeout, cancellation, and transport failure separately.</p></div>
+            </details>
+            <details id="q-d15" class="qa-item" data-category="debugging" data-search-item>
+              <summary>90. How do you localize a bad distributed rank?</summary>
+              <div class="qa-answer"><p>Compare per-rank input checksums, finite-value checks, output summaries, collective sequence numbers, timing, and device errors at stage boundaries. Use a tiny deterministic batch to identify the first rank and layer that diverges.</p></div>
+            </details>
+          </section>
+        </section>
+
+        <section id="references" class="content-section" data-search-group="References">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">17 · Go to the sources</p>
+              <h2>Official docs and canonical papers</h2>
+            </div>
+            <p>
+              These primary references deepen the concepts; inclusion does not imply
+              that this educational repository implements the referenced system.
+            </p>
+          </div>
+
+          <ul class="references">
+            <li><a href="https://docs.vllm.ai/">Official vLLM documentation</a></li>
+            <li><a href="https://docs.sglang.ai/">Official SGLang documentation</a></li>
+            <li><a href="https://arxiv.org/abs/1706.03762">Attention Is All You Need</a></li>
+            <li><a href="https://arxiv.org/abs/2104.09864">RoFormer: Rotary Position Embedding</a></li>
+            <li><a href="https://arxiv.org/abs/2305.13245">Grouped-Query Attention</a></li>
+            <li><a href="https://arxiv.org/abs/2309.06180">vLLM and PagedAttention</a></li>
+            <li><a href="https://arxiv.org/abs/2312.07104">SGLang</a></li>
+            <li><a href="https://arxiv.org/abs/2205.14135">FlashAttention</a></li>
+            <li><a href="https://arxiv.org/abs/2307.08691">FlashAttention-2</a></li>
+            <li><a href="https://arxiv.org/abs/2210.17323">GPTQ</a></li>
+            <li><a href="https://arxiv.org/abs/2306.00978">AWQ</a></li>
+            <li><a href="https://arxiv.org/abs/2211.10438">SmoothQuant</a></li>
+            <li><a href="https://arxiv.org/abs/2211.17192">Fast Inference via Speculative Decoding</a></li>
+            <li><a href="https://arxiv.org/abs/2302.07863">Speculative Decoding with Big Little Decoder</a></li>
+            <li><a href="https://arxiv.org/abs/2401.10774">Medusa multi-token decoding heads</a></li>
+            <li><a href="https://arxiv.org/abs/1909.08053">Megatron-LM model parallelism</a></li>
+            <li><a href="https://github.com/NVIDIA/Megatron-LM">Official Megatron-LM repository</a></li>
+          </ul>
+        </section>
+
+        <footer class="site-footer">
+          <p>
+            Built as a dependency-free learning site. Explanatory prose is original.
+            Review the honest-scope section before treating a concept as implemented.
+          </p>
+        </footer>
+      </main>
+    </div>
+
+    <a class="back-to-top" href="#overview" aria-label="Back to top">↑</a>
+    <noscript>
+      <p class="empty-state">
+        JavaScript is disabled. All guide content and answers remain available;
+        search, filtering, theme selection, and mobile navigation enhancements do not.
+      </p>
+    </noscript>
+  </body>
+</html>
