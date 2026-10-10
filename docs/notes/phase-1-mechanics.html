@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A beginner-friendly textbook for Days 1-5 of LLM inference: tensors, tokenization, embeddings, logits, transformer attention, RoPE, GQA, prefill, decode, and KV caching."
+    />
+    <meta name="theme-color" content="#3156d3" />
+    <title>Days 1-5: Model Mechanics | LLM Inference from Scratch</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%233156d3'/%3E%3Ctext x='32' y='40' text-anchor='middle' font-size='24' font-family='sans-serif' font-weight='700' fill='white'%3EP1%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="../styles.css?v=6" />
+    <script src="../app.js?v=2" defer=""></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="../index.html" aria-label="Return to the systems guide">
+          <span class="brand-mark" aria-hidden="true">LLM</span>
+          <span class="brand-text">Inference from Scratch</span>
+        </a>
+        <div class="search-wrap">
+          <label for="site-search" aria-hidden="true">⌕</label>
+          <input
+            id="site-search"
+            type="search"
+            placeholder="Search Days 1-5"
+            autocomplete="off"
+            aria-controls="search-results"
+            aria-label="Search this textbook"
+          />
+          <kbd class="search-key" aria-hidden="true">Ctrl K</kbd>
+          <ul id="search-results" class="search-results" aria-label="Search results" hidden=""></ul>
+        </div>
+        <div class="top-actions">
+          <button class="icon-button theme-button" type="button" data-theme-toggle="" aria-label="Change color theme">
+            <span data-theme-icon="" aria-hidden="true">◐</span>
+          </button>
+          <button
+            class="icon-button menu-button"
+            type="button"
+            data-menu-toggle=""
+            aria-label="Open section navigation"
+            aria-controls="section-navigation"
+            aria-expanded="false"
+          >
+            <span aria-hidden="true">☰</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside id="section-navigation" class="sidebar" aria-label="Textbook navigation">
+        <p class="sidebar-title">Phase 1 · Mechanics</p>
+        <nav>
+          <ul class="nav-list">
+            <li><a href="#overview" aria-current="true">How to use this page</a></li>
+            <li><a href="#tensor-primer">Tensor primer</a></li>
+            <li><a href="#day-1">Day 1 · Inference loop</a></li>
+            <li><a href="#day-2">Day 2 · Model &amp; tokens</a></li>
+            <li><a href="#day-3">Day 3 · Embeddings &amp; logits</a></li>
+            <li><a href="#day-4">Day 4 · Transformer &amp; attention</a></li>
+            <li><a href="#day-5">Day 5 · KV cache</a></li>
+            <li><a href="#phase-summary">Phase summary</a></li>
+            <li><a href="#glossary">Glossary</a></li>
+            <li><a href="#formula-sheet">Formula sheet</a></li>
+            <li><a href="#cumulative-exercises">Cumulative exercises</a></li>
+            <li><a href="phase-2-engines.html">Next: Phase 2 ↗</a></li>
+            <li><a href="../curriculum.html">26-day curriculum ↗</a></li>
+            <li><a href="../index.html">Systems guide ↗</a></li>
+          </ul>
+        </nav>
+        <div class="sidebar-note">
+          <strong>Scope marker</strong><br />
+          The linked <code>mini_infer</code> modules are transparent teaching
+          implementations and simulations. They are not claims of production GPU speed.
+        </div>
+      </aside>
+
+      <main id="main-content">
+        <section id="overview" class="hero curriculum-hero" data-search-group="Phase 1 overview">
+          <p class="eyebrow">Days 1-5 · A textbook chapter</p>
+          <h1>From a prompt to a reusable memory of the prompt.</h1>
+          <p class="hero-copy">
+            This chapter builds one continuous mental model. You will start with a
+            sentence, represent it as integers and tensors, follow those tensors through
+            a decoder-only Transformer, select one next token, and then avoid repeating
+            work with a key/value cache. No machine-learning background is assumed.
+          </p>
+          <div class="hero-actions">
+            <a class="button" href="#tensor-primer">Begin with shapes</a>
+            <a class="button button-secondary" href="../curriculum.html#phase-one">Open the Phase 1 plan</a>
+          </div>
+        </section>
+
+        <div class="metric-strip" aria-label="Chapter summary">
+          <div class="metric"><strong>5</strong><span>connected lessons</span></div>
+          <div class="metric"><strong>25+</strong><span>checks with answers</span></div>
+          <div class="metric"><strong>35+</strong><span>glossary terms</span></div>
+          <div class="metric"><strong>1</strong><span>end-to-end token story</span></div>
+        </div>
+
+        <section id="tensor-primer" class="content-section" data-search-group="Foundations" data-search-item="" data-keywords="tensor shape axis dimension batch sequence vocabulary">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Before Day 1</p>
+              <h2>Tensors and shapes, very gently</h2>
+            </div>
+            <p>A shape is a compact description of how numbers are arranged, not a mysterious property of neural networks.</p>
+          </div>
+          <p>
+            You already know several tensors under everyday names. One number, such as
+            <code>3.5</code>, is a scalar and has no axes. A Python list such as
+            <code>[0.2, 0.8, -0.1]</code> is a one-dimensional tensor, often called a
+            vector. A rectangular list of lists is a two-dimensional tensor, or matrix.
+            Add another nesting level and you have a three-dimensional tensor. A
+            <em>dimension</em> or <em>axis</em> is one direction along which you can
+            move; the <em>size</em> of an axis says how many choices exist in that
+            direction.
+          </p>
+          <div class="table-wrap">
+            <table class="comparison">
+              <thead><tr><th>Shape</th><th>Plain-language reading</th><th>Possible meaning</th></tr></thead>
+              <tbody>
+                <tr><td><code>[]</code></td><td>One value</td><td>A loss, temperature, or probability</td></tr>
+                <tr><td><code>[4]</code></td><td>Four values in a row</td><td>One tiny token vector</td></tr>
+                <tr><td><code>[3, 4]</code></td><td>Three rows, four values per row</td><td>Three tokens, each with width four</td></tr>
+                <tr><td><code>[2, 3, 4]</code></td><td>Two groups of three rows of four values</td><td>Two sequences, three tokens each, width four</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            Brackets are read from broadest grouping to most detailed. For
+            <code>[batch, sequence, feature]</code>, choose a request in the batch,
+            choose a token position in that request, then choose one numeric feature
+            for that token. Indexing removes the axes you select. If
+            <code>x</code> has shape <code>[1, 9, 50257]</code>, then
+            <code>x[0]</code> has shape <code>[9, 50257]</code>,
+            <code>x[0, -1]</code> has shape <code>[50257]</code>, and
+            <code>x[0, -1, 17]</code> is one number. The index <code>-1</code> means
+            “the last item” in Python.
+          </p>
+          <div class="callout">
+            <strong>Shape-reading habit:</strong> Say both the numbers and their
+            meanings aloud. “One sequence, nine positions, 50,257 vocabulary scores”
+            is far more useful than “a three-dimensional tensor.”
+          </div>
+        </section>
+
+        <section id="day-1" class="content-section" data-search-group="Day 1" data-search-item="" data-keywords="inference logits probabilities sampling softmax greedy temperature top-k top-p prefill decode no_grad">
+          <div class="phase-banner">
+            <div><span class="phase-number">Day 01</span><h2>Inference is a one-token loop</h2></div>
+            <p>Tokenize → forward pass → choose → append → repeat → stop.</p>
+          </div>
+
+          <article id="day-1-intuition" class="card" data-search-item="" data-keywords="intuition analogy autocomplete">
+            <h3>Beginner intuition: an extremely capable autocomplete</h3>
+            <p>
+              Imagine writing on a whiteboard while a helper repeatedly studies
+              everything currently written. The helper does not draft a hidden
+              paragraph. Instead, it hands you a ranked menu for the very next text
+              fragment. You choose one fragment, write it on the board, and ask again.
+              That repeated interaction is autoregressive inference. “Auto” means the
+              model’s own previous outputs become part of its next input; “regressive”
+              refers to predicting from earlier values.
+            </p>
+            <p>
+              This matters because almost every serving concern sits around this loop.
+              Latency depends on how fast each pass runs. Memory depends on weights and
+              saved attention state. Quality depends partly on how logits are converted
+              into a chosen token. Stopping determines whether generation ends cleanly.
+              Batching decides which users take a turn. If the loop is fuzzy, later
+              optimizations sound like unrelated tricks. If the loop is clear, they
+              become targeted improvements to a specific step.
+            </p>
+          </article>
+
+          <article id="day-1-terms" class="card" data-search-item="" data-keywords="prompt token vocabulary logit probability sampler eos">
+            <h3>Terminology for today</h3>
+            <ul>
+              <li><strong>Prompt:</strong> the input text supplied before generation.</li>
+              <li><strong>Token:</strong> a vocabulary item represented by an integer ID; it may be a word, word piece, punctuation mark, or byte.</li>
+              <li><strong>Vocabulary:</strong> the complete ID-to-token inventory understood by a tokenizer and model.</li>
+              <li><strong>Forward pass:</strong> one execution of model math on supplied token positions.</li>
+              <li><strong>Logit:</strong> an unrestricted score for one vocabulary item. A logit is not yet a probability.</li>
+              <li><strong>Sampler or decoder:</strong> policy that turns next-token scores into one token ID.</li>
+              <li><strong>EOS:</strong> an end-of-sequence token that can signal completion.</li>
+              <li><strong>Prefill:</strong> processing prompt positions together to establish state and produce the first next-token prediction.</li>
+              <li><strong>Decode:</strong> processing newly generated positions, usually one position per active sequence per iteration.</li>
+            </ul>
+          </article>
+
+          <article id="day-1-mechanics" data-search-item="" data-keywords="shape 1 9 50257 last position next token">
+            <h3>Step by step, including <code>[1, 9, 50257]</code></h3>
+            <ol class="flow" aria-label="Autoregressive inference mechanics">
+              <li><strong>Encode</strong>Turn prompt text into token IDs, for example nine IDs.</li>
+              <li><strong>Prefill</strong>Run those nine positions through the model in one forward pass.</li>
+              <li><strong>Read logits</strong>Select the vocabulary-score row at the final input position.</li>
+              <li><strong>Choose</strong>Apply greedy selection or a sampling policy to obtain one ID.</li>
+              <li><strong>Continue</strong>Append, check stopping rules, and decode another token if needed.</li>
+            </ol>
+            <p>
+              Suppose the model receives one prompt containing nine token IDs and uses
+              GPT-2’s 50,257-item vocabulary. Its output logits have shape
+              <code>[1, 9, 50257]</code>. The first axis has size <code>1</code>
+              because there is one sequence in the batch. The second has size
+              <code>9</code> because the prompt occupies nine positions. The third has
+              size <code>50257</code> because the model produces one score for every
+              possible vocabulary item at every position.
+            </p>
+            <p>
+              A causal language model is trained so the row at position <em>i</em>
+              predicts the token after position <em>i</em>. Earlier rows are useful
+              during training because many next-token examples can be scored in
+              parallel. During generation, however, positions 0 through 7 correspond
+              to predictions inside the already known prompt. Only the row after the
+              complete visible prefix answers our current question: “What follows all
+              nine prompt tokens?” Therefore <code>logits[0, -1, :]</code> selects
+              batch item 0, last sequence position, and every vocabulary entry. Its
+              shape is <code>[50257]</code>. It is not because other rows are invalid;
+              they answer earlier questions that we no longer need.
+            </p>
+          </article>
+
+          <article id="day-1-softmax" data-search-item="" data-keywords="equation softmax logit probability temperature">
+            <h3>Logits, probabilities, and the softmax equation</h3>
+            <p>
+              Logits can be negative, positive, large, or small and need not sum to
+              anything. Only their relative differences matter. Softmax exponentiates
+              and normalizes them into nonnegative probabilities that sum to one:
+            </p>
+            <div class="formula" aria-label="Softmax formula">
+              p(i) = exp(z_i) / Σ_j exp(z_j)
+            </div>
+            <p>
+              Here <code>z_i</code> is the logit for candidate token <code>i</code>;
+              <code>exp</code> is the exponential function, which preserves ordering
+              while emphasizing differences; <code>j</code> ranges across all
+              vocabulary entries; the denominator sums their exponentials; and
+              <code>p(i)</code> is token <code>i</code>’s probability. Real code
+              subtracts the largest logit before exponentiating for numerical
+              stability. The subtraction changes neither the final ratios nor the
+              probabilities.
+            </p>
+            <p>
+              Temperature changes the distribution before softmax:
+              <code>p(i) = softmax(z_i / T)</code>. With <code>T &lt; 1</code>,
+              differences grow and the distribution becomes sharper. With
+              <code>T &gt; 1</code>, differences shrink and more candidates remain
+              plausible. Temperature zero is not a valid division; deterministic
+              systems use argmax rather than pretending that zero-temperature softmax
+              is ordinary arithmetic.
+            </p>
+            <div class="card-grid">
+              <div class="card"><h4>Greedy</h4><p>Choose the largest logit. It is deterministic for fixed inputs and weights, but not automatically the best text policy.</p></div>
+              <div class="card"><h4>Top-k</h4><p>Keep only the <code>k</code> highest-scoring IDs, mask the rest, renormalize, then sample.</p></div>
+              <div class="card"><h4>Top-p</h4><p>Sort by probability and keep the smallest leading set whose cumulative mass reaches <code>p</code>. Its candidate count adapts.</p></div>
+              <div class="card"><h4>Temperature</h4><p>Rescale logits before filtering or sampling. It controls sharpness, not which facts the model learned.</p></div>
+            </div>
+          </article>
+
+          <article id="day-1-example" class="card" data-search-item="" data-keywords="worked toy example logits sampling">
+            <h3>Worked toy example: a four-token vocabulary</h3>
+            <p>
+              Let the possible next tokens be <code>[" cat", " dog", ".", " runs"]</code>
+              with logits <code>[2.0, 1.0, 0.0, -1.0]</code>. Subtracting the maximum
+              gives <code>[0, -1, -2, -3]</code>. Their exponentials are approximately
+              <code>[1.000, 0.368, 0.135, 0.050]</code>; the sum is
+              <code>1.553</code>. Dividing each by the sum gives probabilities near
+              <code>[0.644, 0.237, 0.087, 0.032]</code>. Greedy chooses
+              <code>" cat"</code>. Top-k with <code>k=2</code> removes the last two
+              candidates and renormalizes the first two to about 73% and 27%. Top-p
+              with <code>p=0.8</code> also keeps the first two because 64.4% alone is
+              insufficient but 64.4% + 23.7% exceeds 80%.
+            </p>
+            <p>
+              After choosing token ID 0, append it to the input sequence. The next
+              model call now conditions on the prompt plus <code>" cat"</code>. Stop
+              when an EOS token is selected, a configured stop-token sequence is a
+              suffix of generated IDs, <code>max_new_tokens</code> is reached, the
+              context limit would be exceeded, the client cancels, or a server
+              deadline/error terminates the request. A robust engine records the
+              finish reason rather than merely falling out of a loop.
+            </p>
+          </article>
+
+          <article id="day-1-code" data-search-item="" data-keywords="mini_infer code links no_grad inference mode phases stopping">
+            <h3>Connection to code, and why gradients are disabled</h3>
+            <p>
+              The educational project separates policy into inspectable pieces:
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/decoding/greedy.py">greedy.py</a>,
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/decoding/temperature.py">temperature.py</a>,
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/decoding/top_k.py">top_k.py</a>,
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/decoding/top_p.py">top_p.py</a>, and
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/decoding/stopping.py">stopping.py</a>.
+              Phase classification lives in
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/phases.py">engine/phases.py</a>.
+              The synchronous engine demonstrates request transitions and EOS/length
+              finishing in
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/sync_engine.py">engine/sync_engine.py</a>.
+            </p>
+            <p>
+              Training needs gradients so an optimizer can change weights. Inference
+              does not. In PyTorch, <code>torch.no_grad()</code> prevents gradient
+              recording, reducing memory and bookkeeping. <code>torch.inference_mode()</code>
+              goes further by disabling additional autograd-related tracking for
+              inference-only tensors. Neither changes the learned weights, performs
+              sampling, or creates a KV cache. They remove training machinery. You
+              still need <code>model.eval()</code> for layers whose behavior differs
+              between training and evaluation, and you still need explicit decoding
+              and stopping logic.
+            </p>
+            <div class="callout">
+              <strong>Performance view:</strong> Prefill handles many prompt positions
+              and tends to expose parallel matrix work. Decode advances each sequence
+              by one token and repeatedly reads weights plus growing state, so it often
+              becomes memory-bandwidth and scheduling sensitive. The pure-Python
+              project clarifies control flow; it does not emulate production GPU speed.
+            </div>
+          </article>
+
+          <article id="day-1-mistakes" class="card" data-search-item="" data-keywords="common mistakes">
+            <h3>Common beginner mistakes</h3>
+            <ul>
+              <li>Calling every vocabulary score a probability before applying softmax.</li>
+              <li>Using all nine logit rows to choose one next token instead of selecting the final row.</li>
+              <li>Believing sampling generates several future tokens from one ordinary next-token distribution.</li>
+              <li>Assuming low temperature guarantees truth or high temperature creates knowledge.</li>
+              <li>Forgetting EOS, length, cancellation, stop-sequence, and context-limit conditions.</li>
+              <li>Thinking <code>no_grad</code> automatically enables evaluation mode, caching, or faster kernels.</li>
+              <li>Comparing benchmark numbers without warm-up, synchronization, fixed hardware, or repeated trials.</li>
+            </ul>
+          </article>
+
+          <article id="day-1-check" data-search-item="" data-keywords="check understanding questions answers">
+            <h3>Check your understanding</h3>
+            <details class="qa-item"><summary>What does each axis of <code>[1, 9, 50257]</code> mean?</summary><div class="qa-answer">One batch item, nine sequence positions, and 50,257 vocabulary logits per position.</div></details>
+            <details class="qa-item"><summary>Why use <code>logits[0, -1, :]</code>?</summary><div class="qa-answer">It selects all vocabulary scores predicted after the complete visible prefix for the first sequence.</div></details>
+            <details class="qa-item"><summary>Do logits sum to one?</summary><div class="qa-answer">No. Softmax converts unrestricted logits into probabilities that sum to one.</div></details>
+            <details class="qa-item"><summary>How do top-k and top-p differ?</summary><div class="qa-answer">Top-k fixes the candidate count; top-p adapts the count to reach a probability-mass threshold.</div></details>
+            <details class="qa-item"><summary>What separates prefill from decode?</summary><div class="qa-answer">Prefill processes prompt positions to establish state; decode advances an active sequence with newly generated positions.</div></details>
+            <details class="qa-item"><summary>Name three valid stop conditions.</summary><div class="qa-answer">Examples: EOS, maximum new tokens, stop sequence, cancellation, deadline, error, or context limit.</div></details>
+          </article>
+
+          <article id="day-1-exercises" class="card" data-search-item="" data-keywords="practical exercises bridge">
+            <h3>Practical exercises and bridge to Day 2</h3>
+            <ol>
+              <li>For a tensor shaped <code>[3, 12, 256]</code>, explain every axis and the shape after <code>x[1, -1, :]</code>.</li>
+              <li>Compute softmax by hand for logits <code>[1, 1, 0]</code>. Then repeat after dividing by temperature 2.</li>
+              <li>Write pseudocode for a loop with EOS, a two-token stop sequence, and a maximum of 20 new tokens.</li>
+              <li>Read the linked top-k and top-p modules and identify where removed candidates become impossible.</li>
+            </ol>
+            <p>
+              Tomorrow asks where those token IDs, vocabulary scores, and weight
+              operations come from. A token loop is only meaningful when tokenizer
+              files, model configuration, and weight tensors agree on the same contract.
+            </p>
+          </article>
+        </section>
+
+        <section id="day-2" class="content-section" data-search-group="Day 2" data-search-item="" data-keywords="model internals weights parameters safetensors tokenizer BPE bytes vocabulary">
+          <div class="phase-banner">
+            <div><span class="phase-number">Day 02</span><h2>A model is configuration plus named tensors</h2></div>
+            <p>Then a tokenizer supplies the integer language those tensors expect.</p>
+          </div>
+
+          <article id="day-2-intuition" class="card" data-search-item="" data-keywords="analogy warehouse blueprint inventory">
+            <h3>Beginner intuition: blueprint, warehouse, and dictionary</h3>
+            <p>
+              Think of deployment as opening a prefabricated workshop. The
+              configuration is the blueprint: number of floors, width of hallways,
+              number of attention heads, and maximum supported sequence length. The
+              weight file is a warehouse of numbered parts arranged into named
+              rectangular arrays. The tokenizer is the receiving dictionary that turns
+              outside text into the exact part numbers accepted at the entrance. A
+              model file is therefore not a Python program that contains intelligence
+              as instructions. It is mostly learned numbers plus metadata describing
+              how to interpret them.
+            </p>
+            <p>
+              This matters operationally. A wrong vocabulary maps text to wrong rows.
+              A wrong dimension makes matrix multiplication impossible. A mismatched
+              RoPE setting changes positional behavior. A missing tensor prevents a
+              layer from loading. Quantization changes representation and storage but
+              must preserve the logical shapes expected by execution. “The model
+              loaded” is meaningful only when configuration, tokenizer, tensor names,
+              data types, and architecture agree.
+            </p>
+          </article>
+
+          <article id="day-2-terms" class="card" data-search-item="" data-keywords="parameter tensor dtype safetensors BPE merge">
+            <h3>Terminology for today</h3>
+            <ul>
+              <li><strong>Weight:</strong> a learned numeric value used by the forward pass.</li>
+              <li><strong>Parameter:</strong> a learned value; a tensor’s parameter count is the product of its axis sizes.</li>
+              <li><strong>Activation:</strong> a temporary value computed from inputs and weights.</li>
+              <li><strong>Data type or dtype:</strong> numeric representation such as float32, float16, or an integer format.</li>
+              <li><strong>SafeTensors:</strong> a file format with metadata describing tensor names, shapes, types, and byte ranges followed by tensor data.</li>
+              <li><strong>Tokenizer:</strong> deterministic encoder/decoder between text and token IDs.</li>
+              <li><strong>BPE:</strong> byte pair encoding, which repeatedly applies ranked adjacent-piece merges.</li>
+              <li><strong>Special token:</strong> a reserved item such as EOS whose role is part of the model contract.</li>
+            </ul>
+          </article>
+
+          <article id="day-2-mechanics" data-search-item="" data-keywords="step by step config weight shapes model loading">
+            <h3>Step-by-step model internals and shapes</h3>
+            <ol class="flow" aria-label="Model loading mechanics">
+              <li><strong>Read config</strong>Resolve vocabulary, residual width, layers, heads, and position settings.</li>
+              <li><strong>Read metadata</strong>Map each tensor name to dtype, shape, and bytes in the weight file.</li>
+              <li><strong>Allocate or map</strong>Expose stored bytes as correctly shaped numeric arrays.</li>
+              <li><strong>Assemble layers</strong>Connect embeddings, repeated blocks, final norm, and output projection.</li>
+              <li><strong>Validate</strong>Reject divisibility, missing-tensor, dtype, tokenizer, and context mismatches.</li>
+            </ol>
+            <p>
+              Consider a tiny decoder with vocabulary <code>V=8</code>, residual width
+              <code>D=4</code>, two layers, two query heads, and feed-forward width
+              <code>F=12</code>. Its token embedding table has shape
+              <code>[V, D] = [8, 4]</code>, so it stores 32 parameters. Selecting one
+              token ID returns one row of shape <code>[4]</code>; selecting three IDs
+              returns <code>[3, 4]</code>. A bias-free linear projection is often
+              stored as <code>[out, in]</code>. A query projection that preserves width
+              is <code>[4, 4]</code>. A feed-forward up projection could be
+              <code>[12, 4]</code>, taking a four-feature token to twelve hidden
+              features. Its down projection is <code>[4, 12]</code>.
+            </p>
+            <p>
+              Repetition is central: the architecture creates a list of blocks, but
+              each block has its own learned tensors. Temporary activations scale with
+              current batch and sequence shapes; persistent weights do not. Parameter
+              count is found by multiplying tensor dimensions and summing. Storage is
+              approximately parameter count times bytes per parameter, plus metadata
+              and any quantization scales. This rough arithmetic is one reason shapes
+              are an engineering tool rather than decorative notation.
+            </p>
+          </article>
+
+          <article id="day-2-tokenization" data-search-item="" data-keywords="BPE byte pair encoding round trip token efficiency">
+            <h3>Tokenization mechanics: text is not fed directly to the model</h3>
+            <p>
+              A byte-level BPE tokenizer first represents text as bytes through an
+              encoding such as UTF-8. A reversible byte-to-symbol mapping may make all
+              bytes safe to store in vocabulary files. The encoder then examines
+              adjacent pieces, finds the pair with the best available merge rank,
+              combines every eligible occurrence according to the algorithm, and
+              repeats until no ranked pair remains. Finally, each remaining piece is
+              looked up in the vocabulary to obtain an integer ID. Decoding reverses
+              IDs to pieces, concatenates them, converts symbols back to bytes, and
+              decodes text.
+            </p>
+            <p>
+              The integer magnitude carries no semantic measurement: ID 700 is not
+              “twice” ID 350. IDs are addresses. Frequent strings often have merged
+              pieces and therefore require fewer tokens; unusual words, whitespace
+              patterns, code, or some languages may split differently. More input
+              tokens increase prefill work and occupy more KV-cache positions later.
+              More output tokens require more autoregressive decode iterations.
+              Tokenization therefore influences latency, capacity, truncation, and
+              billing, but a larger vocabulary also enlarges embedding and output
+              projection dimensions. It is a design tradeoff, not a free compression
+              switch.
+            </p>
+            <div class="callout">
+              <strong>Important distinction:</strong> The project’s
+              <code>ByteTokenizer</code> maps each UTF-8 byte directly to an ID from 0
+              through 255. It is wonderfully transparent and reversible, but it is not
+              BPE and is not token-efficient for realistic language-model serving.
+            </div>
+          </article>
+
+          <article id="day-2-example" class="card" data-search-item="" data-keywords="toy BPE worked example parameters">
+            <h3>Worked toy example: merging “banana”</h3>
+            <p>
+              Start with character-like pieces
+              <code>[b, a, n, a, n, a]</code>. Suppose ranked rules prefer
+              <code>(a,n) → an</code> first and <code>(an,a) → ana</code> second.
+              Applying the first rule produces <code>[b, an, an, a]</code>. Applying
+              the second where it matches produces a possible final segmentation
+              <code>[b, an, ana]</code>. If the vocabulary maps these pieces to
+              IDs <code>[5, 11, 19]</code>, the model receives those addresses. The
+              exact result depends on the tokenizer’s formal pre-tokenization and merge
+              rules; this tiny example illustrates ranking rather than reproducing a
+              production tokenizer.
+            </p>
+            <p>
+              Now use the Day 2 tiny model. Looking up IDs <code>[5, 11, 19]</code>
+              in an embedding table shaped <code>[20, 4]</code> yields activations
+              shaped <code>[3, 4]</code>. If that table uses float32, it stores
+              <code>20 × 4 × 4 = 320</code> bytes. The example shows the contract:
+              tokenizer IDs must be below 20, and every selected row has exactly four
+              values because the residual width is four.
+            </p>
+          </article>
+
+          <article id="day-2-equations" data-search-item="" data-keywords="parameter count storage equation">
+            <h3>Equations, symbol by symbol</h3>
+            <div class="formula">parameters(W) = ∏ shape_axis = rows × columns for a matrix</div>
+            <p>
+              The product symbol <code>∏</code> means multiply every axis size. For
+              <code>W</code> shaped <code>[12, 4]</code>, the parameter count is 48.
+            </p>
+            <div class="formula">storage_bytes ≈ parameter_count × bytes_per_parameter</div>
+            <p>
+              <code>storage_bytes</code> is approximate file or memory payload;
+              <code>parameter_count</code> is the number of stored values; and
+              <code>bytes_per_parameter</code> depends on dtype. Metadata, alignment,
+              quantization scales, and runtime copies can make real usage differ.
+            </p>
+            <div class="formula">head_dim = model_dim / number_of_query_heads</div>
+            <p>
+              <code>model_dim</code> is the residual width, and
+              <code>head_dim</code> is each query head’s feature width. Division must
+              be exact. RoPE implementations that rotate pairs also require an even
+              head dimension.
+            </p>
+          </article>
+
+          <article id="day-2-code" data-search-item="" data-keywords="mini_infer config tokenizer code">
+            <h3>Connection to <code>mini_infer</code> and performance</h3>
+            <p>
+              Read
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/common/config.py">common/config.py</a>
+              to see configuration validation: residual width divisibility, even head
+              width for RoPE, and query-head divisibility by KV heads. Then read
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/common/tokenizer.py">common/tokenizer.py</a>
+              for the dependency-free byte tokenizer. The model assembly in
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/backends/python/model.py">backends/python/model.py</a>
+              creates one embedding, repeated blocks, a final RMSNorm, and an output
+              weight that may be tied to the input embedding.
+            </p>
+            <p>
+              During prefill, token count determines how many prompt positions pass
+              through every layer and how large attention’s position-by-position work
+              becomes. During decode, the tokenizer determines the number of loop
+              iterations needed to express an answer. Vocabulary size affects the
+              embedding table and final vocabulary projection. The nested-list backend
+              is intentionally readable and deterministic; production runtimes use
+              optimized tensor libraries, fused kernels, accelerator memory layouts,
+              and sophisticated weight loading.
+            </p>
+          </article>
+
+          <article id="day-2-mistakes" class="card" data-search-item="" data-keywords="common mistakes">
+            <h3>Common beginner mistakes</h3>
+            <ul>
+              <li>Calling a checkpoint “the model code” when it is mainly learned tensors and metadata.</li>
+              <li>Assuming token IDs have numeric distance or order that represents meaning.</li>
+              <li>Using a tokenizer from a different checkpoint because its vocabulary size happens to match.</li>
+              <li>Confusing parameters, which persist, with activations, which are computed per request.</li>
+              <li>Calculating memory from parameter count while ignoring dtype and runtime copies.</li>
+              <li>Assuming BPE simply merges the first adjacent pair rather than following ranked rules and pre-tokenization.</li>
+              <li>Assuming fewer tokens always wins without considering vocabulary projection and embedding cost.</li>
+            </ul>
+          </article>
+
+          <article id="day-2-check" data-search-item="" data-keywords="check understanding questions answers">
+            <h3>Check your understanding</h3>
+            <details class="qa-item"><summary>What is the difference between a weight and an activation?</summary><div class="qa-answer">A weight is learned and persistent; an activation is computed temporarily from request inputs and weights.</div></details>
+            <details class="qa-item"><summary>How many parameters are in a <code>[8, 4]</code> embedding table?</summary><div class="qa-answer">32 parameters, because 8 × 4 = 32.</div></details>
+            <details class="qa-item"><summary>Why must tokenizer and model agree?</summary><div class="qa-answer">The model associates meaning with specific vocabulary rows; mismatched ID assignments select the wrong rows.</div></details>
+            <details class="qa-item"><summary>What does BPE use to choose a merge?</summary><div class="qa-answer">A ranked merge table over adjacent pieces, after the tokenizer’s pre-tokenization and byte mapping rules.</div></details>
+            <details class="qa-item"><summary>Why can token count affect both latency and memory?</summary><div class="qa-answer">It sets prompt positions processed in prefill, output decode iterations, and positions stored in the KV cache.</div></details>
+          </article>
+
+          <article id="day-2-exercises" class="card" data-search-item="" data-keywords="practical exercises bridge">
+            <h3>Practical exercises and bridge to Day 3</h3>
+            <ol>
+              <li>For <code>V=256</code>, <code>D=32</code>, calculate embedding parameters and float32 bytes.</li>
+              <li>Encode an emoji with <code>ByteTokenizer</code>, inspect its IDs, and verify decode returns the same text.</li>
+              <li>Draw a table of expected shapes for embedding, query projection, and an MLP up/down pair.</li>
+              <li>Explain what validation should fail when <code>D=30</code> and there are eight query heads.</li>
+            </ol>
+            <p>
+              We now have IDs and weight tables, but IDs themselves contain no geometry.
+              Day 3 follows the embedding lookup that turns addresses into vectors and
+              the output projection that turns final vectors back into vocabulary logits.
+            </p>
+          </article>
+        </section>
+
+        <section id="day-3" class="content-section" data-search-group="Day 3" data-search-item="" data-keywords="embeddings residual stream logits output projection tied weights cosine position">
+          <div class="phase-banner">
+            <div><span class="phase-number">Day 03</span><h2>Embeddings enter the model; logits leave it</h2></div>
+            <p>The same vocabulary can be viewed as rows at both ends of the network.</p>
+          </div>
+
+          <article id="day-3-intuition" class="card" data-search-item="" data-keywords="analogy library card coordinates">
+            <h3>Beginner intuition: addresses become coordinates</h3>
+            <p>
+              A token ID is like a library card number: useful for finding a record but
+              not itself a description of the book. An embedding table replaces the
+              integer address with a learned list of features. Do not expect a single
+              feature to mean “animal” or “past tense.” Meaning is distributed across
+              many coordinates and becomes context-sensitive after transformer blocks.
+              Tokens that the model uses similarly may develop useful geometric
+              relationships, but the raw table is only the starting representation.
+            </p>
+            <p>
+              This matters because nearly every model operation preserves or transforms
+              a common residual width. Shapes such as <code>[sequence, dim]</code>
+              become the thread you can follow through normalization, attention, MLPs,
+              and residual additions. At the far end, an output projection compares each
+              final token representation with one learned row per vocabulary item to
+              produce logits. Input and output are therefore two views of the same
+              vocabulary contract.
+            </p>
+          </article>
+
+          <article id="day-3-terms" class="card" data-search-item="" data-keywords="embedding lookup residual stream unembedding tied weights cosine">
+            <h3>Terminology for today</h3>
+            <ul>
+              <li><strong>Embedding:</strong> a dense learned vector selected for an ID.</li>
+              <li><strong>Embedding table:</strong> matrix shaped <code>[vocab, dim]</code>.</li>
+              <li><strong>Residual stream:</strong> the width-<code>D</code> representation carried through blocks and updated by residual additions.</li>
+              <li><strong>Position representation:</strong> information that distinguishes where otherwise similar tokens occur.</li>
+              <li><strong>Output projection or unembedding:</strong> map from final width <code>D</code> to <code>V</code> logits.</li>
+              <li><strong>Weight tying:</strong> reusing the token embedding table as the output projection weight.</li>
+              <li><strong>Cosine similarity:</strong> normalized directional similarity between vectors.</li>
+            </ul>
+          </article>
+
+          <article id="day-3-mechanics" data-search-item="" data-keywords="step mechanics shapes embedding norm output logits">
+            <h3>Step-by-step mechanics with shapes</h3>
+            <ol class="flow" aria-label="Embedding-to-logits mechanics">
+              <li><strong>Look up</strong>IDs <code>[S]</code> select rows from <code>[V,D]</code>, producing <code>[S,D]</code>.</li>
+              <li><strong>Add position</strong>Use learned position vectors or encode position later with RoPE.</li>
+              <li><strong>Transform</strong>Send <code>[S,D]</code> through repeated width-preserving blocks.</li>
+              <li><strong>Normalize</strong>Stabilize each final width-<code>D</code> token vector.</li>
+              <li><strong>Project</strong>Multiply by vocabulary weights to produce logits <code>[S,V]</code>.</li>
+            </ol>
+            <p>
+              With a batch axis included, IDs usually have shape <code>[B,S]</code>,
+              embeddings <code>[B,S,D]</code>, and logits <code>[B,S,V]</code>.
+              The pure-Python backend handles one sequence, so it uses
+              <code>[S]</code>, <code>[S,D]</code>, and <code>[S,V]</code>.
+              Omitting a batch axis is an implementation choice, not a change in model
+              mathematics.
+            </p>
+            <p>
+              Lookup is array indexing, not multiplication by the integer ID. A useful
+              mathematical fiction is to represent ID <code>t</code> as a one-hot row
+              vector of length <code>V</code> whose only 1 is at position
+              <code>t</code>. Multiplying that one-hot vector by
+              <code>E ∈ ℝ^(V×D)</code> selects row <code>E_t</code>. Real code indexes
+              directly because constructing mostly-zero one-hot vectors would waste
+              time and memory.
+            </p>
+          </article>
+
+          <article id="day-3-equations" data-search-item="" data-keywords="embedding output projection cosine equations symbols">
+            <h3>Equations, explained symbol by symbol</h3>
+            <div class="formula">x_s = E[token_id_s]</div>
+            <p>
+              <code>s</code> is a sequence position; <code>token_id_s</code> is the ID
+              at that position; <code>E</code> is the <code>[V,D]</code> embedding
+              table; and <code>x_s</code> is the selected <code>[D]</code> row.
+            </p>
+            <div class="formula">z_s = W_out h_s</div>
+            <p>
+              <code>h_s</code> is the final normalized <code>[D]</code> hidden vector;
+              <code>W_out</code> is shaped <code>[V,D]</code> under the project’s
+              out-by-in storage convention; and <code>z_s</code> is the
+              <code>[V]</code> logit vector. Each output row takes a dot product with
+              <code>h_s</code>. If weights are tied, <code>W_out = E</code>.
+            </p>
+            <div class="formula">cos(a,b) = (a · b) / (||a||₂ ||b||₂)</div>
+            <p>
+              <code>a · b</code> is the dot product, multiplying matching coordinates
+              and summing. <code>||a||₂</code> is the Euclidean length. The result
+              compares direction rather than raw magnitude and ranges from -1 to 1
+              when both vectors are nonzero. Similarity is a probe, not proof that one
+              coordinate has a clean human interpretation.
+            </p>
+          </article>
+
+          <article id="day-3-example" class="card" data-search-item="" data-keywords="worked toy embedding logit example">
+            <h3>Worked toy example: lookup, then unembed</h3>
+            <p>
+              Use four vocabulary items with a two-dimensional tied embedding table:
+            </p>
+            <pre><code>ID  token     embedding
+0   "red"     [ 1.0,  0.0]
+1   "blue"    [ 0.0,  1.0]
+2   "warm"    [ 0.8,  0.2]
+3   "cold"    [-0.2,  0.9]</code></pre>
+            <p>
+              IDs <code>[0,2]</code> look up to a <code>[2,2]</code> activation:
+              <code>[[1,0],[0.8,0.2]]</code>. Pretend the transformer’s final hidden
+              vector for the last position is <code>h=[0.9,0.1]</code>. Taking a dot
+              product with each tied row gives logits: red
+              <code>1×0.9 + 0×0.1 = 0.9</code>; blue <code>0.1</code>; warm
+              <code>0.8×0.9 + 0.2×0.1 = 0.74</code>; cold
+              <code>-0.2×0.9 + 0.9×0.1 = -0.09</code>. The shape is
+              <code>[4]</code>. Greedy would choose “red.” Softmax would turn these
+              scores into probabilities. Real dimensions and relationships are far
+              larger and more complicated, but the row-wise dot products are the same
+              idea.
+            </p>
+          </article>
+
+          <article id="day-3-position" data-search-item="" data-keywords="learned positional embedding RoPE order">
+            <h3>Where order enters</h3>
+            <p>
+              A bare token lookup gives the same starting row every time an ID appears.
+              A model still needs position. GPT-2 adds a learned position table
+              <code>P ∈ ℝ^(max_seq_len×D)</code>, making the initial activation at
+              position <code>s</code> equal to <code>E[token_s] + P[s]</code>.
+              The addition is legal because both rows have shape <code>[D]</code>.
+              Learned tables have a configured row limit. Modern decoder designs often
+              use RoPE instead: token embeddings enter without an added position table,
+              and position-dependent rotations are applied to queries and keys inside
+              attention. Day 4 explains why that still changes which positions match.
+            </p>
+          </article>
+
+          <article id="day-3-code" data-search-item="" data-keywords="mini_infer embedding model linear code performance">
+            <h3>Connection to <code>mini_infer</code> and performance</h3>
+            <p>
+              In
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/backends/python/embedding.py">backends/python/embedding.py</a>,
+              <code>Embedding.__call__</code> validates each ID and copies the selected
+              row, returning <code>[sequence, dim]</code>. In
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/backends/python/model.py">backends/python/model.py</a>,
+              the hidden vectors traverse blocks and RMSNorm, then
+              <code>linear(vector, output_weight)</code> creates one vocabulary-logit
+              row per supplied token. Read
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/backends/python/matrix.py">backends/python/matrix.py</a>
+              to see the dot products explicitly.
+            </p>
+            <p>
+              Prefill creates embeddings and logits for many prompt positions, though
+              a generation API usually retains only the last logit row for selection.
+              Decode creates the same kind of embedding and vocabulary row for one new
+              position at a time. Large vocabularies make the final projection and
+              probability processing noticeable; optimized systems may fuse or
+              specialize these steps. Again, nested Python lists optimize for
+              inspectability, not production throughput.
+            </p>
+          </article>
+
+          <article id="day-3-mistakes" class="card" data-search-item="" data-keywords="common mistakes">
+            <h3>Common beginner mistakes</h3>
+            <ul>
+              <li>Multiplying an embedding vector by the integer token ID instead of selecting a table row.</li>
+              <li>Assuming ID proximity implies embedding proximity.</li>
+              <li>Confusing embedding dimension <code>D</code> with vocabulary size <code>V</code>.</li>
+              <li>Thinking an embedding remains unchanged through layers; contextual hidden states evolve.</li>
+              <li>Assuming cosine similarity fully explains what a model “believes.”</li>
+              <li>Forgetting final normalization before the output projection in architectures that require it.</li>
+              <li>Assuming tied weights mean input embeddings and final hidden states are identical objects.</li>
+            </ul>
+          </article>
+
+          <article id="day-3-check" data-search-item="" data-keywords="check understanding questions answers">
+            <h3>Check your understanding</h3>
+            <details class="qa-item"><summary>What shape results when five IDs index <code>E[1000,64]</code>?</summary><div class="qa-answer"><code>[5,64]</code>: one 64-value row per ID.</div></details>
+            <details class="qa-item"><summary>Why is lookup not ordinary multiplication by an ID?</summary><div class="qa-answer">The ID is a discrete address selecting a learned row; its numeric magnitude has no scaling meaning.</div></details>
+            <details class="qa-item"><summary>What does the output projection produce?</summary><div class="qa-answer">One unrestricted logit per vocabulary item for each supplied sequence position.</div></details>
+            <details class="qa-item"><summary>What does weight tying save?</summary><div class="qa-answer">It avoids storing a separate <code>[V,D]</code> output matrix and links input/output vocabulary geometry.</div></details>
+            <details class="qa-item"><summary>Why does position information matter?</summary><div class="qa-answer">Without it, attention cannot distinguish different orders containing the same token representations.</div></details>
+          </article>
+
+          <article id="day-3-exercises" class="card" data-search-item="" data-keywords="practical exercises bridge">
+            <h3>Practical exercises and bridge to Day 4</h3>
+            <ol>
+              <li>Create a five-row, three-column table and manually look up IDs <code>[4,1,4]</code>.</li>
+              <li>Choose a hidden vector and compute all five tied-weight logits by hand.</li>
+              <li>Calculate the parameter saving from tying weights for <code>V=50,000</code>, <code>D=768</code>, float32.</li>
+              <li>Trace shapes through <code>Embedding</code>, final <code>RMSNorm</code>, and output <code>linear</code> in the linked source.</li>
+            </ol>
+            <p>
+              So far, each lookup begins as an isolated token row. Day 4 supplies the
+              mechanism that lets every position gather relevant information from
+              visible earlier positions while an MLP transforms each position locally.
+            </p>
+          </article>
+        </section>
+
+        <section id="day-4" class="content-section" data-search-group="Day 4" data-search-item="" data-keywords="transformer block attention query key value causal mask softmax RoPE GQA MLP RMSNorm residual">
+          <div class="phase-banner">
+            <div><span class="phase-number">Day 04</span><h2>Transformer blocks mix context and transform features</h2></div>
+            <p>Attention communicates across positions; the MLP works within each position.</p>
+          </div>
+
+          <article id="day-4-intuition" class="card" data-search-item="" data-keywords="analogy meeting query key value">
+            <h3>Beginner intuition: a searchable meeting notebook</h3>
+            <p>
+              Picture each token as a participant carrying a notebook. A participant
+              writes a query describing what information it needs. Every visible
+              participant exposes a key describing what its note is about and a value
+              containing the information to share. Query-key compatibility decides
+              attention, and the weighted mixture of values becomes the gathered
+              message. Several heads are several simultaneous search strategies. A
+              causal rule closes future notebook pages, so generation cannot peek at
+              tokens that do not exist yet.
+            </p>
+            <p>
+              This matters because attention is both the context mechanism and a major
+              systems cost. During prompt prefill, many query positions compare against
+              many key positions. During cached decode, one new query compares with all
+              retained keys. RoPE carries relative positional structure into those
+              comparisons. GQA reduces the number of key/value histories without
+              reducing query-head count, directly reducing cache memory.
+            </p>
+          </article>
+
+          <article id="day-4-terms" class="card" data-search-item="" data-keywords="RMSNorm residual MLP causal MHA GQA RoPE">
+            <h3>Terminology for today</h3>
+            <ul>
+              <li><strong>RMSNorm:</strong> scale normalization based on root mean square, without subtracting a mean.</li>
+              <li><strong>Residual connection:</strong> addition of a sublayer update back to its input.</li>
+              <li><strong>Query, key, value:</strong> projected vectors used to request, match, and retrieve information.</li>
+              <li><strong>Attention head:</strong> one independent query/key/value matching subspace.</li>
+              <li><strong>Causal mask:</strong> rule blocking a position from attending to later positions.</li>
+              <li><strong>MHA:</strong> multi-head attention with one key/value head per query head.</li>
+              <li><strong>GQA:</strong> grouped-query attention where groups of query heads share key/value heads.</li>
+              <li><strong>RoPE:</strong> rotary position embedding, a position-dependent rotation applied to query and key feature pairs.</li>
+              <li><strong>MLP or FFN:</strong> per-position feed-forward network, often expanding then contracting feature width.</li>
+            </ul>
+          </article>
+
+          <article id="day-4-block" data-search-item="" data-keywords="transformer block mechanics shapes pre norm SwiGLU">
+            <h3>Inside one pre-normalized block</h3>
+            <ol class="flow" aria-label="Transformer block mechanics">
+              <li><strong>Normalize</strong>RMSNorm each <code>[D]</code> token row.</li>
+              <li><strong>Attend</strong>Project Q/K/V, rotate Q/K, mix visible values, and output width <code>D</code>.</li>
+              <li><strong>Add</strong>Residual-add the attention update to the block input.</li>
+              <li><strong>Transform</strong>Normalize again, pass each position through the gated MLP.</li>
+              <li><strong>Add again</strong>Residual-add the MLP update, preserving <code>[S,D]</code>.</li>
+            </ol>
+            <p>
+              Let <code>B=1</code>, <code>S=3</code>, <code>D=8</code>, two query
+              heads, and head width <code>H=4</code>. Input is
+              <code>[1,3,8]</code>. Query projection remains
+              <code>[1,3,8]</code>, then reshapes to
+              <code>[1,2,3,4]</code>: batch, heads, sequence, head features. With MHA,
+              keys and values have the same shape. For each head,
+              <code>Q × Kᵀ</code> turns <code>[3,4] × [4,3]</code> into a
+              <code>[3,3]</code> score matrix. Every row is a query position; every
+              column is a key position. Masking, row-wise softmax, and multiplication by
+              <code>V[3,4]</code> return <code>[3,4]</code> per head. Concatenating two
+              heads returns width 8; an output projection mixes the heads.
+            </p>
+          </article>
+
+          <article id="day-4-attention" data-search-item="" data-keywords="scaled dot product attention equation symbols causal mask">
+            <h3>Scaled dot-product attention, symbol by symbol</h3>
+            <div class="formula">Attention(Q,K,V) = softmax((QKᵀ / √d_h) + M) V</div>
+            <p>
+              <code>Q</code> contains query rows, <code>K</code> key rows, and
+              <code>V</code> value rows. <code>Kᵀ</code> transposes keys so every query
+              dot-products every key. <code>d_h</code> is head width. Dividing by its
+              square root prevents dot-product magnitude from growing so much with
+              width that softmax becomes extremely saturated. <code>M</code> is the
+              mask: allowed entries add zero; blocked future entries add negative
+              infinity, yielding probability zero. Softmax is row-wise, so each query’s
+              weights over visible keys sum to one. Multiplication by <code>V</code>
+              makes a weighted sum of value vectors.
+            </p>
+            <p>
+              The causal score matrix is triangular. Query position 0 can use only key
+              0. Query 1 can use keys 0 and 1. Query 2 can use keys 0, 1, and 2. During
+              full prefill this rule must be explicit because multiple query positions
+              run together. During one-token decode with a correctly bounded cache, all
+              stored positions are in the past or present, so there are no future cache
+              entries to block.
+            </p>
+          </article>
+
+          <article id="day-4-rope" data-search-item="" data-keywords="RoPE rotation equation theta position relative">
+            <h3>RoPE: position as rotation</h3>
+            <p>
+              RoPE groups adjacent query and key features into two-dimensional pairs.
+              For one pair <code>(x₀,x₁)</code> at position <code>p</code>, use angle
+              <code>φ = p × θ^(-r/d_h)</code> for a frequency determined by pair index
+              <code>r</code>, head width <code>d_h</code>, and base <code>θ</code>.
+              The project expresses the rotation as:
+            </p>
+            <div class="formula">
+              x'₀ = x₀ cos(φ) − x₁ sin(φ)<br />
+              x'₁ = x₀ sin(φ) + x₁ cos(φ)
+            </div>
+            <p>
+              <code>p</code> changes the angle, while different feature pairs rotate at
+              different frequencies. Rotation preserves the pair’s length. Applying
+              related rotations to queries and keys makes their dot product depend on
+              positional difference, giving attention useful relative-position
+              structure. Values are not rotated in this implementation because
+              position affects matching; the retrieved content can remain in its value
+              representation. Cached keys must already contain the correct rotation for
+              their absolute positions, and a new decode token must use
+              <code>start_pos = cached_token_count</code>.
+            </p>
+          </article>
+
+          <article id="day-4-gqa" data-search-item="" data-keywords="GQA grouped query attention KV heads cache memory">
+            <h3>GQA: many questions, fewer shared indexes</h3>
+            <p>
+              Suppose <code>n_heads=8</code> and <code>n_kv_heads=2</code>. There are
+              eight query heads but only two key heads and two value heads. The grouping
+              factor is <code>8/2=4</code>: query heads 0–3 use KV head 0, and heads
+              4–7 use KV head 1. Query shape remains
+              <code>[B,8,S,H]</code>; key and value shapes become
+              <code>[B,2,S,H]</code>. Compared with MHA, key/value projection output
+              and KV-cache storage fall by a factor of four in this example.
+            </p>
+            <div class="formula">queries_per_kv = n_query_heads / n_kv_heads</div>
+            <p>
+              The numerator counts query heads and the denominator key/value heads.
+              Exact divisibility gives equal contiguous groups. GQA preserves multiple
+              query perspectives while sharing the information index and content store.
+              It is a model architecture decision reflected in checkpoint shapes; a
+              server cannot arbitrarily turn an MHA checkpoint into GQA without changing
+              weights and behavior.
+            </p>
+          </article>
+
+          <article id="day-4-example" class="card" data-search-item="" data-keywords="worked toy attention example softmax">
+            <h3>Worked toy example: one query attends to two values</h3>
+            <p>
+              Let head width be 2. The current query is <code>q=[1,0]</code>. Visible
+              keys are <code>k₀=[1,0]</code> and <code>k₁=[0,1]</code>; values are
+              <code>v₀=[10,0]</code> and <code>v₁=[0,6]</code>. Dot products are 1 and
+              0. Divide by <code>√2 ≈ 1.414</code> to get scores
+              <code>[0.707,0]</code>. Exponentials are approximately
+              <code>[2.028,1]</code>, so softmax weights are about
+              <code>[0.670,0.330]</code>. The output is
+              <code>0.670[10,0] + 0.330[0,6] = [6.70,1.98]</code>.
+              Attention did not select a single value; it formed a weighted mixture.
+              If key 1 were a future position, masking would set its score to negative
+              infinity, making the result exactly <code>[10,0]</code>.
+            </p>
+          </article>
+
+          <article id="day-4-code" data-search-item="" data-keywords="mini_infer attention rope block code performance quadratic">
+            <h3>Connection to <code>mini_infer</code> and prefill/decode performance</h3>
+            <p>
+              The complete reference path is split across
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/backends/python/attention.py">attention.py</a>,
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/backends/python/rope.py">rope.py</a>, and
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/backends/python/block.py">block.py</a>.
+              Attention creates query heads for every input token, appends rotated key
+              heads and value heads to the cache, computes only through
+              <code>last_visible</code>, maps each query head to a KV group, and
+              projects concatenated attended heads. The block wraps it with RMSNorm,
+              SwiGLU, and two residual additions.
+            </p>
+            <p>
+              Full prefill attention compares many prompt queries with many prompt
+              keys, giving quadratic score-pair growth with sequence length in the
+              straightforward algorithm. Decode with a cache has one new query per
+              sequence, so attention-score work per layer grows roughly linearly with
+              retained context rather than recomputing a square for all earlier
+              queries. FlashAttention improves memory traffic and kernel execution for
+              exact attention; it does not change the mathematical dependency that
+              queries must account for visible keys. The reference nested loops are a
+              simulation for learning, not a production kernel benchmark.
+            </p>
+          </article>
+
+          <article id="day-4-mistakes" class="card" data-search-item="" data-keywords="common mistakes">
+            <h3>Common beginner mistakes</h3>
+            <ul>
+              <li>Thinking Q, K, and V are separate input texts rather than learned projections of activations.</li>
+              <li>Applying softmax over the wrong axis; each query row must normalize over visible keys.</li>
+              <li>Forgetting the <code>√d_h</code> scale or using total model width instead of head width.</li>
+              <li>Believing attention outputs only the highest-value token rather than a weighted mixture.</li>
+              <li>Rotating values with RoPE in an architecture that specifies rotation only for queries and keys.</li>
+              <li>Assuming GQA reduces query heads; it reduces KV heads while query-head count can remain high.</li>
+              <li>Calling all quadratic work “the Transformer”; MLP and projections have different scaling behavior.</li>
+            </ul>
+          </article>
+
+          <article id="day-4-check" data-search-item="" data-keywords="check understanding questions answers">
+            <h3>Check your understanding</h3>
+            <details class="qa-item"><summary>What do rows and columns of an attention-score matrix represent?</summary><div class="qa-answer">Rows are query positions; columns are key positions.</div></details>
+            <details class="qa-item"><summary>Why add negative infinity for a masked position?</summary><div class="qa-answer">Its exponential becomes zero, so softmax gives that future position zero probability.</div></details>
+            <details class="qa-item"><summary>Why divide scores by <code>√d_h</code>?</summary><div class="qa-answer">To control dot-product scale as head width grows and avoid overly saturated softmax.</div></details>
+            <details class="qa-item"><summary>Which vectors does RoPE rotate here?</summary><div class="qa-answer">Queries and keys, in adjacent feature pairs, using position-dependent angles.</div></details>
+            <details class="qa-item"><summary>With 12 query heads and 3 KV heads, how many query heads share each KV head?</summary><div class="qa-answer">Four query heads per KV head.</div></details>
+            <details class="qa-item"><summary>What remains shaped <code>[S,D]</code> across a block?</summary><div class="qa-answer">The residual-stream input and output, enabling residual additions and stacked blocks.</div></details>
+          </article>
+
+          <article id="day-4-exercises" class="card" data-search-item="" data-keywords="practical exercises bridge">
+            <h3>Practical exercises and bridge to Day 5</h3>
+            <ol>
+              <li>Draw a causal mask for four positions and list visible keys for every query.</li>
+              <li>Compute the toy attention example after changing the query to <code>[0,1]</code>.</li>
+              <li>For <code>D=32</code>, eight query heads, and two KV heads, write Q/K/V output widths and grouping factor.</li>
+              <li>Use the RoPE formula to rotate <code>[1,0]</code> by angle <code>π/2</code>.</li>
+            </ol>
+            <p>
+              During generation, old token keys and values do not change. Day 5 asks
+              the decisive systems question: why project and rotate them again on every
+              step when they can be retained once and reused?
+            </p>
+          </article>
+        </section>
+
+        <section id="day-5" class="content-section" data-search-group="Day 5" data-search-item="" data-keywords="KV cache keys values prefill decode memory bytes per token start_pos recomputation">
+          <div class="phase-banner">
+            <div><span class="phase-number">Day 05</span><h2>The KV cache trades memory for avoided recomputation</h2></div>
+            <p>Compute past keys and values once; let each new query read them again.</p>
+          </div>
+
+          <article id="day-5-intuition" class="card" data-search-item="" data-keywords="analogy index cards archive">
+            <h3>Beginner intuition: keep the catalog cards</h3>
+            <p>
+              Imagine answering a sequence of research questions from the same growing
+              document. Without notes, you rebuild an index card for every old paragraph
+              before answering each new question. With a cache, you file each paragraph’s
+              key and value cards once. The next question needs one new query card, one
+              new key card, and one new value card; it then searches all filed key cards
+              and mixes the corresponding values. The archive grows, but old cards are
+              never reconstructed.
+            </p>
+            <p>
+              This matters because autoregressive generation can otherwise repeat large
+              amounts of layer work. The optimization preserves attention mathematics
+              when implemented correctly: old K/V vectors are deterministic functions
+              of earlier layer inputs, weights, and positions. The price is persistent
+              per-request memory, allocation complexity, fragmentation risk, and
+              additional reads. At serving scale, KV capacity can limit concurrent
+              sequences even when model weights fit comfortably.
+            </p>
+          </article>
+
+          <article id="day-5-terms" class="card" data-search-item="" data-keywords="cache entry cache length append prefill decode">
+            <h3>Terminology for today</h3>
+            <ul>
+              <li><strong>KV cache:</strong> retained key and value vectors for every layer and processed position.</li>
+              <li><strong>Cache entry:</strong> one position’s K/V heads at one layer.</li>
+              <li><strong>Cache length:</strong> number of processed positions represented in every layer cache.</li>
+              <li><strong>Prefill cache:</strong> K/V state created while processing prompt tokens.</li>
+              <li><strong>Incremental decode:</strong> forwarding only new positions while supplying earlier cache state.</li>
+              <li><strong>Cache capacity:</strong> token positions that available memory can hold for active sequences.</li>
+              <li><strong>Cache correctness:</strong> equivalence of cached and uncached logits within expected numerical tolerance.</li>
+            </ul>
+          </article>
+
+          <article id="day-5-mechanics" data-search-item="" data-keywords="step by step cache shapes layers heads head_dim">
+            <h3>Step-by-step mechanics with shapes</h3>
+            <ol class="flow" aria-label="KV cache mechanics">
+              <li><strong>Prefill prompt</strong>Compute all layer K/V vectors for <code>S</code> prompt positions.</li>
+              <li><strong>Store per layer</strong>Retain keys and values shaped <code>[S,H_kv,D_h]</code>.</li>
+              <li><strong>Choose token</strong>Use the prompt’s final logit row to select the first generated ID.</li>
+              <li><strong>Decode one</strong>Embed the new ID and compute only its new Q/K/V at each layer.</li>
+              <li><strong>Append and attend</strong>Add new K/V to each cache; the new Q reads the complete K/V history.</li>
+            </ol>
+            <p>
+              In the project’s single-sequence representation, one layer cache has
+              keys and values each shaped conceptually
+              <code>[tokens, kv_heads, head_dim]</code>. A model cache is a list with
+              one such cache per transformer layer. With batch dimensions and
+              production layouts, axes may be reordered and split into pages, but the
+              logical information is the same.
+            </p>
+            <p>
+              Suppose a prompt has five tokens. Prefill fills positions 0 through 4.
+              The first decode input begins at <code>start_pos=5</code>. Its query uses
+              position 5, its key is rotated for position 5, and the key/value pair is
+              appended. The cache length becomes 6. Passing the entire six-token
+              sequence together with that cache would double-count history; the cached
+              path should receive only positions not already represented. Every layer
+              must agree on cache length because a token cannot be at position 6 in one
+              layer and position 5 in another.
+            </p>
+          </article>
+
+          <article id="day-5-equations" data-search-item="" data-keywords="KV cache memory equation symbols bytes per token GQA">
+            <h3>KV memory equation, symbol by symbol</h3>
+            <div class="formula">
+              cache_bytes = 2 × L × B × S × H_kv × D_h × bytes_per_element
+            </div>
+            <p>
+              The factor <code>2</code> stores both keys and values.
+              <code>L</code> is transformer-layer count. <code>B</code> is active batch
+              or number of equally sized sequences in this simple estimate.
+              <code>S</code> is cached sequence length. <code>H_kv</code> is KV-head
+              count. <code>D_h</code> is head width. The final factor is numeric storage
+              per element, often two bytes for a 16-bit cache. Since
+              <code>H_kv × D_h</code> equals the total KV width, the estimate is also
+              often written <code>2 × L × B × S × kv_width × bytes</code>.
+            </p>
+            <p>
+              For <code>L=4</code>, <code>B=1</code>, <code>S=10</code>,
+              <code>H_kv=2</code>, <code>D_h=4</code>, and two-byte elements:
+              <code>2×4×1×10×2×4×2 = 1,280</code> bytes. Each additional token costs
+              <code>2×4×2×4×2 = 128</code> bytes. With four sequences of equal length,
+              multiply by four. Real allocators reserve blocks and metadata, so physical
+              usage may exceed this logical payload.
+            </p>
+          </article>
+
+          <article id="day-5-example" class="card" data-search-item="" data-keywords="worked toy cache example equivalence">
+            <h3>Worked toy example: two decode steps</h3>
+            <p>
+              Use one layer, one head, and head width two. After a two-token prefill,
+              let cached keys be <code>[[1,0],[0,1]]</code> and values be
+              <code>[[4,0],[0,8]]</code>. A new token at position 2 produces
+              <code>q₂=[1,1]</code>, <code>k₂=[1,1]</code>, and
+              <code>v₂=[2,2]</code>. Append <code>k₂</code> and <code>v₂</code>; now
+              attention for <code>q₂</code> uses all three keys and values. On the next
+              decode step, a new <code>q₃</code> uses four entries after
+              <code>k₃,v₃</code> are appended. The old pairs are read but not
+              recomputed.
+            </p>
+            <p>
+              An uncached full forward over tokens 0–2 would recreate K/V for all three
+              positions and produce the same final-position logits in exact arithmetic.
+              A correctness test should run both paths with identical weights and IDs,
+              compare last-position logits or selected IDs across several steps, and
+              allow only expected floating-point tolerance. Speed without equivalence is
+              not an optimization; it is a model change or bug.
+            </p>
+          </article>
+
+          <article id="day-5-compute" data-search-item="" data-keywords="complexity no cache cached prefill decode latency">
+            <h3>What computation is actually saved?</h3>
+            <p>
+              Without caching, decode step <code>t</code> forwards the whole prefix of
+              length <code>t</code> through every layer, recreating projections and
+              intermediate states for old positions. Across many generated steps, this
+              repeatedly pays for earlier work. With caching, the model processes one
+              new token through normalization, projections, attention, MLP, and output
+              projection. Attention still compares the new query with an increasingly
+              long key history and mixes an increasingly long value history. Cached
+              decode is therefore not constant-work in a strict algorithmic sense, even
+              if short benchmark curves look flat; per-token KV reads and attention
+              operations grow with context length.
+            </p>
+            <p>
+              Prefill remains distinct. It handles the prompt in parallel and creates
+              the initial cache; time to first token includes this work. Decode reuses
+              that cache and influences inter-token latency. A long prompt may make
+              prefill compute-heavy, while many concurrent decoders can make memory
+              bandwidth and KV capacity dominant. This distinction explains why engines
+              schedule prompt tokens and decode tokens differently.
+            </p>
+          </article>
+
+          <article id="day-5-code" data-search-item="" data-keywords="mini_infer KVCache estimator model code simulation">
+            <h3>Connection to <code>mini_infer</code></h3>
+            <p>
+              The <code>KVCache</code> dataclass and append/read behavior are visible in
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/backends/python/attention.py">backends/python/attention.py</a>.
+              <code>forward_with_cache</code> in
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/backends/python/model.py">backends/python/model.py</a>
+              checks that there is one cache per block, all block caches contain the
+              same number of tokens, and <code>start_pos</code> equals that number.
+              Those validations turn silent positional corruption into an explicit
+              error. Memory arithmetic is isolated in
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/kv_cache_estimator.py">optimizations/kv_cache_estimator.py</a>,
+              which computes bytes per token and maximum tokens for a memory budget.
+            </p>
+            <div class="callout">
+              <strong>Simulation honesty:</strong> The reference cache uses Python
+              objects and nested lists, so its physical memory and speed do not match
+              the estimator’s dense-tensor assumptions or a production engine.
+              Production systems use contiguous or paged device buffers, block
+              allocators, specialized kernels, and batch metadata. Use this code to
+              learn invariants and shapes, not to forecast GPU throughput.
+            </div>
+          </article>
+
+          <article id="day-5-mistakes" class="card" data-search-item="" data-keywords="common mistakes">
+            <h3>Common beginner mistakes</h3>
+            <ul>
+              <li>Saying the KV cache stores attention probabilities; it stores projected keys and values.</li>
+              <li>Passing old tokens again while also passing their cache, duplicating positions.</li>
+              <li>Using the wrong <code>start_pos</code>, which applies wrong RoPE angles and breaks equivalence.</li>
+              <li>Forgetting the factor of two for both K and V or the layer count in memory estimates.</li>
+              <li>Using query-head count instead of KV-head count for a GQA cache.</li>
+              <li>Claiming cached decode has no context-length cost; it still reads and attends over history.</li>
+              <li>Benchmarking only steady-state decode and calling it total latency while ignoring prefill and queue time.</li>
+            </ul>
+          </article>
+
+          <article id="day-5-check" data-search-item="" data-keywords="check understanding questions answers">
+            <h3>Check your understanding</h3>
+            <details class="qa-item"><summary>What is retained in the KV cache?</summary><div class="qa-answer">Per-layer projected key and value vectors for already processed positions.</div></details>
+            <details class="qa-item"><summary>What does a new decode token still compute?</summary><div class="qa-answer">Its embedding and per-layer normalization, Q/K/V, attention output, MLP updates, final normalization, and logits.</div></details>
+            <details class="qa-item"><summary>Why must <code>start_pos</code> equal cache length?</summary><div class="qa-answer">The new token’s position and RoPE rotation must immediately follow the positions represented by cached keys and values.</div></details>
+            <details class="qa-item"><summary>How does GQA affect KV memory?</summary><div class="qa-answer">Memory scales with KV heads, so fewer KV heads reduce K/V projection width and cache payload.</div></details>
+            <details class="qa-item"><summary>Does caching change correct model output?</summary><div class="qa-answer">It should not; cached and uncached paths should be mathematically equivalent aside from expected numerical effects.</div></details>
+            <details class="qa-item"><summary>Why can memory limit concurrency?</summary><div class="qa-answer">Every active sequence retains per-layer K/V data that grows with processed token count.</div></details>
+          </article>
+
+          <article id="day-5-exercises" class="card" data-search-item="" data-keywords="practical exercises bridge">
+            <h3>Practical exercises and bridge beyond Phase 1</h3>
+            <ol>
+              <li>Compute bytes per token for 32 layers, eight KV heads, head width 128, and two-byte elements.</li>
+              <li>Given 8 GiB free for KV and batch size 16, estimate equal-length tokens per sequence using the formula.</li>
+              <li>Trace cache length and <code>start_pos</code> across a three-token prompt and four generated tokens.</li>
+              <li>Design a test that compares cached and uncached final logits at every generation step.</li>
+              <li>Explain why a paged allocator might reduce wasted reserved space without changing attention math.</li>
+            </ol>
+            <p>
+              You can now follow the complete token mechanics. The next phase adds
+              multiple requests, allocation, batching, scheduling, and streaming. Those
+              systems exist to share expensive model execution while respecting the
+              per-sequence state and phase distinctions established here.
+            </p>
+          </article>
+        </section>
+
+        <section id="phase-summary" class="content-section" data-search-group="Appendices" data-search-item="" data-keywords="summary end to end">
+          <div class="section-heading">
+            <div><p class="eyebrow">Phase summary</p><h2>One end-to-end story</h2></div>
+            <p>If you can narrate this without skipping shapes, Phase 1 has done its job.</p>
+          </div>
+          <ol class="study-loop">
+            <li><span>Text is encoded by the checkpoint-compatible tokenizer into IDs shaped <code>[B,S]</code>.</span></li>
+            <li><span>IDs select embedding rows, producing hidden activations shaped <code>[B,S,D]</code>.</span></li>
+            <li><span>Every block normalizes, attends to causally visible positions, residual-adds, applies a per-position MLP, and residual-adds again.</span></li>
+            <li><span>RoPE rotates Q/K pairs by position; GQA allows groups of query heads to share fewer K/V heads.</span></li>
+            <li><span>Final normalization and vocabulary projection produce logits shaped <code>[B,S,V]</code>.</span></li>
+            <li><span>The final sequence row <code>logits[b,-1,:]</code> predicts the next token after that sequence’s full visible prefix.</span></li>
+            <li><span>A decoding policy transforms or filters logits and chooses one token ID, then stopping rules decide whether to continue.</span></li>
+            <li><span>Prefill processes prompt positions and establishes per-layer K/V state; decode forwards only new positions while reading history.</span></li>
+            <li><span>The KV cache removes repeated K/V construction but consumes memory proportional to layers, sequence length, KV width, batch, and bytes per element.</span></li>
+          </ol>
+        </section>
+
+        <section id="glossary" class="content-section" data-search-group="Appendices" data-search-item="" data-keywords="glossary definitions terminology">
+          <div class="section-heading">
+            <div><p class="eyebrow">Appendix A</p><h2>Glossary</h2></div>
+            <p>Forty compact definitions for review.</p>
+          </div>
+          <div class="card-grid">
+            <article class="card"><h3>A–C</h3><dl>
+              <dt><strong>Activation</strong></dt><dd>Temporary tensor computed during a forward pass.</dd>
+              <dt><strong>Argmax</strong></dt><dd>Index of the largest value; used by greedy decoding.</dd>
+              <dt><strong>Attention</strong></dt><dd>Query-dependent weighted mixing of value vectors using query-key scores.</dd>
+              <dt><strong>Autoregressive</strong></dt><dd>Generating while conditioning on previously generated outputs.</dd>
+              <dt><strong>Batch</strong></dt><dd>Group of sequences processed in shared execution.</dd>
+              <dt><strong>BPE</strong></dt><dd>Tokenization method that applies ranked adjacent-piece merges.</dd>
+              <dt><strong>Causal mask</strong></dt><dd>Restriction preventing a position from seeing future positions.</dd>
+              <dt><strong>Checkpoint</strong></dt><dd>Stored model configuration and learned tensors, often with tokenizer artifacts.</dd>
+              <dt><strong>Context length</strong></dt><dd>Number of token positions visible or supported for a sequence.</dd>
+            </dl></article>
+            <article class="card"><h3>D–H</h3><dl>
+              <dt><strong>Decode phase</strong></dt><dd>Incremental generation after prompt state exists.</dd>
+              <dt><strong>Dimension</strong></dt><dd>Either an axis of a tensor or, contextually, the size of a feature space.</dd>
+              <dt><strong>Dtype</strong></dt><dd>Numeric representation and precision used to store values.</dd>
+              <dt><strong>Embedding</strong></dt><dd>Learned dense vector selected for a token ID.</dd>
+              <dt><strong>EOS</strong></dt><dd>Special end-of-sequence token used as one possible stop signal.</dd>
+              <dt><strong>Forward pass</strong></dt><dd>Applying model operations to input activations to produce outputs.</dd>
+              <dt><strong>GQA</strong></dt><dd>Grouped-query attention: multiple query heads share fewer KV heads.</dd>
+              <dt><strong>Head</strong></dt><dd>One attention subspace with its own query matching behavior.</dd>
+              <dt><strong>Head dimension</strong></dt><dd>Feature width of one attention head.</dd>
+              <dt><strong>Hidden state</strong></dt><dd>A token’s intermediate or final width-<code>D</code> representation.</dd>
+            </dl></article>
+            <article class="card"><h3>K–P</h3><dl>
+              <dt><strong>Key</strong></dt><dd>Projected vector matched against a query.</dd>
+              <dt><strong>KV cache</strong></dt><dd>Per-layer history of keys and values for processed positions.</dd>
+              <dt><strong>Logit</strong></dt><dd>Unnormalized vocabulary score.</dd>
+              <dt><strong>MLP/FFN</strong></dt><dd>Per-token feature transformation inside a transformer block.</dd>
+              <dt><strong>MHA</strong></dt><dd>Multi-head attention with matching query and KV head counts.</dd>
+              <dt><strong>Parameter</strong></dt><dd>Learned persistent scalar stored in a weight tensor.</dd>
+              <dt><strong>Position</strong></dt><dd>A token’s index in its sequence.</dd>
+              <dt><strong>Prefill</strong></dt><dd>Prompt processing that creates initial logits and cache state.</dd>
+              <dt><strong>Probability</strong></dt><dd>Normalized nonnegative value; categorical probabilities sum to one.</dd>
+              <dt><strong>Prompt</strong></dt><dd>Input token sequence present before generated output.</dd>
+            </dl></article>
+            <article class="card"><h3>Q–W</h3><dl>
+              <dt><strong>Query</strong></dt><dd>Projected vector describing what a position seeks from visible keys.</dd>
+              <dt><strong>Residual connection</strong></dt><dd>Addition of a sublayer update to its input.</dd>
+              <dt><strong>Residual stream</strong></dt><dd>Width-preserving sequence of token representations through blocks.</dd>
+              <dt><strong>RMSNorm</strong></dt><dd>Normalization by root mean square followed by learned scaling.</dd>
+              <dt><strong>RoPE</strong></dt><dd>Position-dependent rotations of query/key feature pairs.</dd>
+              <dt><strong>Sampler</strong></dt><dd>Policy that selects a token from processed logits or probabilities.</dd>
+              <dt><strong>Shape</strong></dt><dd>Ordered list of sizes along a tensor’s axes.</dd>
+              <dt><strong>Softmax</strong></dt><dd>Exponential normalization that maps logits to probabilities.</dd>
+              <dt><strong>Temperature</strong></dt><dd>Positive divisor controlling logit-distribution sharpness.</dd>
+              <dt><strong>Tensor</strong></dt><dd>Rectangular multidimensional collection of numeric values.</dd>
+              <dt><strong>Token</strong></dt><dd>Vocabulary unit represented by an integer ID.</dd>
+              <dt><strong>Top-k</strong></dt><dd>Filtering that keeps a fixed number of highest logits.</dd>
+              <dt><strong>Top-p</strong></dt><dd>Filtering that keeps the smallest high-probability prefix reaching mass <code>p</code>.</dd>
+              <dt><strong>Value</strong></dt><dd>Projected content vector mixed according to attention weights.</dd>
+              <dt><strong>Vocabulary</strong></dt><dd>Complete set of token IDs and corresponding pieces.</dd>
+              <dt><strong>Weight tying</strong></dt><dd>Sharing a parameter matrix between token embedding and output projection.</dd>
+            </dl></article>
+          </div>
+        </section>
+
+        <section id="formula-sheet" class="content-section" data-search-group="Appendices" data-search-item="" data-keywords="formula sheet equations">
+          <div class="section-heading">
+            <div><p class="eyebrow">Appendix B</p><h2>Formula sheet</h2></div>
+            <p>Write the shapes beside every formula when solving an exercise.</p>
+          </div>
+          <div class="theory-grid">
+            <article class="equation-card"><h3>Softmax</h3><code>p_i = exp(z_i − max(z)) / Σ_j exp(z_j − max(z))</code><p>Stable normalization over candidate logits.</p></article>
+            <article class="equation-card"><h3>Temperature</h3><code>p = softmax(z / T), T &gt; 0</code><p>Lower <code>T</code> sharpens; higher <code>T</code> flattens.</p></article>
+            <article class="equation-card"><h3>Embedding lookup</h3><code>x_s = E[token_id_s], E:[V,D]</code><p>Select one width-<code>D</code> row per ID.</p></article>
+            <article class="equation-card"><h3>Output projection</h3><code>z_s = W_out h_s, W_out:[V,D]</code><p>One dot product per vocabulary row.</p></article>
+            <article class="equation-card"><h3>Cosine similarity</h3><code>cos(a,b) = (a·b)/(||a||₂||b||₂)</code><p>Directional similarity for nonzero vectors.</p></article>
+            <article class="equation-card"><h3>Attention</h3><code>A = softmax((QKᵀ/√d_h)+M)V</code><p>Scale, mask, normalize each query row, and mix values.</p></article>
+            <article class="equation-card"><h3>RoPE pair</h3><code>(x'₀,x'₁)=(x₀cosφ−x₁sinφ, x₀sinφ+x₁cosφ)</code><p>Position-dependent two-dimensional rotation.</p></article>
+            <article class="equation-card"><h3>KV grouping</h3><code>queries_per_kv = H_q / H_kv</code><p>Equal query groups require exact divisibility.</p></article>
+            <article class="equation-card"><h3>KV bytes</h3><code>2 × L × B × S × H_kv × D_h × bytes</code><p>The leading 2 is for keys and values.</p></article>
+            <article class="equation-card"><h3>Matrix parameters</h3><code>count([rows,cols]) = rows × cols</code><p>Multiply every axis size for higher-rank tensors.</p></article>
+          </div>
+        </section>
+
+        <section id="cumulative-exercises" class="content-section" data-search-group="Appendices" data-search-item="" data-keywords="cumulative capstone exercises">
+          <div class="section-heading">
+            <div><p class="eyebrow">Appendix C</p><h2>Cumulative exercises</h2></div>
+            <p>Combine mechanics rather than practicing each term in isolation.</p>
+          </div>
+          <div class="card-grid">
+            <article class="card" data-search-item="" id="exercise-shape-trace">
+              <h3>1. Full shape trace</h3>
+              <p>
+                Use <code>B=2</code>, <code>S=6</code>, <code>V=256</code>,
+                <code>D=32</code>, eight query heads, and two KV heads. Write shapes for
+                IDs, embeddings, per-head Q/K/V, attention scores, block output, logits,
+                last-position logits, and per-layer cache.
+              </p>
+            </article>
+            <article class="card" data-search-item="" id="exercise-manual-generation">
+              <h3>2. Manual generation table</h3>
+              <p>
+                Given three successive four-token logit vectors, apply temperature,
+                top-k, and a supplied random number to select IDs. Record generated
+                suffixes and evaluate EOS, stop sequence, and length after each step.
+              </p>
+            </article>
+            <article class="card" data-search-item="" id="exercise-cache-budget">
+              <h3>3. Capacity budget</h3>
+              <p>
+                Estimate KV bytes per token for two imaginary models, one MHA and one
+                GQA. Under the same free-memory budget, compare maximum equal-length
+                concurrent contexts. State which allocator overheads the simple formula
+                omits.
+              </p>
+            </article>
+            <article class="card" data-search-item="" id="exercise-correctness">
+              <h3>4. Cached equivalence test</h3>
+              <p>
+                Specify setup, assertions, tolerances, sequence cases, and failure
+                diagnostics for proving cached and uncached generation agree. Include a
+                repeated token, multi-token prefill, several decode steps, and GQA.
+              </p>
+            </article>
+            <article class="card" data-search-item="" id="exercise-code-walk">
+              <h3>5. Code narration</h3>
+              <p>
+                Starting at <code>Transformer.forward_with_cache</code>, narrate every
+                called educational module for one decode token. At each boundary state
+                input shape, output shape, persistent state, and possible validation
+                error.
+              </p>
+            </article>
+            <article class="card" data-search-item="" id="exercise-performance">
+              <h3>6. Honest benchmark plan</h3>
+              <p>
+                Design separate measurements for tokenization, prefill, time to first
+                token, steady decode, and end-to-end latency. Include warm-up,
+                synchronization, repetitions, percentiles, prompt/output lengths, and
+                a statement that Python simulations do not predict production kernels.
+              </p>
+            </article>
+          </div>
+          <div class="callout">
+            <strong>Completion test:</strong> Explain how changing tokenizer efficiency,
+            vocabulary size, query/KV head ratio, prompt length, output length, and
+            dtype affects at least two of quality, compute, memory, and latency. If you
+            can trace those effects without losing the tensor shapes, you are ready for
+            engine scheduling and memory management.
+          </div>
+        </section>
+      </main>
+    </div>
+    <a class="back-to-top" href="#overview" aria-label="Back to top">↑</a>
+  </body>
+</html>

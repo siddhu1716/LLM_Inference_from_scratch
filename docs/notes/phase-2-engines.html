@@ -1,0 +1,1510 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="A beginner-friendly textbook for inference-engine days 6-12: roofline analysis, CUDA kernels, model formats, vLLM, SGLang, TensorRT-LLM, and NVIDIA Dynamo."
+    >
+    <meta
+      name="keywords"
+      content="LLM inference, roofline model, arithmetic intensity, CUDA kernels, FlashAttention, SafeTensors, ONNX, TensorRT, vLLM, PagedAttention, continuous batching, SGLang, RadixAttention, TensorRT-LLM, NVIDIA Dynamo, disaggregated serving"
+    >
+    <meta name="author" content="LLM Inference from Scratch">
+    <meta name="robots" content="index,follow">
+    <meta name="theme-color" content="#3156d3">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Phase 2: Inference Engines | Days 6-12">
+    <meta
+      property="og:description"
+      content="From bytes and kernels to paged caches, prefix reuse, compiled engines, and serving control planes."
+    >
+    <title>Phase 2: Inference Engines, Days 6-12 | LLM Inference from Scratch</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%233156d3'/><text x='32' y='40' text-anchor='middle' font-size='24' font-family='sans-serif' font-weight='700' fill='white'>P2</text></svg>">
+    <link rel="stylesheet" href="../styles.css?v=6">
+    <script src="../app.js" defer></script>
+    <style>
+      .chapter-header {
+        margin-bottom: 1.5rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid var(--line);
+      }
+      .chapter-header h2 { margin-bottom: .6rem; }
+      .chapter-header p { max-width: 52rem; color: var(--ink-soft); }
+      .learning-map, .concept-diagram {
+        display: grid;
+        gap: .75rem;
+        margin: 1.4rem 0;
+        padding: 1rem;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+        box-shadow: var(--shadow-small);
+      }
+      .learning-map { grid-template-columns: repeat(7, minmax(7.5rem, 1fr)); overflow-x: auto; }
+      .learning-map a, .diagram-node {
+        display: grid;
+        min-height: 5.5rem;
+        place-items: center;
+        padding: .75rem;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-small);
+        background: var(--surface-2);
+        color: var(--ink);
+        font-weight: 750;
+        text-align: center;
+        text-decoration: none;
+      }
+      .learning-map a::after { content: "↓"; display: block; color: var(--accent); }
+      .concept-diagram.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .concept-diagram.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .diagram-node strong { display: block; color: var(--brand); }
+      .diagram-arrow { place-self: center; color: var(--accent); font-size: 1.5rem; font-weight: 900; }
+      .day-section h3 { margin-top: 2.2rem; font-size: 1.5rem; }
+      .day-section h4 { margin: 1.5rem 0 .5rem; font-size: 1.12rem; }
+      .day-section p, .day-section li { max-width: 74ch; }
+      .day-section .wide { max-width: none; }
+      .definition-grid, .tradeoff-grid, .exercise-grid, .glossary-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .8rem;
+      }
+      .definition-grid > div, .tradeoff-grid > article, .exercise-grid > article, .glossary-grid > div {
+        padding: 1rem;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-small);
+        background: var(--surface);
+      }
+      .definition-grid dt, .glossary-grid dt { color: var(--ink); font-weight: 800; }
+      .definition-grid dd, .glossary-grid dd { margin: .25rem 0 0; color: var(--ink-soft); }
+      .boundary {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+        margin: 1.4rem 0;
+      }
+      .boundary article {
+        padding: 1.1rem;
+        border: 1px solid var(--line);
+        border-top: .3rem solid var(--success);
+        border-radius: var(--radius-small);
+        background: var(--surface);
+      }
+      .boundary article:last-child { border-top-color: var(--warning); }
+      .check-list details {
+        margin: .6rem 0;
+        padding: .8rem 1rem;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-small);
+        background: var(--surface);
+      }
+      .check-list summary { cursor: pointer; color: var(--ink); font-weight: 750; }
+      .check-list details p { margin-bottom: 0; color: var(--ink-soft); }
+      .equation-box {
+        margin: 1rem 0;
+        padding: 1rem 1.1rem;
+        border-left: .3rem solid var(--teal);
+        background: var(--surface-2);
+      }
+      .equation-box .math { font: 700 1rem/1.7 var(--font-mono); overflow-wrap: anywhere; }
+      .equation-box ul { margin-bottom: 0; }
+      .step-flow { counter-reset: textbook-step; padding: 0; list-style: none; }
+      .step-flow li {
+        position: relative;
+        margin: .7rem 0;
+        padding: .85rem 1rem .85rem 3.5rem;
+        border-left: 2px solid var(--brand);
+        background: var(--surface);
+      }
+      .step-flow li::before {
+        position: absolute;
+        left: .8rem;
+        width: 1.8rem;
+        height: 1.8rem;
+        border-radius: 50%;
+        background: var(--brand);
+        color: var(--paper);
+        content: counter(textbook-step);
+        counter-increment: textbook-step;
+        font-weight: 800;
+        line-height: 1.8rem;
+        text-align: center;
+      }
+      .bridge {
+        margin-top: 2rem;
+        padding: 1.2rem;
+        border-radius: var(--radius);
+        background: linear-gradient(120deg, var(--surface-2), var(--surface));
+      }
+      .source-links a { display: inline-block; margin: .2rem .6rem .2rem 0; }
+      .compact-list li { margin: .35rem 0; }
+      .formula-table td:first-child { white-space: nowrap; font-family: var(--font-mono); color: var(--ink); }
+      .chapter-number {
+        display: inline-grid;
+        width: 3.2rem;
+        height: 3.2rem;
+        margin-bottom: .8rem;
+        place-items: center;
+        border-radius: .85rem;
+        background: linear-gradient(145deg, var(--brand), var(--teal));
+        color: white;
+        font-size: 1.2rem;
+        font-weight: 900;
+      }
+      @media (max-width: 56rem) {
+        .concept-diagram.four, .concept-diagram.three, .definition-grid, .tradeoff-grid,
+        .exercise-grid, .glossary-grid, .boundary { grid-template-columns: 1fr; }
+      }
+    </style>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "TechArticle",
+        "headline": "Phase 2: Inference Engines, Days 6-12",
+        "description": "A beginner-friendly textbook chapter on GPU performance, inference-engine memory, compilation, and distributed serving.",
+        "educationalLevel": "Beginner to intermediate",
+        "learningResourceType": "Textbook chapter",
+        "keywords": ["LLM inference", "CUDA", "vLLM", "SGLang", "TensorRT-LLM", "NVIDIA Dynamo"]
+      }
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="../index.html" aria-label="Return to the systems guide">
+          <span class="brand-mark" aria-hidden="true">LLM</span>
+          <span class="brand-text">Inference from Scratch</span>
+        </a>
+        <div class="search-wrap">
+          <label for="site-search" aria-hidden="true">⌕</label>
+          <input id="site-search" type="search" placeholder="Search phase 2 concepts" autocomplete="off" aria-controls="search-results" aria-label="Search this textbook page">
+          <kbd class="search-key" aria-hidden="true">Ctrl K</kbd>
+          <ul id="search-results" class="search-results" aria-label="Search results" hidden></ul>
+        </div>
+        <div class="top-actions">
+          <button class="icon-button theme-button" type="button" data-theme-toggle aria-label="Change color theme">
+            <span data-theme-icon aria-hidden="true">◐</span>
+          </button>
+          <button class="icon-button menu-button" type="button" data-menu-toggle aria-label="Open section navigation" aria-controls="section-navigation" aria-expanded="false">
+            <span aria-hidden="true">☰</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside id="section-navigation" class="sidebar" aria-label="Phase 2 navigation">
+        <p class="sidebar-title">Phase 02 · Engines</p>
+        <nav aria-label="Textbook chapters">
+          <ul class="nav-list">
+            <li><a href="#overview" aria-current="true">Overview</a></li>
+            <li><a href="#day-06">Day 6 · Roofline</a></li>
+            <li><a href="#day-07">Day 7 · CUDA kernels</a></li>
+            <li><a href="#day-08">Day 8 · Formats</a></li>
+            <li><a href="#day-09">Day 9 · vLLM</a></li>
+            <li><a href="#day-10">Day 10 · SGLang</a></li>
+            <li><a href="#day-11">Day 11 · TensorRT-LLM</a></li>
+            <li><a href="#day-12">Day 12 · Dynamo</a></li>
+            <li><a href="#comparison">Engine comparison</a></li>
+            <li><a href="#formula-sheet">Formula sheet</a></li>
+            <li><a href="#glossary">Phase glossary</a></li>
+            <li><a href="#design-exercise">Design exercise</a></li>
+            <li><a href="phase-1-mechanics.html">Previous: Phase 1 ↗</a></li>
+            <li><a href="phase-3-optimization.html">Next: Phase 3 ↗</a></li>
+            <li><a href="../curriculum.html">26-day curriculum ↗</a></li>
+          </ul>
+        </nav>
+        <div class="sidebar-note">
+          <strong>Reality label</strong><br>
+          Production products are explained as products. This repository’s Python modules are small educational simulations, not drop-in replacements.
+        </div>
+      </aside>
+
+      <main id="main-content">
+        <section id="overview" class="hero" data-search-group="Phase 2 overview">
+          <p class="eyebrow">Days 6-12 · Performance and engines</p>
+          <h1>From one byte to a serving fleet.</h1>
+          <p class="hero-copy">
+            This phase builds one connected mental model. Hardware moves bytes and performs operations;
+            kernels organize that work; runtimes choose kernels; engines schedule requests and cache state;
+            control planes coordinate many engines. Start at the transistor-facing end and climb one layer at a time.
+          </p>
+          <div class="hero-actions">
+            <a class="button" href="#day-06">Start day 6</a>
+            <a class="button button-secondary" href="#formula-sheet">Open formula sheet</a>
+            <a class="button button-secondary" href="#design-exercise">Try the capstone</a>
+          </div>
+        </section>
+
+        <div class="metric-strip" role="group" aria-label="Phase summary">
+          <div class="metric"><strong>7</strong><span>connected study days</span></div>
+          <div class="metric"><strong>35+</strong><span>knowledge checks</span></div>
+          <div class="metric"><strong>45+</strong><span>glossary terms</span></div>
+          <div class="metric"><strong>1</strong><span>cumulative design</span></div>
+        </div>
+
+        <nav class="learning-map" aria-label="Phase learning path">
+          <a href="#day-06">Bytes and operations</a>
+          <a href="#day-07">Kernels and fusion</a>
+          <a href="#day-08">Files and runtimes</a>
+          <a href="#day-09">Pages and batches</a>
+          <a href="#day-10">Prefixes and grammars</a>
+          <a href="#day-11">Compiled engines</a>
+          <a href="#day-12">Serving fleets</a>
+        </nav>
+
+        <div class="callout">
+          <strong>First-principles orientation.</strong>
+          A CPU is a general-purpose processor optimized for flexible, low-latency control flow. A GPU is a throughput processor containing many simpler arithmetic lanes that perform similar work on many data elements. Neither is universally “faster.” A CPU excels at branching, orchestration, and small serial tasks; a GPU excels when enough parallel arithmetic is available to occupy its lanes. In an inference service, the CPU commonly tokenizes, schedules, and launches work while the GPU executes tensor operations.
+        </div>
+
+        <section id="day-06" class="content-section day-section" data-search-group="Day 6 roofline">
+          <header class="chapter-header" data-search-item data-keywords="ops byte ratio arithmetic intensity roofline memory bandwidth FLOPS CPU GPU HBM">
+            <span class="chapter-number">06</span>
+            <p class="eyebrow">Measure before optimizing</p>
+            <h2>Ops:byte ratio and the roofline model</h2>
+            <p>
+              Day 6 gives us a ruler for performance. Instead of saying “the GPU is slow,” we ask whether an operation is waiting for arithmetic units or waiting for bytes. That distinction determines whether to change math, memory traffic, batching, or hardware.
+            </p>
+          </header>
+
+          <h3>A beginner analogy: cooks, ingredients, and a narrow pantry door</h3>
+          <p>
+            Imagine a restaurant with 100 cooks but only one narrow pantry door. If every dish requires one quick stir and ten trips through that door, adding more cooks will not help; they queue for ingredients. That is a memory-bound kitchen. If ingredients arrive in one crate and each dish needs an hour of chopping, the pantry is idle while cooks work; that is compute-bound. A GPU has the same two broad resources: arithmetic capacity and data-movement capacity. Floating-point operations per second describe the cooks. Memory bandwidth describes the pantry door. Arithmetic intensity tells us how much work is done for each byte brought through the door.
+          </p>
+
+          <h3>Why it matters</h3>
+          <p>
+            Roofline reasoning prevents expensive category errors. If decode already waits on HBM, buying more arithmetic peak or deleting a few multiplies may change almost nothing. Reducing weight bytes, reusing them across a batch, or avoiding cache traffic is more promising. Conversely, a compute-heavy prefill may benefit from tensor-core-friendly shapes and precision. The model turns hardware specifications into a testable performance hypothesis before anyone spends weeks rewriting code.
+          </p>
+
+          <h3>Definitions from the ground up</h3>
+          <dl class="definition-grid">
+            <div><dt>Operation</dt><dd>A primitive arithmetic action such as an addition or multiplication. Hardware specifications often count a fused multiply-add as two floating-point operations.</dd></div>
+            <div><dt>FLOPS</dt><dd>Floating-point operations per second, a rate. FLOP without the final “S” is a count of work.</dd></div>
+            <div><dt>Byte</dt><dd>Eight bits of stored information. BF16 and FP16 values occupy two bytes; FP32 values occupy four.</dd></div>
+            <div><dt>Memory hierarchy</dt><dd>Storage arranged from tiny and fast to large and slower: registers, shared memory/L1 cache, L2 cache, GPU HBM, then host RAM and storage.</dd></div>
+            <div><dt>Bandwidth</dt><dd>The maximum rate at which bytes move, commonly GB/s or TB/s. It is not the same as latency, which is the delay for one access.</dd></div>
+            <div><dt>Arithmetic intensity</dt><dd>The operation’s work divided by bytes transferred across the memory boundary being studied, measured in operations per byte.</dd></div>
+            <div><dt>Memory-bound</dt><dd>Performance is limited mainly by byte movement; unused arithmetic capacity cannot help until traffic is reduced or reused.</dd></div>
+            <div><dt>Compute-bound</dt><dd>Performance is limited mainly by arithmetic throughput; faster memory alone is unlikely to help.</dd></div>
+          </dl>
+
+          <div class="equation-box">
+            <div class="math">I = O / D</div>
+            <div class="math">P attainable = min(P peak, I × B)</div>
+            <div class="math">I ridge = P peak / B</div>
+            <ul>
+              <li><strong>I</strong> is arithmetic intensity in operations per byte.</li>
+              <li><strong>O</strong> is the number of arithmetic operations performed.</li>
+              <li><strong>D</strong> is the number of bytes transferred from the memory level under study.</li>
+              <li><strong>P attainable</strong> is the upper-bound performance for this operation.</li>
+              <li><strong>P peak</strong> is the hardware’s peak arithmetic rate in operations per second.</li>
+              <li><strong>B</strong> is memory bandwidth in bytes per second.</li>
+              <li><strong>I ridge</strong> is the break-even intensity where the sloped bandwidth roof meets the flat compute roof.</li>
+            </ul>
+          </div>
+
+          <h3>Step-by-step: classifying an operation</h3>
+          <ol class="step-flow">
+            <li><strong>Choose a boundary.</strong> Are you counting traffic from HBM to the chip, from L2 to streaming multiprocessors, or from CPU RAM over PCIe? The answer changes the byte count.</li>
+            <li><strong>Count useful operations.</strong> For a matrix multiplication with shapes <code>M×K</code> and <code>K×N</code>, a common approximation is <code>2MKN</code> operations.</li>
+            <li><strong>Count transferred bytes.</strong> Include inputs and output, and include repeated reads if the implementation fails to retain data in cache.</li>
+            <li><strong>Compute intensity.</strong> Divide operations by bytes. Keep the units visible so mistakes are obvious.</li>
+            <li><strong>Compute the ridge point.</strong> Divide device peak operations per second by peak bandwidth.</li>
+            <li><strong>Compare and verify.</strong> Below the ridge suggests memory pressure; above it suggests compute pressure. Then profile, because peaks, cache hits, launch overhead, and irregular access make the roofline an upper bound rather than a stopwatch.</li>
+          </ol>
+
+          <div class="concept-diagram four" role="img" aria-label="Roofline reasoning flow">
+            <div class="diagram-node"><strong>Count work</strong>operations</div>
+            <div class="diagram-node"><strong>Count traffic</strong>bytes</div>
+            <div class="diagram-node"><strong>Divide</strong>ops per byte</div>
+            <div class="diagram-node"><strong>Compare</strong>ridge point</div>
+          </div>
+
+          <h3>Worked example: one decode projection</h3>
+          <p>
+            Consider a simplified linear layer with a weight matrix containing 8 million BF16 values. The weights occupy 16 MB because each value uses two bytes. For one request producing one token, suppose the matrix-vector product performs approximately 16 million operations: each weight contributes one multiply and one add. Ignore the much smaller input and output for this toy estimate. Intensity is therefore <code>16 million ops / 16 million bytes = 1 op/byte</code>. On an imaginary GPU with 100 TFLOP/s peak BF16 throughput and 1 TB/s HBM bandwidth, the ridge is <code>100 tera-ops/s ÷ 1 tera-byte/s = 100 ops/byte</code>. Our 1 op/byte operation sits far left of the ridge. Its bandwidth roof is only <code>1 op/byte × 1 TB/s = 1 TFLOP/s</code>, even though the box advertises 100 TFLOP/s.
+          </p>
+          <p>
+            Now batch 32 independent decode tokens. The same 16 MB weight matrix can be reused while producing 32 outputs. Work rises to about 512 million operations, but weight traffic can remain near 16 MB if the kernel reuses weights effectively. Intensity approaches 32 ops/byte. That is still below the 100 ops/byte ridge, but thirty-two times better. A batch near 100 would approach the ridge in this idealized model. Real traffic includes activations, cache reads, and imperfect reuse, so measurement is still required. The important insight is that batching changes the numerator much faster than the dominant weight bytes in the denominator.
+          </p>
+
+          <h3>Prefill and decode occupy different neighborhoods</h3>
+          <p>
+            During prefill, many prompt positions pass through large matrix multiplications together. A weight tile fetched once can participate in calculations for many token rows, raising arithmetic intensity. Prefill often leans toward compute-bound behavior, particularly for large batches or long prompts. During decode, each active sequence adds only one position per iteration. The engine repeatedly reads model weights and a growing KV history to produce relatively little new work. Decode therefore tends to be bandwidth-sensitive. This is a tendency, not a law: small prefill batches can waste compute, long-context attention can become memory-heavy, and a large decode batch can raise reuse enough to approach the compute roof.
+          </p>
+
+          <h3>Pseudo-code: a five-minute estimate</h3>
+          <pre><code>def roofline_estimate(operations, transferred_bytes, peak_ops_s, bandwidth_bytes_s):
+    intensity = operations / transferred_bytes
+    ridge = peak_ops_s / bandwidth_bytes_s
+    bandwidth_roof = intensity * bandwidth_bytes_s
+    attainable = min(peak_ops_s, bandwidth_roof)
+    bottleneck = "memory" if intensity &lt; ridge else "compute"
+    return intensity, ridge, attainable, bottleneck
+
+# Toy BF16 projection, batch 32
+ops = 2 * 32 * 8_000_000
+weight_bytes = 8_000_000 * 2
+print(roofline_estimate(ops, weight_bytes, 100e12, 1e12))</code></pre>
+
+          <h3>Latency, throughput, and memory tradeoffs</h3>
+          <p>
+            Increasing batch size usually improves throughput because weight bytes are amortized across requests. Yet a request may wait longer for companions, increasing queueing delay and time to first token. Larger batches also need more activation and KV memory, leaving less room for concurrent sequences. Lower-precision weights reduce bytes and may improve bandwidth-limited decode, but only if the GPU has an efficient kernel for that format and dequantization overhead is controlled. Kernel fusion reduces intermediate traffic without waiting for a larger batch. Capacity planning therefore needs three separate objectives: per-request latency, aggregate tokens per second, and memory headroom. One “utilization” percentage cannot summarize all three.
+          </p>
+
+          <div class="tradeoff-grid">
+            <article><h4>When to use roofline reasoning</h4><p>Use it before kernel work, hardware selection, quantization, or batching changes. It is excellent for eliminating implausible optimizations and explaining why a high-FLOPS accelerator may underperform on decode.</p></article>
+            <article><h4>When not to stop there</h4><p>Do not use a theoretical roofline as proof of measured performance. Very small kernels may be launch-bound; network collectives may dominate distributed inference; poor occupancy, synchronization, or noncoalesced access can sit far below both roofs.</p></article>
+          </div>
+
+          <h3>Common mistakes</h3>
+          <ul class="compact-list">
+            <li>Mixing decimal TB/s with binary TiB/s while expecting exact agreement.</li>
+            <li>Counting only model weights while forgetting KV-cache and activation traffic.</li>
+            <li>Calling arithmetic intensity a hardware property; the ridge is hardware-specific, while intensity belongs to an algorithm plus implementation and chosen memory boundary.</li>
+            <li>Assuming prefill is always compute-bound and decode is always memory-bound without considering batch, context, model architecture, and precision.</li>
+            <li>Optimizing FLOP count when the operation already waits for bytes.</li>
+          </ul>
+
+          <div class="boundary">
+            <article><span class="tag">Production concept</span><h4>Profilers and measured roofs</h4><p>Production teams use hardware counters and profilers such as NVIDIA Nsight Compute to measure achieved bandwidth, tensor-core use, occupancy, and stalls. Device specifications provide ceilings, not observed rates.</p></article>
+            <article><span class="tag concept">Learning calculation</span><h4>No mini-infer roofline engine</h4><p><code>mini_infer</code> does not claim a GPU roofline implementation. The equations and toy code here are planning tools. Later modules demonstrate cache and scheduling behavior at learning scale.</p></article>
+          </div>
+
+          <h3>Knowledge checks</h3>
+          <div class="check-list">
+            <details><summary>1. What does 20 ops/byte mean?</summary><p>The implementation performs about twenty counted arithmetic operations for each byte crossing the selected memory boundary. It does not mean the GPU itself has a fixed intensity of twenty.</p></details>
+            <details><summary>2. A device has 60 TFLOP/s and 1.5 TB/s. What is its ridge?</summary><p><code>60 ÷ 1.5 = 40 ops/byte</code>, with matching tera units canceling. Operations below roughly 40 ops/byte are under the bandwidth slope in the ideal roofline.</p></details>
+            <details><summary>3. Why can batching improve decode throughput?</summary><p>Multiple token rows reuse a fetched weight tile, increasing operations faster than dominant weight traffic. This raises arithmetic intensity and amortizes launch and scheduling overhead.</p></details>
+            <details><summary>4. Why can batching hurt latency?</summary><p>A request may wait for a batch to form, and a larger combined kernel can occupy the GPU longer before any one request receives its result.</p></details>
+            <details><summary>5. Is a memory-bound kernel necessarily badly written?</summary><p>No. Some algorithms inherently do little work per byte. The relevant question is whether avoidable traffic remains and whether the measured bandwidth approaches a realistic device limit.</p></details>
+          </div>
+
+          <h3>Practical exercises</h3>
+          <div class="exercise-grid">
+            <article><h4>Paper exercise</h4><p>Choose FP16 and FP32 for the toy 8-million-value projection. Recompute bytes, intensity, and bandwidth-limited performance. State which assumptions remain unchanged.</p></article>
+            <article><h4>Design exercise</h4><p>Draw two rooflines for GPUs with equal compute but different bandwidth. Place batch-1 and batch-32 decode on both. Explain which purchase better serves an interactive workload.</p></article>
+          </div>
+
+          <div class="bridge"><strong>Bridge to day 7:</strong> Day 6 tells us that bytes are often the limiting resource. Day 7 asks how a GPU program accidentally creates extra byte traffic and launch overhead—and how kernel fusion and tiling remove it.</div>
+        </section>
+
+        <section id="day-07" class="content-section day-section" data-search-group="Day 7 CUDA kernels">
+          <header class="chapter-header" data-search-item data-keywords="CUDA kernel thread block warp launch fusion registers shared memory SRAM HBM FlashAttention online softmax">
+            <span class="chapter-number">07</span>
+            <p class="eyebrow">Turn equations into GPU work</p>
+            <h2>CUDA kernels, kernel selection, fusion, and FlashAttention intuition</h2>
+            <p>
+              A model graph says what mathematical functions are required. A kernel says how one of those functions runs on GPU hardware. Performance depends heavily on that “how”: thread layout, tile sizes, memory access, precision, and which intermediate tensors are never written to HBM.
+            </p>
+          </header>
+
+          <h3>A beginner analogy: one workshop order or six courier trips</h3>
+          <p>
+            Suppose a carpenter must cut, sand, paint, and label a board. One plan sends the board to four buildings, with a courier trip after every step. Another plan places all tools in one workshop and moves the board once. Both produce the same board; the second avoids transportation and dispatch paperwork. Separate GPU kernels resemble separate buildings. Each launch has control overhead, and an intermediate may be written to HBM before the next kernel reads it. A fused kernel resembles the shared workshop: values can remain in registers or on-chip shared memory between steps.
+          </p>
+
+          <h3>Why it matters</h3>
+          <p>
+            Transformer decode repeats many small operations across every layer and generated token. A few microseconds of launch overhead or one unnecessary HBM round trip can therefore recur thousands of times in a request. Understanding kernels lets an engineer distinguish an algorithm improvement from an execution-schedule improvement, select realistic benchmarks, and avoid claiming GPU speedups from code that never runs on a GPU.
+          </p>
+
+          <h3>CPU, GPU, and kernel vocabulary</h3>
+          <dl class="definition-grid">
+            <div><dt>CUDA</dt><dd>NVIDIA’s programming platform and execution model for GPU computation. CUDA is broader than a single language keyword or library.</dd></div>
+            <div><dt>Kernel</dt><dd>A function launched by the host and executed in parallel by many GPU threads. “Kernel” here does not mean an operating-system kernel.</dd></div>
+            <div><dt>Thread / warp / block</dt><dd>A thread handles one logical lane of work; NVIDIA schedules threads in groups called warps; blocks group cooperating threads that can synchronize and share on-chip memory.</dd></div>
+            <div><dt>Grid</dt><dd>All thread blocks launched for one kernel invocation.</dd></div>
+            <div><dt>Register</dt><dd>Very small, very fast per-thread storage. Too many registers per thread can reduce how many warps fit concurrently.</dd></div>
+            <div><dt>Shared memory</dt><dd>Program-managed on-chip storage shared by threads in a block. It is useful for tiles reused by many threads.</dd></div>
+            <div><dt>Kernel launch</dt><dd>The CPU/runtime operation that queues GPU work. It has a nonzero fixed cost, especially visible for tiny decode operations.</dd></div>
+            <div><dt>Kernel selection</dt><dd>Choosing an implementation and configuration suited to shape, dtype, architecture, layout, and objective.</dd></div>
+          </dl>
+
+          <h3>Step-by-step: from PyTorch expression to silicon</h3>
+          <ol class="step-flow">
+            <li>Python calls an operator such as matrix multiplication, normalization, or elementwise activation.</li>
+            <li>The framework dispatches by device, dtype, shape, and layout. A library such as cuBLAS may supply a family of candidate kernels.</li>
+            <li>The runtime launches a chosen kernel. The CPU normally continues asynchronously until synchronization is required.</li>
+            <li>GPU blocks are assigned to streaming multiprocessors. Warps issue loads and arithmetic instructions.</li>
+            <li>Data travels from HBM through cache or directly into on-chip storage. Reused tiles stay near compute when possible.</li>
+            <li>Results are written. A following kernel may read them, or fusion may keep temporary values on chip and write only the final output.</li>
+          </ol>
+
+          <div class="concept-diagram four" role="img" aria-label="Unfused versus fused operation flow">
+            <div class="diagram-node"><strong>Unfused</strong>load → op A → HBM</div>
+            <div class="diagram-node"><strong>Unfused</strong>load → op B → HBM</div>
+            <div class="diagram-node"><strong>Fused</strong>load once</div>
+            <div class="diagram-node"><strong>Fused</strong>A → B on chip → store</div>
+          </div>
+
+          <div class="equation-box">
+            <div class="math">T total ≈ Σ(T launch,k + max(O k / P effective,k, D k / B effective,k))</div>
+            <ul>
+              <li><strong>T total</strong> is approximate total time across kernels.</li>
+              <li><strong>T launch,k</strong> is launch and dispatch cost for kernel <em>k</em>.</li>
+              <li><strong>O k</strong> and <strong>D k</strong> are operation count and transferred bytes for kernel <em>k</em>.</li>
+              <li><strong>P effective,k</strong> and <strong>B effective,k</strong> are realistic, not advertised-peak, compute and bandwidth rates.</li>
+              <li>Fusion can lower the number of launch terms and lower <strong>D</strong> by removing intermediate stores and loads.</li>
+            </ul>
+          </div>
+
+          <h3>Worked example: fusing bias, activation, and multiply</h3>
+          <p>
+            Take a toy vector with one million FP16 elements, so one vector occupies 2 MB. An unfused gated activation might write a 2 MB biased intermediate, read and write it for an activation, then read that result and a second 2 MB vector for multiplication before writing a final 2 MB vector. Ignoring caches and original input reads, those temporary stages can easily account for roughly 12 MB of intermediate reads and writes. At an achieved 600 GB/s, pure transfer time for 12 MB is about <code>12 MB ÷ 600,000 MB/s = 20 microseconds</code>. Add three launches at an illustrative 8 microseconds each and fixed overhead reaches about 44 microseconds.
+          </p>
+          <p>
+            A fused kernel can load source values, add bias, evaluate the activation, multiply, and write only the 2 MB final output. If its required traffic is 6 MB including source reads and output, transfer takes about 10 microseconds, plus one 8-microsecond launch: roughly 18 microseconds in this simplified model. The arithmetic barely changed. Data movement and dispatch did. The exact numbers vary by GPU and shape, but the accounting method shows why small per-layer savings matter when repeated over dozens of layers and hundreds of decode steps.
+          </p>
+
+          <h3>Kernel selection is a matching problem</h3>
+          <p>
+            There is no universally fastest matrix-multiplication kernel. A tile optimized for large square matrices may waste lanes on a skinny matrix-vector shape. Tensor cores require supported dtypes and alignment. More warps may hide memory latency but consume registers and shared memory. A runtime can use heuristics, benchmark candidates during a build, or generate specialized code. Selection keys often include GPU architecture, dimensions, batch, sequence length, head size, data type, strides, causal mode, and whether quantization scales must be applied. This explains why two mathematically identical executions can have different latency.
+          </p>
+
+          <h3>FlashAttention: exact attention with a smaller working set</h3>
+          <p>
+            Ordinary attention is often taught as three steps: form scores <code>S = QKᵀ / √d</code>, apply row-wise softmax, then compute <code>PV</code>. A straightforward implementation materializes the entire score and probability matrices. For sequence length <code>N</code>, those matrices contain <code>N²</code> entries. FlashAttention changes the schedule, not the desired mathematical result. It loads tiles of queries, keys, and values into on-chip memory, computes partial score tiles, and maintains enough statistics to update softmax incrementally. The full <code>N×N</code> matrix never needs to live in HBM.
+          </p>
+          <div class="equation-box">
+            <div class="math">m new = max(m old, max(s tile))</div>
+            <div class="math">ℓ new = exp(m old − m new)ℓ old + Σ exp(s i − m new)</div>
+            <div class="math">a new = exp(m old − m new)a old + Σ exp(s i − m new)v i</div>
+            <div class="math">output = a final / ℓ final</div>
+            <ul>
+              <li><strong>s tile</strong> contains the score values in the current key tile.</li>
+              <li><strong>m</strong> is the running maximum used for numerical stability.</li>
+              <li><strong>ℓ</strong> is the running sum of exponentials after rescaling.</li>
+              <li><strong>a</strong> is the running value-weighted numerator.</li>
+              <li><strong>v i</strong> is the value vector paired with score <strong>s i</strong>.</li>
+            </ul>
+          </div>
+
+          <h3>Toy online-softmax calculation</h3>
+          <p>
+            Suppose one query sees scores <code>[1, 2]</code> in the first tile and score <code>[3]</code> in the second. After tile one, the running maximum is 2 and the sum is <code>exp(1−2)+exp(2−2)=0.368+1=1.368</code>. When score 3 arrives, the new maximum becomes 3. The old sum must be rescaled by <code>exp(2−3)=0.368</code>, giving about 0.503, and the new score contributes 1. The final denominator is about 1.503. This equals evaluating all scores with maximum 3: <code>exp(−2)+exp(−1)+1 ≈ 0.135+0.368+1=1.503</code>. The same rescaling applies to the accumulated weighted values, so tiles combine exactly apart from normal floating-point rounding.
+          </p>
+
+          <pre><code># Educational structure, not a CUDA kernel
+for query_tile in tiles(Q):
+    running_max = -infinity
+    running_sum = 0
+    weighted_values = 0
+    for key_tile, value_tile in zip(tiles(K), tiles(V)):
+        scores = query_tile @ transpose(key_tile) * scale
+        tile_max = row_max(scores)
+        new_max = maximum(running_max, tile_max)
+        correction = exp(running_max - new_max)
+        probabilities = exp(scores - new_max)
+        running_sum = correction * running_sum + row_sum(probabilities)
+        weighted_values = correction * weighted_values + probabilities @ value_tile
+        running_max = new_max
+    output_tile = weighted_values / running_sum</code></pre>
+
+          <div class="source-links">
+            <strong>mini_infer reading:</strong>
+            <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/flash_attention.py">online tiled attention</a>
+            <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/cuda_graph_simulator.py">CUDA graph control-flow simulator</a>
+          </div>
+
+          <div class="boundary">
+            <article><span class="tag">Production technology</span><h4>CUDA and FlashAttention kernels</h4><p>Real implementations execute compiled GPU code, manage warps and tiles, and are benchmarked for architectures and shapes. Frameworks and engines may use cuBLAS, CUTLASS, Triton, custom CUDA, or vendor plugins.</p></article>
+            <article><span class="tag concept">mini-infer simulation</span><h4>Pure Python recurrence</h4><p><code>online_tiled_attention</code> demonstrates the stable recurrence and avoids building a score matrix in Python. It is not GPU code and makes no speed claim. <code>StaticShapeGraphCache</code> models capture/replay decisions without CUDA execution.</p></article>
+          </div>
+
+          <h3>Latency, throughput, and memory tradeoffs</h3>
+          <p>
+            Fusion usually reduces launches and HBM traffic, helping both latency and throughput. It can also increase register pressure, reduce occupancy, or duplicate code across many shape variants. FlashAttention lowers temporary memory dramatically and often speeds long sequences, but short shapes may not amortize setup. CUDA graphs reduce repeated launch overhead by capturing a static execution sequence, yet dynamic batch shapes require padding, multiple captured buckets, or fallback execution. Padding spends compute and memory for regularity. Compilation spends build time and storage to save runtime time. Kernel engineering is therefore a search over the whole workload distribution, not a benchmark of one convenient shape.
+          </p>
+
+          <div class="tradeoff-grid">
+            <article><h4>When to use fusion and specialized kernels</h4><p>Use them for stable, frequently executed patterns with substantial launch or intermediate-traffic cost. They are especially valuable in repeated decoder layers and fixed production shape ranges.</p></article>
+            <article><h4>When not to use them</h4><p>Avoid premature custom kernels when the operation is rare, shapes change constantly, framework kernels already saturate hardware, or maintenance and numerical-validation costs exceed the saved latency.</p></article>
+          </div>
+
+          <h3>Common mistakes</h3>
+          <ul class="compact-list">
+            <li>Calling a Python function a CUDA kernel simply because it implements the same equation.</li>
+            <li>Assuming fewer kernels always means faster execution; an oversized fused kernel may spill registers or limit occupancy.</li>
+            <li>Timing asynchronous GPU work without synchronization, which measures queueing rather than completion.</li>
+            <li>Thinking FlashAttention approximates attention. The core algorithm computes exact attention up to floating-point ordering differences.</li>
+            <li>Choosing a kernel from model name alone while ignoring shape, dtype, stride, and GPU architecture.</li>
+          </ul>
+
+          <h3>Knowledge checks</h3>
+          <div class="check-list">
+            <details><summary>1. What is a GPU kernel?</summary><p>A host-launched function whose many threads run in parallel on a GPU. It encodes an execution strategy for an operation, not merely its mathematical definition.</p></details>
+            <details><summary>2. What two costs can fusion reduce?</summary><p>It can reduce fixed launch/dispatch count and HBM traffic for intermediate tensors. The arithmetic count may remain almost unchanged.</p></details>
+            <details><summary>3. Why not keep every tensor in registers?</summary><p>Registers are extremely limited and private to threads. Excess demand spills to slower memory and can reduce resident warps, harming latency hiding.</p></details>
+            <details><summary>4. What does online softmax remember between tiles?</summary><p>A running maximum, a properly rescaled exponential sum, and a properly rescaled value-weighted accumulator for each query row.</p></details>
+            <details><summary>5. Why does kernel selection depend on shape?</summary><p>Shape determines tile fit, parallel work, padding, memory reuse, and whether specialized hardware instructions can be used efficiently.</p></details>
+          </div>
+
+          <h3>Practical exercises</h3>
+          <div class="exercise-grid">
+            <article><h4>Trace the simulation</h4><p>Open the linked <code>flash_attention.py</code>. For three scalar values and tile size one, write down <code>running_max</code>, <code>running_sum</code>, and the accumulator after every key.</p></article>
+            <article><h4>Fusion accounting</h4><p>Draw a chain of RMSNorm → projection → bias → activation. Mark every HBM read/write in an unfused version, then propose legal fusion boundaries and identify why the projection may remain separate.</p></article>
+          </div>
+
+          <div class="bridge"><strong>Bridge to day 8:</strong> Kernels are executable machinery, but a deployed model begins as files and graphs. Day 8 separates weight containers, portable graph formats, compiler inputs, and hardware-specific execution plans.</div>
+        </section>
+
+        <section id="day-08" class="content-section day-section" data-search-group="Day 8 model formats">
+          <header class="chapter-header" data-search-item data-keywords="PyTorch state dict pickle SafeTensors memory mapping ONNX TensorRT runtime execution plan engine portability security">
+            <span class="chapter-number">08</span>
+            <p class="eyebrow">Know what the file promises</p>
+            <h2>PyTorch weights, SafeTensors, ONNX, TensorRT, and execution formats</h2>
+            <p>
+              “Model format” can mean a bag of numbers, a program-shaped graph, or a compiled plan. Confusing these categories creates security risks, portability surprises, and deployment failures. Day 8 builds a precise vocabulary for moving a trained model into an inference runtime.
+            </p>
+          </header>
+
+          <h3>A beginner analogy: ingredients, recipe, kitchen, and prepared meal</h3>
+          <p>
+            A box of ingredients is like a weight-only file: useful numbers, but no complete cooking procedure. A printed recipe resembles a portable computation graph: it names operations and how outputs feed inputs, but a kitchen must still implement them. The kitchen resembles a runtime such as PyTorch, ONNX Runtime, or TensorRT. A catering line built for one venue resembles a compiled engine: stations, tools, and timing have already been chosen for a target. You cannot ask whether “the model file” is portable until you know which of these objects it is.
+          </p>
+
+          <h3>Why it matters</h3>
+          <p>
+            Deployment failures often begin with an artifact assumption: unsafe loading, missing architecture code, an unsupported ONNX operator, or a plan built for another target. Precise categories make the supply chain auditable. They also reveal where optimization occurs. A smaller or safer weight file changes loading behavior; a graph enables cross-operation analysis; a compiled plan records target-specific execution choices. One does not automatically provide the benefits of another.
+          </p>
+
+          <h3>Definitions and layers</h3>
+          <dl class="definition-grid">
+            <div><dt>PyTorch module</dt><dd>A Python object that defines parameters, submodules, and forward behavior. Its meaning depends on Python code and PyTorch semantics.</dd></div>
+            <div><dt>State dict</dt><dd>A mapping from parameter or buffer names to tensors. It stores state, not the Python class implementation needed to use that state.</dd></div>
+            <div><dt>Pickle</dt><dd>Python object serialization capable of reconstructing objects by executing instructions. Loading an untrusted pickle is unsafe.</dd></div>
+            <div><dt>SafeTensors</dt><dd>A non-executable tensor container with metadata and contiguous tensor bytes, designed for safe and efficient loading and memory mapping.</dd></div>
+            <div><dt>Memory mapping</dt><dd>Letting the operating system map file regions into virtual memory so pages are loaded on demand rather than copied through one giant user-space buffer.</dd></div>
+            <div><dt>ONNX</dt><dd>A portable graph representation with standardized operators, tensor types, initializers, and graph connections.</dd></div>
+            <div><dt>Runtime</dt><dd>Software that loads an artifact, allocates memory, selects implementations, executes operations, and manages devices.</dd></div>
+            <div><dt>Execution plan / engine</dt><dd>A compiled, specialized artifact containing target-specific choices such as fused layers, tactics, precision, and workspace assumptions.</dd></div>
+          </dl>
+
+          <div class="concept-diagram four" role="img" aria-label="Model deployment artifact layers">
+            <div class="diagram-node"><strong>Weights</strong>.pt / SafeTensors</div>
+            <div class="diagram-node"><strong>Graph</strong>PyTorch export / ONNX</div>
+            <div class="diagram-node"><strong>Compiler</strong>shape + precision + target</div>
+            <div class="diagram-node"><strong>Engine</strong>runtime plan</div>
+          </div>
+
+          <h3>Step-by-step: from checkpoint to serving process</h3>
+          <ol class="step-flow">
+            <li><strong>Reconstruct architecture.</strong> Load trusted model code and configuration: layer count, hidden size, head layout, vocabulary, positional method, and tensor naming.</li>
+            <li><strong>Load tensors.</strong> Read state from a trusted PyTorch state dict or SafeTensors shards. Validate names, shapes, dtypes, shard indexes, and checksums.</li>
+            <li><strong>Run an eager reference.</strong> Feed known inputs through native PyTorch and store outputs or token-level comparisons as a correctness baseline.</li>
+            <li><strong>Export a graph if needed.</strong> Capture operations, constants, shapes or dynamic dimensions, and supported control flow into an interchange representation such as ONNX.</li>
+            <li><strong>Compile or optimize.</strong> Select target hardware, allowed precision, shape profiles, memory workspace, and candidate kernels or tactics.</li>
+            <li><strong>Validate again.</strong> Compare the optimized runtime with the trusted reference over normal and boundary shapes. Numerical tolerances must reflect chosen precision.</li>
+            <li><strong>Package the contract.</strong> Keep tokenizer, generation configuration, model revision, adapter identity, checksums, runtime version, GPU architecture, and build flags together.</li>
+          </ol>
+
+          <h3>Worked example: storage, loading, and specialization</h3>
+          <p>
+            Imagine a tiny transformer with 16 million parameters. In FP32, raw tensor payload is <code>16,000,000 × 4 bytes = 64 MB</code>. In FP16, it is 32 MB. Container headers add some metadata but do not change the basic scaling. A SafeTensors file can describe each tensor’s dtype, shape, and byte offsets; a loader can map the file and read slices without reconstructing arbitrary Python objects. A PyTorch state dict can contain the same tensor values, but its conventional serialization path belongs to the Python/PyTorch ecosystem.
+          </p>
+          <p>
+            Next export an ONNX graph with an input shape like <code>[batch, sequence, hidden]</code>. If batch and sequence are dynamic, the graph is more reusable, but the optimizer must retain implementations that cover a range. If we compile a TensorRT engine for batch 1–8 and sequence 1–2048 on a particular GPU family, the builder can test tactics and reserve workspace for that profile. A request with batch 16 is outside the contract. An engine built for a different GPU architecture or plugin version may not load. The compiled artifact can be faster precisely because it discards some generality.
+          </p>
+
+          <div class="equation-box">
+            <div class="math">Weight bytes = N params × bytes per parameter</div>
+            <div class="math">Approximate load floor = bytes read / effective storage bandwidth</div>
+            <ul>
+              <li><strong>N params</strong> is the number of stored parameter values, not necessarily the model’s operation count.</li>
+              <li><strong>Bytes per parameter</strong> follows the storage dtype, such as 4 for FP32 or 2 for FP16/BF16.</li>
+              <li><strong>Effective storage bandwidth</strong> includes filesystem, cache, decompression, host memory, and transfer behavior; it is usually below a device’s advertised sequential rate.</li>
+              <li>The equation is a lower-bound intuition. Parsing, allocation, conversion, and device copies add time.</li>
+            </ul>
+          </div>
+
+          <h3>Code sketch: weights are not execution</h3>
+          <pre><code># Weight-only path: architecture code remains required
+model = TinyTransformer(config)
+state = safe_tensor_loader("model.safetensors")
+model.load_state_dict(state)
+reference = model(input_ids)
+
+# Graph path: exported operations become an input to another runtime
+onnx_graph = export_to_onnx(model, example_inputs, dynamic_shapes=True)
+session = onnx_runtime_session(onnx_graph, providers=["CUDA"])
+portable_output = session.run(input_ids)
+
+# Compiled path: target and shape profile become part of the artifact contract
+engine = build_tensorrt(
+    onnx_graph,
+    target_gpu="chosen-architecture",
+    precision="fp16",
+    shape_profile={"batch": (1, 4, 8), "sequence": (1, 512, 2048)},
+)
+optimized_output = engine.run(input_ids)</code></pre>
+
+          <div class="source-links">
+            <strong>mini_infer reading:</strong>
+            <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/weight_loading.py">deterministic JSON shard loader</a>
+            <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/weight_sharding.py">learning-scale weight sharding</a>
+          </div>
+
+          <div class="boundary">
+            <article><span class="tag">Production technology</span><h4>PyTorch, SafeTensors, ONNX, TensorRT</h4><p>These are real ecosystems with evolving version and operator contracts. SafeTensors stores tensors; ONNX describes a graph; TensorRT builds and runs NVIDIA-targeted optimized engines. None is simply a faster filename extension.</p></article>
+            <article><span class="tag concept">mini-infer simulation</span><h4>Readable JSON weight shards</h4><p>The project loader intentionally uses small JSON matrices so learners can inspect duplicate-name and shape validation. JSON is not recommended for billion-parameter production checkpoints, and this module does not implement SafeTensors, ONNX, or TensorRT.</p></article>
+          </div>
+
+          <h3>Latency, throughput, memory, and portability tradeoffs</h3>
+          <p>
+            Eager PyTorch maximizes debuggability and flexibility but pays dispatch and generality costs. Graph capture and compilation can fuse operations, plan memory, and select kernels, improving latency or throughput after warmup. Builds consume time, may require large temporary workspace, and create artifacts tied to versions and targets. SafeTensors improves loading safety and enables efficient access patterns, but it does not by itself accelerate forward execution. ONNX can cross framework boundaries, but unsupported or custom operators may require graph rewriting or runtime extensions. TensorRT can deliver strong NVIDIA performance, but narrow shape profiles and hardware coupling increase the artifact matrix a team must build, test, store, and roll back.
+          </p>
+
+          <div class="table-wrap">
+            <table class="comparison">
+              <thead><tr><th>Artifact</th><th>Contains</th><th>Needs</th><th>Primary strength</th><th>Primary limitation</th></tr></thead>
+              <tbody>
+                <tr><td>Full PyTorch pickle</td><td>Potentially object graph plus tensors</td><td>Compatible Python/PyTorch code</td><td>Flexible reconstruction</td><td>Unsafe when untrusted; version coupling</td></tr>
+                <tr><td>State dict</td><td>Named tensor state</td><td>Architecture code</td><td>Conventional training checkpoint</td><td>Not a complete executable model</td></tr>
+                <tr><td>SafeTensors</td><td>Tensor metadata and bytes</td><td>Architecture/runtime</td><td>Non-executable, map-friendly storage</td><td>No computation graph</td></tr>
+                <tr><td>ONNX</td><td>Graph, operators, initializers</td><td>Compatible runtime/providers</td><td>Interchange and portability</td><td>Operator/export compatibility</td></tr>
+                <tr><td>TensorRT engine</td><td>Target-specialized execution plan</td><td>Compatible NVIDIA stack and target</td><td>Optimized execution</td><td>Reduced portability and build cost</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="tradeoff-grid">
+            <article><h4>When to use each</h4><p>Use SafeTensors for distributing weight-only checkpoints safely; native PyTorch for research and dynamic behavior; ONNX when interchange matters and operators are supported; TensorRT when a controlled NVIDIA deployment justifies build and validation effort.</p></article>
+            <article><h4>When not to use each</h4><p>Do not load untrusted pickle. Do not export ONNX only to claim portability without testing target runtimes. Do not build a specialized engine for rapidly changing models, hardware, or unbounded shapes unless automation owns the resulting artifact matrix.</p></article>
+          </div>
+
+          <h3>Common mistakes</h3>
+          <ul class="compact-list">
+            <li>Assuming a <code>.pt</code> suffix uniquely identifies safe contents; the extension is only a convention.</li>
+            <li>Believing SafeTensors contains the forward method or tokenizer.</li>
+            <li>Calling ONNX hardware-independent in practice without checking operator providers and custom extensions.</li>
+            <li>Shipping a compiled engine without recording target architecture, build versions, profiles, plugins, and precision settings.</li>
+            <li>Comparing file size without ensuring dtypes and duplicated tensors are equivalent.</li>
+            <li>Skipping output validation after export or reduced-precision compilation.</li>
+          </ul>
+
+          <h3>Knowledge checks</h3>
+          <div class="check-list">
+            <details><summary>1. What does a state dict omit?</summary><p>It omits the complete Python architecture and forward behavior. Code and configuration must reconstruct matching parameter names and shapes.</p></details>
+            <details><summary>2. Why is SafeTensors safer than pickle for untrusted weights?</summary><p>Its format represents tensor metadata and bytes rather than a general object-reconstruction program capable of invoking arbitrary Python behavior.</p></details>
+            <details><summary>3. What extra information does ONNX provide over a weight container?</summary><p>It represents operations, graph connectivity, inputs, outputs, types, and usually initializers, forming a portable mathematical recipe.</p></details>
+            <details><summary>4. Why can a compiled TensorRT engine be faster?</summary><p>The builder can specialize shapes and precision, fuse graph regions, plan buffers, and choose measured or heuristic tactics for a known target.</p></details>
+            <details><summary>5. Why can that same engine be inconvenient?</summary><p>Its optimizations depend on hardware, software versions, plugins, and shape profiles. Changes can require rebuilding and revalidating the artifact.</p></details>
+          </div>
+
+          <h3>Practical exercises</h3>
+          <div class="exercise-grid">
+            <article><h4>Artifact audit</h4><p>Create a four-column inventory for one model: weights, architecture/config, tokenizer, execution artifact. Write the version and checksum needed to reproduce each item.</p></article>
+            <article><h4>Size calculation</h4><p>For 7 billion parameters, estimate raw weight size in FP32, BF16, INT8, and 4-bit storage. Then list at least three reasons observed process memory differs from the file size.</p></article>
+          </div>
+
+          <div class="bridge"><strong>Bridge to day 9:</strong> A runtime can now execute the model, but many users must share finite GPU memory. Day 9 treats KV cache as paged memory and replaces fixed batches with a continuously changing schedule.</div>
+        </section>
+
+        <section id="day-09" class="content-section day-section" data-search-group="Day 9 vLLM">
+          <header class="chapter-header" data-search-item data-keywords="vLLM PagedAttention continuous batching KV cache block allocator block table fragmentation internal external preemption">
+            <span class="chapter-number">09</span>
+            <p class="eyebrow">Manage state as requests change</p>
+            <h2>vLLM, PagedAttention, and continuous batching</h2>
+            <p>
+              Serving one sequence is mostly a model-execution problem. Serving many unpredictable sequences becomes a memory-allocation and scheduling problem. vLLM popularized an engine design in which KV state is divided into fixed-size blocks and active batches change after every iteration.
+            </p>
+          </header>
+
+          <h3>A beginner analogy: a hotel with rooms instead of one private floor</h3>
+          <p>
+            Imagine a hotel that promises every guest an entire contiguous floor because it does not know how many friends will arrive later. Most rooms remain empty, and a guest cannot use scattered rooms on two floors even when the hotel has enough total vacancies. Paging changes the promise: each guest receives rooms only as needed, and a card lists the room numbers. The rooms need not be adjacent. A block table is that card. Fixed-size KV blocks are the rooms. The final partly filled room is internal fragmentation; unusable gaps between variable allocations are external fragmentation. Continuous batching is the front desk filling a newly vacant room immediately instead of waiting for every guest in a tour group to check out.
+          </p>
+
+          <h3>Why it matters</h3>
+          <p>
+            KV cache can consume tens of gigabytes and determines how many requests fit beside model weights. Poor reservation wastes that capacity, while a batch that drains slowly wastes compute. Paged allocation and iteration-level scheduling convert freed memory and finished slots into usable capacity quickly. For a busy service, those mechanisms can improve goodput more than a small kernel speedup because they decide whether the GPU has useful work at all.
+          </p>
+
+          <h3>Start with batching and the KV cache</h3>
+          <p>
+            Batching combines work from several requests into one model execution so weights and GPU launches are shared. A static batch is formed once and remains together until completion. If one sequence ends after ten tokens while another needs two hundred, the finished slot may remain wasted or the whole batch may wait. Continuous batching, also called iteration-level batching, reconsideres membership between decode iterations. Finished or paused requests leave; waiting requests enter. The shape still must suit available kernels, but the logical population changes continuously.
+          </p>
+          <p>
+            Each transformer layer saves keys and values for every processed token so later decode steps do not recompute them. This KV cache grows with context length and active sequence count. Because generated length is unknown at admission, reserving a maximum contiguous region wastes memory. Allocating variable-size extensions can leave holes and complicate relocation. PagedAttention separates a sequence’s logical token order from physical storage locations.
+          </p>
+
+          <dl class="definition-grid">
+            <div><dt>KV cache</dt><dd>Per-layer key and value tensors retained from earlier positions and read by future attention steps.</dd></div>
+            <div><dt>Physical block</dt><dd>A fixed-size region in the cache pool that stores KV entries for a fixed number of token positions.</dd></div>
+            <div><dt>Logical block</dt><dd>A numbered chunk in a sequence’s token order: logical block zero, one, two, and so on.</dd></div>
+            <div><dt>Block table</dt><dd>Per-sequence metadata mapping each logical block number to a physical block identifier.</dd></div>
+            <div><dt>Internal fragmentation</dt><dd>Unused space inside an allocated block, normally in a sequence’s final partially occupied block.</dd></div>
+            <div><dt>External fragmentation</dt><dd>Free space split into holes that cannot satisfy a larger contiguous request even though total free bytes are sufficient.</dd></div>
+            <div><dt>Continuous batching</dt><dd>Refilling and reshaping an active request set at iteration boundaries rather than holding one static batch to completion.</dd></div>
+            <div><dt>Preemption</dt><dd>Temporarily removing a request from execution when resources are scarce, potentially recomputing or swapping state later.</dd></div>
+          </dl>
+
+          <div class="equation-box">
+            <div class="math">KV bytes per token = 2 × L × H kv × D head × S dtype</div>
+            <div class="math">KV bytes total ≈ A × T average × KV bytes per token</div>
+            <ul>
+              <li>The leading <strong>2</strong> represents one key and one value.</li>
+              <li><strong>L</strong> is the number of transformer layers.</li>
+              <li><strong>H kv</strong> is the number of key/value heads. In grouped-query attention this may be smaller than the query-head count.</li>
+              <li><strong>D head</strong> is elements per attention head.</li>
+              <li><strong>S dtype</strong> is bytes per stored element.</li>
+              <li><strong>A</strong> is active sequence count and <strong>T average</strong> is average cached tokens per sequence.</li>
+              <li>Implementations add metadata, alignment, allocator reserve, temporary buffers, and possibly quantization scales.</li>
+            </ul>
+          </div>
+
+          <h3>Worked KV-size example</h3>
+          <p>
+            Consider a model with 32 layers, 8 KV heads, head dimension 128, and BF16 cache values. Per token, KV storage is <code>2 × 32 × 8 × 128 × 2 = 131,072 bytes</code>, or 128 KiB. A 4,096-token sequence therefore uses about 512 MiB of KV state. Sixty-four such sequences at that length would require about 32 GiB before allocator reserve and workspace. If the model used 32 KV heads instead of 8, the cache would be four times larger. This is why grouped-query attention affects serving capacity even though the number of query heads may remain high.
+          </p>
+
+          <h3>Step-by-step PagedAttention flow</h3>
+          <ol class="step-flow">
+            <li><strong>Create request state.</strong> The engine tokenizes a prompt and creates an empty logical block table.</li>
+            <li><strong>Allocate blocks.</strong> For a block size of 16 tokens, an 18-token prompt needs two physical blocks. Any free block IDs can satisfy the request.</li>
+            <li><strong>Write KV entries.</strong> Kernels use the block table to translate a logical token position into a physical block plus within-block offset.</li>
+            <li><strong>Schedule execution.</strong> A token budget and free-block budget decide which prefills and decodes can run together.</li>
+            <li><strong>Extend incrementally.</strong> Decode fills the final block; when it becomes full, the allocator adds one more physical block rather than moving the whole sequence.</li>
+            <li><strong>Reclaim promptly.</strong> On completion or cancellation, all owned blocks return to the free pool, and the next scheduling iteration can admit more work.</li>
+          </ol>
+
+          <h3>Toy block-table example</h3>
+          <p>
+            Let each physical block hold four token positions. The free pool contains block IDs 0 through 7. Request A has token IDs <code>[11, 12, 13, 14, 15, 16]</code>. It receives physical blocks 2 and 7, so its block table is <code>[2, 7]</code>. Logical positions 0–3 live in physical block 2; positions 4–5 occupy the first two slots in physical block 7. Request B can simultaneously use blocks 0 and 5. Noncontiguity is harmless because kernels consult each request’s table.
+          </p>
+          <p>
+            A has two unused slots in its final block: at two cache entries of waste, internal fragmentation is less than one block. If A finishes, blocks 2 and 7 immediately become independent free units. Contrast that with a naive allocator that reserved sixteen positions for A: ten positions would remain unused. The paged design pays metadata lookups and potentially less regular addresses to avoid large reservation waste and external holes.
+          </p>
+
+          <div class="concept-diagram four" role="img" aria-label="Paged KV cache mapping">
+            <div class="diagram-node"><strong>Tokens 0-3</strong>logical block 0</div>
+            <div class="diagram-node"><strong>Table[0] = 2</strong>translation</div>
+            <div class="diagram-node"><strong>Physical block 2</strong>KV entries</div>
+            <div class="diagram-node"><strong>Tokens 4-7</strong>table[1] = 7</div>
+          </div>
+
+          <pre><code>class PagedCache:
+    def append(sequence, key, value):
+        table = block_tables[sequence]
+        if table is empty or last_block(table).is_full():
+            table.append(free_pool.allocate_one())
+        physical = table[-1]
+        physical.append((key, value))
+
+def scheduler_iteration(waiting, active, token_budget, free_blocks):
+    remove_finished(active)
+    while waiting and has_slot(active) and free_blocks &gt; required_blocks(waiting[0]):
+        active.add(waiting.pop_left())
+    selected = fit_prefill_and_decode(active, token_budget)
+    return execute_one_iteration(selected)</code></pre>
+
+          <div class="source-links">
+            <strong>mini_infer reading:</strong>
+            <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/block_allocator.py">fixed block allocator</a>
+            <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/paged_kv_cache.py">paged KV cache</a>
+            <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/batching.py">continuous batcher</a>
+            <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/scheduler.py">token-budget scheduler</a>
+          </div>
+
+          <div class="boundary">
+            <article><span class="tag">Production technology</span><h4>vLLM</h4><p>vLLM is a production inference engine with GPU kernels, distributed execution, model integrations, scheduling policy, prefix features, quantization options, and an evolving API. PagedAttention is one influential part of a much larger system.</p></article>
+            <article><span class="tag concept">mini-infer simulation</span><h4>Readable allocator and scheduler</h4><p>The linked modules use Python lists, tuples, and dictionaries to expose ownership and state transitions. They do not allocate GPU KV tensors, implement a PagedAttention CUDA kernel, copy-on-write beam sharing, swapping, or production concurrency.</p></article>
+          </div>
+
+          <h3>Latency, throughput, and memory tradeoffs</h3>
+          <p>
+            Smaller blocks reduce final-block waste but enlarge block tables and increase allocation frequency. Larger blocks reduce metadata and may produce friendlier access patterns but waste more space for short sequences. Continuous batching raises utilization and throughput under load, yet aggressive prefills can delay decode iterations and worsen inter-token latency. Reserving nearly all HBM for KV increases concurrency but risks out-of-memory failures from workspaces and temporary activations. Preemption preserves admission under pressure but can cause later recomputation or transfer, creating latency spikes. A robust engine exposes policies for maximum batched tokens, maximum sequences, memory utilization, chunked prefill, and fairness because no single setting optimizes every service-level objective.
+          </p>
+
+          <div class="tradeoff-grid">
+            <article><h4>When to use vLLM-style serving</h4><p>It is a strong fit for general autoregressive model serving with many concurrent requests, variable prompt/output lengths, OpenAI-like APIs, and a need for high throughput without building a custom NVIDIA-only engine.</p></article>
+            <article><h4>When not to use it</h4><p>A tiny batch-1 offline tool may not benefit from sophisticated scheduling. Highly fixed, latency-critical NVIDIA deployments may justify a more specialized compiled stack. Unsupported models, unusual custom kernels, or strict artifact controls may also dictate another runtime.</p></article>
+          </div>
+
+          <h3>Common mistakes</h3>
+          <ul class="compact-list">
+            <li>Thinking PagedAttention removes the KV cache; it reorganizes storage and access.</li>
+            <li>Confusing virtual-memory-style terminology with CPU page faults. GPU engine block tables are application-managed metadata.</li>
+            <li>Claiming zero fragmentation. The final block still has bounded internal waste, and allocator reserve still exists.</li>
+            <li>Increasing maximum batch size without budgeting KV blocks and batched tokens.</li>
+            <li>Measuring only tokens per second while decode users experience poor time to first token or inter-token latency.</li>
+            <li>Assuming continuous batching means adding a request in the middle of an executing kernel; membership normally changes at iteration boundaries.</li>
+          </ul>
+
+          <h3>Knowledge checks</h3>
+          <div class="check-list">
+            <details><summary>1. What problem does a block table solve?</summary><p>It preserves a sequence’s logical token order while allowing its physical KV blocks to be scattered through the pool.</p></details>
+            <details><summary>2. With block size 16, what is the maximum unused capacity in a final allocated block?</summary><p>Fifteen token slots, because a sequence that needs the block must use at least one slot. Average waste depends on length distribution.</p></details>
+            <details><summary>3. Why is GQA useful for capacity?</summary><p>Fewer KV heads reduce cache bytes per token while query heads can remain numerous, allowing more tokens or sequences in the same HBM.</p></details>
+            <details><summary>4. How does continuous batching differ from static batching?</summary><p>Continuous batching removes finished requests and admits waiting ones between iterations; static membership remains fixed until the batch drains.</p></details>
+            <details><summary>5. What new cost does paging introduce?</summary><p>Allocation and block-table metadata, address translation in kernels, and potentially less contiguous memory access. The design wins when saved capacity and flexibility outweigh these costs.</p></details>
+          </div>
+
+          <h3>Practical exercises</h3>
+          <div class="exercise-grid">
+            <article><h4>Manual allocation</h4><p>Use block size four and ten physical blocks. Allocate requests of 6, 3, and 9 tokens; draw each table, compute internal waste, free the middle request, and allocate a new 7-token request.</p></article>
+            <article><h4>Scheduler policy</h4><p>Given a 12-token step budget, compare scheduling one 10-token prefill plus two decodes against twelve decodes. Discuss throughput, TTFT, ITL, and fairness rather than choosing one universally.</p></article>
+          </div>
+
+          <div class="bridge"><strong>Bridge to day 10:</strong> Paging makes KV blocks movable and shareable building units. Day 10 asks a new question: when two prompts begin with the same tokens, why compute and store those prefix blocks twice?</div>
+        </section>
+
+        <section id="day-10" class="content-section day-section" data-search-group="Day 10 SGLang">
+          <header class="chapter-header" data-search-item data-keywords="SGLang RadixAttention radix tree trie prefix cache structured output constrained decoding grammar DFA JSON schema">
+            <span class="chapter-number">10</span>
+            <p class="eyebrow">Reuse shared history and constrain the future</p>
+            <h2>SGLang, RadixAttention, and structured outputs</h2>
+            <p>
+              Page allocation reduces wasted cache space. Prefix caching reduces wasted prefill work. Structured decoding prevents wasted generations and retries. SGLang brings these concerns close to its serving scheduler, where cache locality and output constraints can shape execution.
+            </p>
+          </header>
+
+          <h3>A beginner analogy: a library path and a fill-in-the-form clerk</h3>
+          <p>
+            Imagine a library where many readers request books beginning with the same shelf route: entrance, floor two, history aisle, then a specific title. A radix tree stores the shared route once and branches only when destinations differ. New readers reuse the common directions. Prefix KV caching works similarly: token sequences label a path, and nodes refer to reusable cache blocks. Now imagine the checkout clerk must produce a form. Rather than writing arbitrary text and checking it afterward, the clerk sees only legal next fields and punctuation. Structured decoding applies that rule to tokens: invalid next tokens receive no probability mass.
+          </p>
+
+          <h3>Why it matters</h3>
+          <p>
+            Repeated system prompts and session histories can make prefill the same computation performed again and again. Reusing compatible KV state turns that repetition into a cache lookup and improves time to first token. Meanwhile, applications increasingly need JSON or grammar-conforming results. Preventing impossible tokens during sampling avoids many repair and retry loops. Both features move application structure into engine policy, where it can influence scheduling and memory.
+          </p>
+
+          <h3>Definitions</h3>
+          <dl class="definition-grid">
+            <div><dt>Prefix</dt><dd>The initial token subsequence of a prompt. Cache identity is based on exact token IDs plus execution context, not visually similar text.</dd></div>
+            <div><dt>Trie</dt><dd>A tree keyed by sequence elements. Paths from the root represent prefixes, making longest-prefix lookup efficient.</dd></div>
+            <div><dt>Radix tree</dt><dd>A compressed trie in which chains of single-child nodes may be stored as token spans, reducing node overhead.</dd></div>
+            <div><dt>RadixAttention</dt><dd>SGLang’s approach to matching and managing reusable KV-cache prefixes with a radix-tree-oriented cache and scheduler integration.</dd></div>
+            <div><dt>Reference count</dt><dd>The number of active users pinning a cache entry. An entry with a positive count must not be evicted.</dd></div>
+            <div><dt>LRU eviction</dt><dd>Removing the least recently used eligible entry when capacity is needed; “eligible” excludes pinned state.</dd></div>
+            <div><dt>Structured output</dt><dd>Generation required to follow a schema or language, such as JSON with fixed fields or a regular expression.</dd></div>
+            <div><dt>Constrained decoding</dt><dd>Masking tokens that cannot legally continue the current grammar state before sampling.</dd></div>
+          </dl>
+
+          <div class="equation-box">
+            <div class="math">Saved prefill tokens = Σ requests max(0, matched prefix length)</div>
+            <div class="math">Reuse fraction = matched prefix tokens / total prompt tokens</div>
+            <div class="math">p′(token i) = exp(z i) / Σ allowed exp(z j), if i is allowed; otherwise 0</div>
+            <ul>
+              <li><strong>Matched prefix length</strong> is the number of leading tokens whose compatible KV state already exists.</li>
+              <li><strong>Reuse fraction</strong> is workload-dependent; it is not an engine constant.</li>
+              <li><strong>z i</strong> is the model logit for token <em>i</em>.</li>
+              <li><strong>allowed</strong> is the set of tokens with a valid grammar transition from the current state.</li>
+              <li><strong>p′</strong> is the renormalized probability distribution after masking.</li>
+          </ul>
+          </div>
+
+          <h3>Step-by-step: prefix reuse</h3>
+          <ol class="step-flow">
+            <li><strong>Canonicalize the execution key.</strong> Record model revision, tokenizer, adapter, KV dtype, positional state, and other factors that affect hidden states.</li>
+            <li><strong>Tokenize the prompt.</strong> A token-ID sequence, not raw text, walks the tree.</li>
+            <li><strong>Find the longest compatible prefix.</strong> Traverse children until the next token is absent. The deepest cached boundary is the reusable portion.</li>
+            <li><strong>Acquire the entry.</strong> Increment its reference count or pin its physical blocks so eviction cannot invalidate an in-flight request.</li>
+            <li><strong>Prefill only the suffix.</strong> Compute remaining prompt tokens using the reused KV state as prior context.</li>
+            <li><strong>Insert new cacheable boundaries.</strong> Add or split branches and attach resulting KV blocks.</li>
+            <li><strong>Release and evict safely.</strong> Decrement references when requests stop using entries; choose cold, unpinned victims when capacity is needed.</li>
+          </ol>
+
+          <h3>Worked radix example</h3>
+          <p>
+            Suppose tokenized prompts are A = <code>[10, 20, 30, 40]</code>, B = <code>[10, 20, 30, 99]</code>, and C = <code>[10, 20, 77]</code>. A tree shares the path <code>[10, 20]</code>. A and B share one additional token, 30, before branching to 40 and 99; C branches at 77. If KV state is cached at prefix <code>[10, 20, 30]</code>, request B can reuse three tokens and prefill only token 99 plus any following suffix. Request C reuses only two tokens.
+          </p>
+          <p>
+            Now give A an active reference. Even if A’s branch is oldest, its pinned blocks cannot be reclaimed. The evictor must choose another zero-reference entry. If a LoRA adapter changes between A and B, however, equal token IDs do not imply equal keys and values. Their cache identities must differ. Reusing state computed under another model, adapter, tokenizer interpretation, or positional convention is a correctness bug, not a small approximation.
+          </p>
+
+          <h3>Step-by-step: structured decoding</h3>
+          <ol class="step-flow">
+            <li>Compile a JSON schema, regular expression, or grammar into an automaton-like state representation.</li>
+            <li>At the current state, determine which token strings can legally continue the output. Token boundaries make this more complex than checking one character.</li>
+            <li>Set invalid token logits to negative infinity, or otherwise exclude them from the sampler.</li>
+            <li>Renormalize over allowed tokens and apply temperature, top-k, or other compatible sampling policies.</li>
+            <li>Consume the selected token and transition the grammar state. Stop only in an accepting state or under an explicit error policy.</li>
+          </ol>
+
+          <h3>Toy structured-output example</h3>
+          <p>
+            We want a flat object such as <code>{"age": 7}</code>. At the start, only an opening brace is legal. After a key string, only a colon is legal. At a value state, a string or number token may be legal. If logits for the next token are <code>NUMBER: 2.0</code>, <code>STRING: 1.0</code>, <code>hello: 4.0</code>, and <code>}: 3.0</code>, but the automaton allows only NUMBER and STRING, the tempting <code>hello</code> and closing brace are masked. Renormalization occurs over <code>exp(2)</code> and <code>exp(1)</code>. The result is valid by construction under this toy token grammar; semantic requirements such as age range still need validation.
+          </p>
+
+          <pre><code>def constrained_step(logits, grammar_state):
+    allowed = grammar.allowed_token_ids(grammar_state)
+    masked = [-infinity] * len(logits)
+    for token_id in allowed:
+        masked[token_id] = logits[token_id]
+    token = sample(softmax(masked))
+    next_state = grammar.transition(grammar_state, token)
+    return token, next_state
+
+def schedule_with_prefix(request):
+    key = (model_revision, adapter_id, kv_dtype, request.token_ids)
+    match = radix_cache.longest_prefix(key, acquire=True)
+    cached = 0 if match is None else match.length
+    return prefill(request.token_ids[cached:], prior_kv=match)</code></pre>
+
+          <div class="source-links">
+            <strong>mini_infer reading:</strong>
+            <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/prefix_cache.py">radix-style prefix cache</a>
+            <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/cache_aware_scheduler.py">cache-aware scheduler</a>
+            <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/structured_generation.py">token DFA structured decoder</a>
+          </div>
+
+          <div class="boundary">
+            <article><span class="tag">Production technology</span><h4>SGLang</h4><p>SGLang is a production serving system with high-performance backends, scheduling, RadixAttention, constrained generation, model support, parallelism, and distributed features. Real grammar engines optimize token matching and real prefix caches manage GPU blocks.</p></article>
+            <article><span class="tag concept">mini-infer simulation</span><h4>Python trie and token DFA</h4><p>The project stores complete token tuples at simple trie nodes, uses entry-count capacity, and models a tiny flat JSON-like token language. It teaches longest-prefix matching, pinning, LRU eligibility, and state transitions; it is not SGLang and does not execute GPU attention.</p></article>
+          </div>
+
+          <h3>Latency, throughput, and memory tradeoffs</h3>
+          <p>
+            Prefix reuse reduces time to first token and prefill compute when a workload repeats exact prefixes. Retaining those blocks consumes memory that might otherwise increase active-sequence capacity. A high hit rate can more than repay that cost; a diverse workload can leave cold branches occupying scarce HBM. Cache-aware scheduling may prioritize high-reuse requests for throughput, but blindly doing so can starve older misses. Structured decoding eliminates many invalid-output retries and can shorten end-to-end application latency. Yet computing allowed tokens and applying masks costs CPU or GPU work, especially for large, dynamic grammars. Constraints also alter the model distribution; a schema guarantees syntax, not factual correctness or business validity.
+          </p>
+
+          <div class="tradeoff-grid">
+            <article><h4>When to use SGLang features</h4><p>Prefix caching shines with repeated system prompts, few-shot templates, multi-turn session histories, branching agent workflows, or shared document prefixes. Structured decoding is appropriate when downstream software requires machine-readable schemas.</p></article>
+            <article><h4>When not to rely on them</h4><p>Prefix caching adds little when prompts share few leading tokens or change model context. Do not treat constrained JSON as trustworthy content; apply range, authorization, provenance, and domain validation after generation.</p></article>
+          </div>
+
+          <h3>Common mistakes</h3>
+          <ul class="compact-list">
+            <li>Caching by raw text instead of exact token IDs and compatible execution identity.</li>
+            <li>Evicting a prefix while active requests still reference its physical KV blocks.</li>
+            <li>Calling every trie a radix tree without acknowledging path compression differences.</li>
+            <li>Reporting a cache hit rate without weighting by matched token count; many one-token hits may save little work.</li>
+            <li>Assuming schema-conforming JSON is semantically correct, safe, or authorized.</li>
+            <li>Applying token masks after sampling rather than before probability normalization.</li>
+          </ul>
+
+          <h3>Knowledge checks</h3>
+          <div class="check-list">
+            <details><summary>1. Why use longest-prefix matching?</summary><p>Only a leading sequence can supply valid prior KV state. The deepest exact compatible prefix maximizes reusable work without skipping unmatched tokens.</p></details>
+            <details><summary>2. Why is a reference count necessary?</summary><p>It prevents eviction of cache blocks currently used by active requests, avoiding dangling references and corrupted attention state.</p></details>
+            <details><summary>3. Do equal prompt strings always share a cache entry?</summary><p>No. Tokenizer/model revision, adapter, position handling, KV precision, multimodal inputs, and other execution context can change the resulting state.</p></details>
+            <details><summary>4. What does constrained decoding guarantee?</summary><p>Given a correct grammar/token integration, it guarantees generated token sequences obey that syntactic constraint. It does not guarantee truthful or domain-valid values.</p></details>
+            <details><summary>5. When can prefix caching reduce throughput?</summary><p>When retained prefixes have low reuse and consume memory needed for active KV, or when cache bookkeeping and locality-aware scheduling cost more than the saved prefill.</p></details>
+          </div>
+
+          <h3>Practical exercises</h3>
+          <div class="exercise-grid">
+            <article><h4>Draw the tree</h4><p>Insert token sequences <code>[1,2,3]</code>, <code>[1,2,4,5]</code>, and <code>[1,9]</code>. Mark cached boundaries, references, and which zero-reference branch LRU should evict.</p></article>
+            <article><h4>Build a grammar</h4><p>Extend the mini-infer flat-object DFA on paper to require exactly the keys <code>name</code> then <code>age</code>. Identify where a token-level implementation must handle one token containing multiple characters.</p></article>
+          </div>
+
+          <div class="bridge"><strong>Bridge to day 11:</strong> vLLM and SGLang emphasize dynamic scheduling and cache policy. Day 11 moves toward a narrower target: compile and specialize an execution stack for NVIDIA hardware using selected tactics and plugin kernels.</div>
+        </section>
+
+        <section id="day-11" class="content-section day-section" data-search-group="Day 11 TensorRT-LLM">
+          <header class="chapter-header" data-search-item data-keywords="TensorRT-LLM compile build runtime plugins tactics engine plan precision profiles CUDA graph NVIDIA">
+            <span class="chapter-number">11</span>
+            <p class="eyebrow">Trade flexibility for a prepared path</p>
+            <h2>TensorRT-LLM compilation, tactics, and plugins</h2>
+            <p>
+              TensorRT-LLM focuses on highly optimized LLM execution on NVIDIA GPUs. The central lesson is broader than one product: when deployment shapes, precision, topology, and target hardware are known, a build system can move expensive decisions out of the request path.
+            </p>
+          </header>
+
+          <h3>A beginner analogy: a custom factory line</h3>
+          <p>
+            A general workshop can build many products because workers choose tools as each order arrives. A custom factory line is arranged for one product family: jigs fit known dimensions, stations are fused, and material buffers sit at planned locations. The line is fast and predictable, but changing product dimensions may require retooling. Eager execution resembles the workshop. A compiled engine resembles the factory line. Plugins are specialized stations inserted when general machinery cannot deliver the desired operation or performance.
+          </p>
+
+          <h3>Why it matters</h3>
+          <p>
+            Request-time flexibility carries dispatch, search, and conservative memory costs. Stable production deployments can pay those costs once during a controlled build and reuse the result millions of times. That can lower latency and make behavior more predictable. The same decision creates an artifact lifecycle, so performance engineering and release engineering become inseparable: every specialization must be reproducible, validated, compatible, and reversible.
+          </p>
+
+          <h3>Build time and runtime are different worlds</h3>
+          <p>
+            The <strong>build</strong> phase reads model structure and weights, chooses supported precisions, identifies fusion opportunities, selects or benchmarks implementation tactics, defines shape profiles, plans memory, and serializes an artifact or configuration. It can take minutes and may consume substantial host and GPU workspace. The <strong>runtime</strong> phase loads the prepared artifact, binds actual input/output buffers that fit its profiles, coordinates KV state and request metadata, and launches the selected operations. A fast runtime can exist because the builder already did search and specialization.
+          </p>
+          <p>
+            TensorRT-LLM versions and workflows evolve, so production engineers should follow the documentation matching their installed release rather than memorize one command sequence. Conceptually, however, the separation remains stable: convert or define a model, build with explicit constraints, then run through an LLM-aware runtime that also handles inflight batching, cache management, parallel execution, and communication.
+          </p>
+
+          <dl class="definition-grid">
+            <div><dt>Compilation</dt><dd>Transforming a higher-level model into a lower-level executable representation while applying analysis, specialization, and optimization.</dd></div>
+            <div><dt>Builder</dt><dd>The component that creates an optimized engine or build artifact from model, configuration, profiles, and target information.</dd></div>
+            <div><dt>Runtime</dt><dd>The component that loads a built artifact, binds buffers, and executes requests. LLM runtimes also coordinate dynamic sequence state.</dd></div>
+            <div><dt>Tactic</dt><dd>A candidate low-level implementation for an operation, such as a particular GEMM algorithm and tile configuration.</dd></div>
+            <div><dt>Optimization profile</dt><dd>A supported range and representative point for dynamic input dimensions. It bounds what shapes the engine accepts and guides optimization.</dd></div>
+            <div><dt>Plugin</dt><dd>A custom operation implementation integrated into the graph/runtime, often providing fused or architecture-specific behavior unavailable as ordinary layers.</dd></div>
+            <div><dt>Fusion</dt><dd>Combining compatible graph operations so intermediates, launches, or synchronization can be reduced.</dd></div>
+            <div><dt>Quantized execution</dt><dd>Using reduced-precision representations and kernels, with scales and accumulation rules that preserve acceptable model quality.</dd></div>
+          </dl>
+
+          <div class="concept-diagram four" role="img" aria-label="TensorRT-LLM build and runtime flow">
+            <div class="diagram-node"><strong>Model</strong>weights + config</div>
+            <div class="diagram-node"><strong>Build</strong>profiles + tactics + plugins</div>
+            <div class="diagram-node"><strong>Engine</strong>specialized plan</div>
+            <div class="diagram-node"><strong>Runtime</strong>requests + KV + execution</div>
+          </div>
+
+          <h3>Step-by-step compilation and execution flow</h3>
+          <ol class="step-flow">
+            <li><strong>Pin the target.</strong> Record GPU architecture, device count and topology, CUDA and library versions, model revision, tokenizer, and desired precision.</li>
+            <li><strong>Convert or describe the model.</strong> Map checkpoint tensor names and architecture features into the supported TensorRT-LLM representation. Unsupported custom layers need rewriting or plugins.</li>
+            <li><strong>Choose profiles and limits.</strong> Set maximum batch/sequence/token budgets, beam width if relevant, and parallelism. These limits drive memory planning and kernel choices.</li>
+            <li><strong>Select precision and plugins.</strong> Decide FP16, BF16, FP8, INT8, or weight-only modes where supported. Enable attention, GEMM, collective, or quantization plugins that match the model and target.</li>
+            <li><strong>Build and time tactics.</strong> The builder evaluates candidates or uses heuristics/timing caches, fuses legal regions, and plans workspace. Build logs and reproducible flags are operational artifacts.</li>
+            <li><strong>Serialize and register.</strong> Store the engine with a manifest containing checksums, compatibility, profiles, plugins, quality results, and performance baseline.</li>
+            <li><strong>Load and serve.</strong> The runtime creates contexts, manages request batches and KV cache, binds buffers, and invokes prepared operations.</li>
+            <li><strong>Validate continuously.</strong> Compare outputs and service metrics after driver, firmware, library, model, or build changes. A loadable engine is not automatically a correct engine.</li>
+          </ol>
+
+          <h3>Worked example: why specialization can win</h3>
+          <p>
+            Suppose a service only accepts batch sizes 1–8, prompts up to 2,048 tokens, and BF16 on one GPU architecture. In an eager path, each layer may perform dispatcher lookups and launch separate normalization, QKV projection, rotary position, attention, and output operations. The runtime must tolerate many shapes. In a specialized build, the compiler can select attention implementations for the supported head dimension, fuse compatible pointwise work, prepare GEMM tactics for representative matrices, and reserve reusable buffers.
+          </p>
+          <p>
+            Consider three candidate GEMM tactics measured during build for a common decode shape: tactic A takes 42 microseconds and needs 8 MiB workspace; tactic B takes 36 microseconds and needs 64 MiB; tactic C takes 34 microseconds and needs 256 MiB. If the build allows only 128 MiB workspace, B is selected despite C’s lower isolated time. Across 40 layers, a 6-microsecond improvement over A saves roughly <code>40 × 6 = 240 microseconds</code> per decode iteration for that GEMM site, before considering other operations. But selecting B based only on one shape can regress batch 8. A representative profile and multi-shape timing matter.
+          </p>
+
+          <div class="equation-box">
+            <div class="math">Amortized request cost = T run + T build / N served</div>
+            <div class="math">Artifact count ≈ M models × A architectures × P precision modes × R profile sets × T topologies</div>
+            <ul>
+              <li><strong>T run</strong> is runtime cost per request or work unit.</li>
+              <li><strong>T build</strong> is one-time conversion, tactic search, and engine-build cost.</li>
+              <li><strong>N served</strong> is the number of requests over which that build is reused.</li>
+              <li><strong>M, A, P, R, T</strong> show how artifact variants multiply. Automation and pruning are essential even when each dimension seems small.</li>
+              <li>The formula omits validation and storage cost, which can dominate a frequently changing deployment.</li>
+            </ul>
+          </div>
+
+          <h3>What plugins actually contribute</h3>
+          <p>
+            A plugin gives the optimizer/runtime a defined operation boundary plus an implementation. For LLMs this can cover fused attention with KV-cache access, quantized GEMM, rotary embedding, mixture-of-experts routing, or communication-aware fused work. A plugin may expose shape inference, supported dtypes and layouts, serialization fields, workspace needs, and enqueue behavior. Some implementations are open source; some may be distributed as compiled components. The important engineering point is not “plugins are magically faster.” They are a controlled escape hatch for operations that need low-level specialization beyond a generic operator set.
+          </p>
+
+          <pre><code># Conceptual build manifest: names vary by TensorRT-LLM release
+build_spec = {
+    "model_revision": "sha256:...",
+    "target_gpu_arch": "declared-target",
+    "precision": "bf16",
+    "profiles": {
+        "batch": {"min": 1, "opt": 4, "max": 8},
+        "sequence": {"min": 1, "opt": 512, "max": 2048},
+    },
+    "plugins": ["attention", "gemm"],
+    "workspace_limit_mib": 128,
+}
+
+engine = builder.compile(model, build_spec)
+assert validate(engine, reference_cases, tolerances)
+registry.publish(engine, manifest=build_spec)
+
+# Runtime rejects shapes outside the declared contract.
+with engine.context() as context:
+    output = context.execute(batch)</code></pre>
+
+          <div class="source-links">
+            <strong>Related mini_infer reading:</strong>
+            <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/cuda_graph_simulator.py">static-shape capture/replay concept</a>
+            <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/weight_loading.py">weight loading concept</a>
+            <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/parallel_planning.py">parallel planning concept</a>
+          </div>
+
+          <div class="boundary">
+            <article><span class="tag">Production technology</span><h4>TensorRT-LLM</h4><p>TensorRT-LLM is NVIDIA’s production LLM inference stack with model definitions, optimized kernels/plugins, quantization, parallelism, KV-cache and batching features, build tooling, and runtimes. Behavior and supported workflows depend on release and hardware.</p></article>
+            <article><span class="tag concept">mini-infer simulation</span><h4>No TensorRT compiler</h4><p>The project does not build TensorRT-LLM engines or ship plugins. Its Python modules illustrate static-shape cache decisions, shard loading, and parallelism planning. They neither benchmark tactics nor execute Tensor Cores.</p></article>
+          </div>
+
+          <h3>Latency, throughput, memory, and operational tradeoffs</h3>
+          <p>
+            Ahead-of-time decisions reduce dispatch, improve fusion, and choose strong kernels, often helping both latency and throughput. Shape bucketing and CUDA graph capture can further reduce CPU launch overhead. However, padding a request to a captured or optimized bucket spends arithmetic and KV/activation memory. A large workspace may enable faster tactics but reduce room for KV cache. Quantization reduces weights and bandwidth but adds calibration, scales, specialized kernels, and quality risk. Tensor parallelism fits larger models and can increase aggregate compute, while collectives add latency. Most importantly, specialization transfers complexity from each request into build pipelines, artifact registries, compatibility checks, canaries, and rollback procedures.
+          </p>
+
+          <div class="tradeoff-grid">
+            <article><h4>When to use TensorRT-LLM</h4><p>Choose it when NVIDIA hardware is a firm constraint, models and shape ranges are stable, peak performance or predictable latency justifies build engineering, and a team can own target-specific artifacts and validation.</p></article>
+            <article><h4>When not to use it</h4><p>Prefer a flexible engine during fast research iteration, across heterogeneous vendors, for unsupported architectures, or when frequent model/adapter changes make rebuilding and qualifying an artifact matrix more expensive than runtime savings.</p></article>
+          </div>
+
+          <h3>Common mistakes</h3>
+          <ul class="compact-list">
+            <li>Using “compile” to imply every decision is static; LLM runtimes still schedule dynamic requests and manage growing KV state.</li>
+            <li>Building only for the maximum shape and assuming it performs well for common small shapes.</li>
+            <li>Ignoring build workspace, runtime workspace, and KV reserve interactions.</li>
+            <li>Benchmarking an engine without including tokenizer, queueing, host-to-device work, or streaming when those belong to the service objective.</li>
+            <li>Reusing artifacts after stack changes without compatibility and numerical checks.</li>
+            <li>Assuming a plugin name guarantees speed on every shape and architecture.</li>
+          </ul>
+
+          <h3>Knowledge checks</h3>
+          <div class="check-list">
+            <details><summary>1. What work moves from runtime to build time?</summary><p>Graph optimization, fusion decisions, tactic selection or timing, target specialization, precision choices, and some memory planning can happen before requests arrive.</p></details>
+            <details><summary>2. What is an optimization profile?</summary><p>It describes supported dynamic-dimension ranges and representative shapes, constraining execution while guiding the builder’s optimization choices.</p></details>
+            <details><summary>3. Why can the fastest tactic be rejected?</summary><p>It may exceed workspace, alignment, precision, determinism, or compatibility constraints, or perform poorly over the full shape distribution.</p></details>
+            <details><summary>4. Why are plugins useful?</summary><p>They integrate custom, fused, quantized, or hardware-specific operations that a generic graph/runtime cannot otherwise express or execute efficiently.</p></details>
+            <details><summary>5. What is the main organizational cost of specialization?</summary><p>A multiplying set of versioned artifacts that must be built, validated, stored, deployed, monitored, and rolled back for combinations of models, targets, precisions, profiles, and topologies.</p></details>
+          </div>
+
+          <h3>Practical exercises</h3>
+          <div class="exercise-grid">
+            <article><h4>Profile design</h4><p>Given traffic with 70% batch 1, 25% batch 2–4, and 5% batch 5–8, propose one or more shape profiles. Explain how you would benchmark and route requests.</p></article>
+            <article><h4>Build manifest</h4><p>Draft a reproducibility manifest with model, tokenizer, GPU, driver/runtime, plugins, precision, profiles, workspace, quality suite, benchmark, and checksum fields. Mark which changes force a rebuild.</p></article>
+          </div>
+
+          <div class="bridge"><strong>Bridge to day 12:</strong> An optimized engine controls execution inside a worker. A production fleet still needs to route requests, scale workers, transfer state, and decide whether prefill and decode should share a GPU. Those are control-plane problems.</div>
+        </section>
+
+        <section id="day-12" class="content-section day-section" data-search-group="Day 12 NVIDIA Dynamo">
+          <header class="chapter-header" data-search-item data-keywords="NVIDIA Dynamo disaggregated serving prefill decode KV transfer router control plane data plane autoscaling goodput TTFT ITL">
+            <span class="chapter-number">12</span>
+            <p class="eyebrow">Coordinate engines as a system</p>
+            <h2>NVIDIA Dynamo and disaggregated serving</h2>
+            <p>
+              An engine optimizes one worker or replica. A serving fabric decides where requests go, where KV state lives, how work moves, and how capacity changes. NVIDIA Dynamo is a production framework in this orchestration layer, including support for separating prefill and decode work.
+            </p>
+          </header>
+
+          <h3>A beginner analogy: a restaurant with prep and service stations</h3>
+          <p>
+            A small restaurant uses one cook for chopping, cooking, and plating. At low traffic this is simple and efficient. At high traffic, a long preparation job blocks plates that only need a quick finishing step. A larger restaurant separates prep stations from service stations and sends prepared ingredients between them. Disaggregated LLM serving similarly assigns prompt prefill to one worker pool and token-by-token decode to another. The transfer is worthwhile only when specialization and reduced interference save more time than moving KV state and coordinating two pools.
+          </p>
+
+          <h3>Why it matters</h3>
+          <p>
+            Once an organization owns many accelerator workers, local engine speed is only part of user experience. Queueing, placement, phase interference, network paths, failures, and scaling determine whether service-level objectives are met. A control plane can match resources to the very different shapes of prefill and decode, but it can also add more delay and failure modes. First-principles accounting keeps orchestration from becoming complexity without benefit.
+          </p>
+
+          <h3>Control plane, data plane, and workers</h3>
+          <p>
+            The <strong>data plane</strong> handles live request data: tokens, tensor execution, KV cache reads/writes, state transfer, and streamed outputs. The <strong>control plane</strong> makes and distributes policy: worker discovery, health, routing, placement, scaling, configuration, and sometimes cache-aware decisions. The boundary is conceptual; implementations may combine components. The key is that a CUDA kernel should not decide fleet size, and an autoscaler should not implement attention math.
+          </p>
+          <dl class="definition-grid">
+            <div><dt>Prefill worker</dt><dd>A worker processing prompt tokens and producing initial KV state and first-token logits. Prefill tends to expose substantial parallel compute.</dd></div>
+            <div><dt>Decode worker</dt><dd>A worker repeatedly generating next tokens while reading model weights and growing KV state. Decode commonly stresses memory bandwidth and capacity.</dd></div>
+            <div><dt>Disaggregation</dt><dd>Placing different inference phases on separate worker pools rather than executing the full request on one colocated worker.</dd></div>
+            <div><dt>KV transfer</dt><dd>Moving or making available the prefill-produced key/value state to the decode worker, with identity, layout, and completeness metadata.</dd></div>
+            <div><dt>Router</dt><dd>A component choosing a worker or pool using load, cache/state locality, policy, health, and request requirements.</dd></div>
+            <div><dt>Control plane</dt><dd>Fleet-level coordination for discovery, routing policy, scaling, placement, configuration, and lifecycle.</dd></div>
+            <div><dt>Goodput</dt><dd>Throughput that satisfies defined service-level constraints, not merely raw generated tokens per second.</dd></div>
+            <div><dt>Backpressure</dt><dd>Signals and limits that slow admission when downstream queues, memory, or transfer paths cannot safely accept more work.</dd></div>
+          </dl>
+
+          <div class="concept-diagram four" role="img" aria-label="Disaggregated serving flow">
+            <div class="diagram-node"><strong>Router</strong>admit + select</div>
+            <div class="diagram-node"><strong>Prefill pool</strong>prompt → KV</div>
+            <div class="diagram-node"><strong>KV transfer</strong>state + metadata</div>
+            <div class="diagram-node"><strong>Decode pool</strong>tokens → stream</div>
+          </div>
+
+          <h3>Step-by-step request flow</h3>
+          <ol class="step-flow">
+            <li><strong>Admit and classify.</strong> Validate request size, model, adapter, priority, deadline, and structured-output needs. Estimate prompt work and KV demand.</li>
+            <li><strong>Choose colocated or disaggregated execution.</strong> At light load or for short prompts, one worker may avoid transfer. At high load or for long prompts, separate pools may reduce interference.</li>
+            <li><strong>Route prefill.</strong> Select a healthy worker using queue depth, token budget, model residency, prefix locality, and topology.</li>
+            <li><strong>Execute prompt.</strong> The engine creates layer-wise KV state and first-token state while metrics record queue and compute time.</li>
+            <li><strong>Publish KV state.</strong> Transfer or expose blocks to the chosen decode worker. Send model/revision, block layout, sequence position, dtype, and completion/version metadata.</li>
+            <li><strong>Route and run decode.</strong> The decode worker installs or references state, enters continuous batching, and streams tokens while respecting latency objectives.</li>
+            <li><strong>Reclaim and observe.</strong> Release KV on finish/cancel, report per-stage latency, and feed queue/transfer/capacity signals into routing and autoscaling.</li>
+          </ol>
+
+          <h3>Worked example: when separation helps</h3>
+          <p>
+            Consider one colocated GPU. A long prefill occupies it for 400 ms. Ten active decode requests normally receive an iteration every 40 ms, but the blocking prefill stretches one gap to roughly 440 ms. Their inter-token experience suffers even if aggregate tokens per second looks acceptable. A disaggregated design sends the long prompt to a prefill worker while decode continues on a second worker. Suppose prefill still takes 400 ms and KV transfer takes 60 ms. The new request’s time to first decoded token includes that transfer, about 460 ms plus queueing, but the existing decode users avoid the 400-ms interruption.
+          </p>
+          <p>
+            The choice is not automatically a win. If the prompt is short and prefill takes only 20 ms while transfer still costs 60 ms, separation adds avoidable latency and network traffic. At low load, two specialized pools can leave one idle while the other queues. A dynamic policy can colocate short or low-load work and disaggregate when prompt size, interference, and pool pressure justify it.
+          </p>
+
+          <div class="equation-box">
+            <div class="math">T disaggregated = Q p + T prefill + T transfer + Q d + T decode</div>
+            <div class="math">T transfer ≈ KV bytes / effective network bandwidth + transfer setup</div>
+            <div class="math">Goodput = completed requests meeting SLO / time</div>
+            <ul>
+              <li><strong>Q p</strong> and <strong>Q d</strong> are queue delays in prefill and decode pools.</li>
+              <li><strong>T prefill</strong> is prompt execution time and <strong>T decode</strong> covers iterative generation for the response.</li>
+              <li><strong>KV bytes</strong> follows the day 9 cache-size formula for all transferred prompt positions, unless compression or partial reuse changes it.</li>
+              <li><strong>Effective network bandwidth</strong> includes topology, protocol, contention, and copies; it is lower than headline link bandwidth.</li>
+              <li><strong>SLO</strong> is the service-level objective, such as TTFT below 500 ms and inter-token latency below 50 ms.</li>
+          </ul>
+          </div>
+
+          <h3>Routing is more than round-robin</h3>
+          <p>
+            A least-loaded router needs a definition of load: active sequences, scheduled tokens, predicted prefill FLOPs, free KV blocks, queueing delay, or deadlines. Cache-aware routing may prefer a worker holding a matching prefix, but that worker may be overloaded. Topology-aware routing keeps prefill and decode close enough for efficient KV transfer. Adapter-aware routing prefers workers that already hold required LoRA weights. Health-aware routing avoids workers with stale heartbeats or high error rates. These objectives conflict, so production routing is a cost function and policy, not merely <code>request_number mod worker_count</code>.
+          </p>
+
+          <h3>Failure and correctness boundaries</h3>
+          <p>
+            Distributed state introduces failure cases absent from one process. A prefill worker may fail after reserving destination memory. A transfer may be partial. A decode worker may restart after accepting ownership. Cancellation may race with completion. Robust designs identify requests and state versions, publish only complete KV snapshots, make cleanup idempotent, apply timeouts, and decide whether to retry prefill or fail the request. Exactly-once execution is often less important than exactly-once user-visible streaming and safe reclamation. Observability must correlate one trace across admission, prefill, transfer, decode, and streaming.
+          </p>
+
+          <pre><code>def route_request(request, telemetry):
+    if telemetry.total_load_is_low() or request.prompt_tokens &lt; SHORT_PROMPT:
+        return colocated_pool.best_worker(request)
+
+    prefill = prefill_pool.best_worker(
+        model=request.model,
+        estimated_tokens=request.prompt_tokens,
+        prefix_key=request.prefix_key,
+    )
+    decode = decode_pool.best_worker(
+        model=request.model,
+        required_kv_bytes=estimate_kv(request),
+        near=prefill.network_domain,
+    )
+    return DisaggregatedRoute(prefill, decode)
+
+def handoff(prefill_result, decode_worker):
+    reservation = decode_worker.reserve(prefill_result.kv_manifest)
+    transfer(prefill_result.blocks, reservation)
+    decode_worker.commit(reservation, checksum=prefill_result.checksum)</code></pre>
+
+          <div class="source-links">
+            <strong>mini_infer reading:</strong>
+            <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/disaggregated_routing.py">prefill/decode routing simulation</a>
+            <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/metrics.py">engine metrics</a>
+            <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/streaming.py">stream events</a>
+          </div>
+
+          <div class="boundary">
+            <article><span class="tag">Production technology</span><h4>NVIDIA Dynamo</h4><p>NVIDIA Dynamo is a production inference framework and serving fabric for distributed, accelerated generative-AI workloads. It integrates with inference backends and addresses routing, KV-aware orchestration, disaggregation, and fleet operation. Exact capabilities depend on its release and deployment environment.</p></article>
+            <article><span class="tag concept">mini-infer simulation</span><h4>Routing decisions only</h4><p><code>PrefillDecodeRouter</code> chooses the least-loaded string-named worker in each pool and records a source worker. It does not start processes, transfer tensors, discover failures, autoscale, use RDMA, integrate Dynamo, or provide distributed correctness.</p></article>
+          </div>
+
+          <h3>Latency, throughput, memory, and network tradeoffs</h3>
+          <p>
+            Disaggregation protects decode inter-token latency from long prefills and lets each pool use different batch policy or hardware ratios. It also adds a second queue, transfer delay, network bandwidth demand, duplicated model weights, and more failure surfaces. More prefill workers reduce prompt queues but can overwhelm decode capacity with completed state. More decode workers increase KV capacity but may starve for prefills. KV transfer consumes source, destination, and fabric resources; compressing or quantizing transfer can save bandwidth but adds kernels and validation. Autoscaling too slowly violates latency objectives; scaling too aggressively wastes expensive accelerators and may trigger model-loading storms. The correct objective is usually goodput under TTFT and ITL targets, not maximum isolated tokens per second.
+          </p>
+
+          <div class="tradeoff-grid">
+            <article><h4>When to disaggregate</h4><p>Consider it at sustained scale with mixed long prefills and latency-sensitive decode, enough traffic to keep both pools useful, a fast interconnect, predictable state transfer, and an operations team capable of distributed tracing and capacity control.</p></article>
+            <article><h4>When not to disaggregate</h4><p>Keep phases colocated for small deployments, low utilization, short prompts, slow networks, simple reliability requirements, or when transfer and duplicated model residency cost more than phase interference.</p></article>
+          </div>
+
+          <h3>Common mistakes</h3>
+          <ul class="compact-list">
+            <li>Calling disaggregation free and omitting KV-transfer bytes from capacity models.</li>
+            <li>Scaling prefill and decode pools independently without modeling the flow between them.</li>
+            <li>Using active request count as the only load signal when prompt lengths and KV sizes differ greatly.</li>
+            <li>Routing to a cached or nearby worker without accounting for its queue and deadlines.</li>
+            <li>Conflating an engine such as vLLM, SGLang, or TensorRT-LLM with the fleet control plane that places and routes engine workers.</li>
+            <li>Reporting average latency while hiding tail queueing and transfer failures.</li>
+          </ul>
+
+          <h3>Knowledge checks</h3>
+          <div class="check-list">
+            <details><summary>1. Why can prefill interfere with decode?</summary><p>Long prefill kernels consume compute and occupy the GPU for comparatively long intervals, delaying the frequent small iterations decode needs for smooth token delivery.</p></details>
+            <details><summary>2. What must cross the prefill/decode boundary?</summary><p>Compatible KV state plus identity, layout, position, dtype, model/context, ownership, and completion metadata. The token request and tracing context must also continue.</p></details>
+            <details><summary>3. Why might short prompts stay colocated?</summary><p>The interference saved may be smaller than the extra queue, reservation, transfer setup, and state movement introduced by disaggregation.</p></details>
+            <details><summary>4. What belongs to the control plane?</summary><p>Worker discovery, health, routing policy, placement, scaling, configuration, and lifecycle. Tensor math and live KV reads belong in the data plane/engine path.</p></details>
+            <details><summary>5. Why use goodput instead of raw throughput?</summary><p>A system can produce many tokens while missing user-visible TTFT or ITL objectives. Goodput counts only work delivered within the required service envelope.</p></details>
+          </div>
+
+          <h3>Practical exercises</h3>
+          <div class="exercise-grid">
+            <article><h4>Break-even model</h4><p>Use three prompt sizes and assumed prefill/transfer times. Compute colocated versus disaggregated latency, then propose a threshold policy that also considers decode queue pressure.</p></article>
+            <article><h4>Failure drill</h4><p>Write state transitions for reserve → transfer → commit. Inject failure at each transition and specify idempotent cleanup, retry ownership, user-visible behavior, and required trace fields.</p></article>
+          </div>
+
+          <div class="bridge"><strong>Bridge beyond phase 2:</strong> We now have a full stack: roofline constraints, kernels, deployable artifacts, memory-aware engines, prefix and grammar policy, compiled execution, and fleet orchestration. The next phase can optimize precision, speculation, parallelism, and model architecture without losing sight of where each technique belongs.</div>
+        </section>
+
+        <section id="comparison" class="content-section" data-search-group="Phase comparison">
+          <div class="section-heading" data-search-item data-keywords="vLLM SGLang TensorRT-LLM Dynamo comparison production simulation">
+            <div>
+              <p class="eyebrow">Put each layer in its place</p>
+              <h2>Production technology comparison</h2>
+            </div>
+            <p>These systems overlap, integrate, and evolve. The table is a mental map, not a benchmark ranking.</p>
+          </div>
+          <div class="table-wrap">
+            <table class="comparison">
+              <thead>
+                <tr><th>Technology</th><th>Primary layer</th><th>Signature idea in this phase</th><th>Strength</th><th>Cost or constraint</th><th>mini_infer relation</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>CUDA / kernel libraries</td><td>GPU execution</td><td>Threads, tiles, fusion, on-chip reuse</td><td>Direct control of hardware behavior</td><td>Architecture expertise and maintenance</td><td>Only pure-Python concepts; no GPU kernel</td></tr>
+                <tr><td>SafeTensors</td><td>Weight storage</td><td>Non-executable tensor container</td><td>Safe distribution and map-friendly layout</td><td>No graph or runtime behavior</td><td>JSON loader teaches validation, not the format</td></tr>
+                <tr><td>ONNX / ONNX Runtime</td><td>Graph interchange / runtime</td><td>Standard operator graph across frameworks</td><td>Portability across supported providers</td><td>Export and operator compatibility</td><td>Not implemented</td></tr>
+                <tr><td>TensorRT</td><td>Graph compiler/runtime</td><td>Target-specific tactics, fusion, precision</td><td>Optimized NVIDIA execution</td><td>Build and compatibility matrix</td><td>Not implemented</td></tr>
+                <tr><td>vLLM</td><td>Inference engine</td><td>Paged KV management and continuous batching</td><td>Flexible high-throughput serving</td><td>Dynamic policy tuning and memory pressure</td><td>Allocator, paged cache, scheduler simulations</td></tr>
+                <tr><td>SGLang</td><td>Inference engine / serving system</td><td>RadixAttention and structured generation</td><td>Prefix-heavy and constrained workloads</td><td>Cache value depends on workload reuse</td><td>Trie, cache-aware scheduler, token DFA simulations</td></tr>
+                <tr><td>TensorRT-LLM</td><td>NVIDIA LLM execution stack</td><td>Build specialization and plugin kernels</td><td>Targeted performance and feature integration</td><td>NVIDIA focus, artifact/build operations</td><td>No compiler or plugin implementation</td></tr>
+                <tr><td>NVIDIA Dynamo</td><td>Distributed serving fabric</td><td>KV-aware orchestration and disaggregation</td><td>Fleet-level placement and phase scaling</td><td>Network, reliability, and control-plane complexity</td><td>Least-load routing decision simulation only</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">
+            <strong>Do not force a false either/or.</strong>
+            A serving fabric can orchestrate workers whose backend is vLLM, SGLang, or TensorRT-LLM. A runtime can load SafeTensors weights. An engine can call CUDA kernels. These names describe different layers and choices, not seven mutually exclusive boxes.
+          </div>
+        </section>
+
+        <section id="formula-sheet" class="content-section" data-search-group="Formula sheet">
+          <div class="section-heading" data-search-item data-keywords="formula arithmetic intensity ridge point KV cache bytes transfer goodput fragmentation reuse">
+            <div>
+              <p class="eyebrow">Keep units attached</p>
+              <h2>Phase 2 formula sheet</h2>
+            </div>
+            <p>Use these as first-order models. State assumptions, then confirm with profiling and workload traces.</p>
+          </div>
+          <div class="table-wrap">
+            <table class="comparison formula-table">
+              <thead><tr><th>Formula</th><th>Meaning and symbols</th><th>Planning use</th></tr></thead>
+              <tbody>
+                <tr><td>I = O / D</td><td>Arithmetic intensity <strong>I</strong> equals operations <strong>O</strong> divided by transferred bytes <strong>D</strong>.</td><td>Place an implementation on a roofline.</td></tr>
+                <tr><td>P = min(Ppeak, I×B)</td><td>Attainable upper bound <strong>P</strong> is limited by peak compute <strong>Ppeak</strong> or intensity times bandwidth <strong>B</strong>.</td><td>Identify the likely limiting roof.</td></tr>
+                <tr><td>Iridge = Ppeak / B</td><td>Break-even arithmetic intensity for a particular hardware precision and memory level.</td><td>Compare devices and batch regimes.</td></tr>
+                <tr><td>GEMM ops ≈ 2MKN</td><td>Approximate multiply-plus-add operations for <strong>M×K</strong> times <strong>K×N</strong>.</td><td>Estimate work in projections and MLPs.</td></tr>
+                <tr><td>Weight bytes = N×S</td><td>Parameter count <strong>N</strong> times storage bytes per value <strong>S</strong>.</td><td>Estimate file size and dominant decode traffic.</td></tr>
+                <tr><td>KV/token = 2LHkvDheadS</td><td>Keys plus values across layers, KV heads, head elements, and dtype bytes.</td><td>Plan sequence concurrency and transfer size.</td></tr>
+                <tr><td>Blocks = ceil(tokens / block size)</td><td>Physical blocks required for one sequence when each block holds a fixed token count.</td><td>Size allocator pools and internal waste.</td></tr>
+                <tr><td>Wastefinal = blocks×block size − tokens</td><td>Unused token slots in the sequence’s final allocation, between zero and block-size minus one.</td><td>Compare block-size policies.</td></tr>
+                <tr><td>Reuse = matched / prompt</td><td>Matched reusable prefix tokens divided by total prompt tokens.</td><td>Evaluate value of prefix caching.</td></tr>
+                <tr><td>p′i = exp(zi)/Σallowed exp(zj)</td><td>Constrained probability for allowed token <strong>i</strong>; invalid tokens receive zero.</td><td>Understand grammar masking before sampling.</td></tr>
+                <tr><td>Tamortized = Trun + Tbuild/N</td><td>Runtime cost plus one-time build cost spread across <strong>N</strong> uses.</td><td>Decide whether specialization pays back.</td></tr>
+                <tr><td>Ttransfer ≈ KVbytes/Beffective + setup</td><td>KV handoff time from bytes, effective fabric bandwidth, and fixed protocol/copy setup.</td><td>Estimate disaggregation break-even.</td></tr>
+                <tr><td>Goodput = SLO-compliant completions / time</td><td>Useful throughput counts only requests that meet service objectives.</td><td>Optimize fleets for user experience.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="glossary" class="content-section" data-search-group="Glossary">
+          <div class="section-heading" data-search-item data-keywords="glossary terminology definitions">
+            <div>
+              <p class="eyebrow">A shared language</p>
+              <h2>Phase glossary</h2>
+            </div>
+            <p>Fifty concise definitions covering hardware, execution, engines, and distributed serving.</p>
+          </div>
+          <dl class="glossary-grid">
+            <div><dt>Arithmetic intensity</dt><dd>Operations performed per byte transferred across a stated memory boundary.</dd></div>
+            <div><dt>Bandwidth</dt><dd>Rate of data movement, such as bytes per second.</dd></div>
+            <div><dt>Batch</dt><dd>Multiple work items executed together so launches and data can be shared.</dd></div>
+            <div><dt>Block table</dt><dd>Mapping from a sequence’s logical KV blocks to physical block identifiers.</dd></div>
+            <div><dt>Builder</dt><dd>Tool or component that creates an optimized execution artifact.</dd></div>
+            <div><dt>Cache hit</dt><dd>A requested item found in reusable storage rather than recomputed or fetched elsewhere.</dd></div>
+            <div><dt>Compute-bound</dt><dd>Limited primarily by available arithmetic execution throughput.</dd></div>
+            <div><dt>Constrained decoding</dt><dd>Sampling only tokens that can legally continue a specified language or schema.</dd></div>
+            <div><dt>Continuous batching</dt><dd>Changing active batch membership between inference iterations.</dd></div>
+            <div><dt>Control plane</dt><dd>Fleet policy and lifecycle layer for routing, discovery, scaling, and configuration.</dd></div>
+            <div><dt>CUDA</dt><dd>NVIDIA platform and programming model for general GPU computation.</dd></div>
+            <div><dt>CUDA graph</dt><dd>A captured GPU work sequence that can be replayed with reduced launch overhead under compatible conditions.</dd></div>
+            <div><dt>Data plane</dt><dd>Path that handles live request tokens, tensor work, KV state, transfers, and outputs.</dd></div>
+            <div><dt>Decode</dt><dd>Iterative phase that generates one new token position per active sequence step.</dd></div>
+            <div><dt>Disaggregation</dt><dd>Placing inference phases or responsibilities in separate worker pools.</dd></div>
+            <div><dt>Dtype</dt><dd>Data type defining a value’s representation, precision, range, and storage size.</dd></div>
+            <div><dt>Engine</dt><dd>System coordinating model execution, requests, scheduling, cache, and often serving integrations.</dd></div>
+            <div><dt>Execution plan</dt><dd>Target-specialized representation containing chosen implementations and memory decisions.</dd></div>
+            <div><dt>External fragmentation</dt><dd>Free space divided into holes that cannot satisfy a contiguous allocation.</dd></div>
+            <div><dt>FlashAttention</dt><dd>An IO-aware exact attention schedule using tiling and online softmax to avoid full score-matrix HBM materialization.</dd></div>
+            <div><dt>FLOP</dt><dd>One counted floating-point operation; conventions should state how fused operations are counted.</dd></div>
+            <div><dt>FLOPS</dt><dd>Floating-point operations per second, a throughput rate.</dd></div>
+            <div><dt>Fusion</dt><dd>Combining operations to reduce launches, intermediate traffic, or synchronization.</dd></div>
+            <div><dt>Goodput</dt><dd>Completed useful work that meets defined service-level requirements per unit time.</dd></div>
+            <div><dt>GPU</dt><dd>Highly parallel processor optimized for throughput on regular data-parallel work.</dd></div>
+            <div><dt>HBM</dt><dd>High Bandwidth Memory, large off-chip memory attached to high-performance accelerators.</dd></div>
+            <div><dt>Internal fragmentation</dt><dd>Unused capacity inside an allocated unit, such as the unfilled tail of a KV block.</dd></div>
+            <div><dt>Inter-token latency (ITL)</dt><dd>Delay between successive streamed output tokens for a request.</dd></div>
+            <div><dt>Kernel</dt><dd>GPU function launched over a grid of parallel threads.</dd></div>
+            <div><dt>Kernel tactic</dt><dd>One candidate low-level implementation and configuration for an operation.</dd></div>
+            <div><dt>KV cache</dt><dd>Stored attention keys and values from prior positions, reused during future decode.</dd></div>
+            <div><dt>KV transfer</dt><dd>Movement or publication of KV state between workers or devices.</dd></div>
+            <div><dt>Latency</dt><dd>Elapsed time for an event or request, distinct from work completed per second.</dd></div>
+            <div><dt>Logical block</dt><dd>One block-sized interval in a sequence’s ordered token-address space.</dd></div>
+            <div><dt>Memory-bound</dt><dd>Limited primarily by data-movement throughput or latency.</dd></div>
+            <div><dt>Memory hierarchy</dt><dd>Layers of storage with different capacity, bandwidth, latency, and sharing rules.</dd></div>
+            <div><dt>Memory mapping</dt><dd>Mapping file regions into a process address space for page-based access.</dd></div>
+            <div><dt>ONNX</dt><dd>Portable representation for computation graphs, operators, types, and tensor initializers.</dd></div>
+            <div><dt>Optimization profile</dt><dd>Supported and representative dynamic shapes used to build an optimized engine.</dd></div>
+            <div><dt>PagedAttention</dt><dd>Attention/cache approach that uses block tables over fixed-size physical KV blocks.</dd></div>
+            <div><dt>Physical block</dt><dd>Concrete fixed-size storage unit allocated from the KV memory pool.</dd></div>
+            <div><dt>Plugin</dt><dd>Custom runtime operation implementation with declared type, shape, serialization, and execution behavior.</dd></div>
+            <div><dt>Prefill</dt><dd>Phase that processes prompt positions, creates initial KV state, and exposes broad token parallelism.</dd></div>
+            <div><dt>Prefix cache</dt><dd>Store of reusable KV state keyed by compatible leading token sequences and execution identity.</dd></div>
+            <div><dt>Radix tree</dt><dd>Compressed prefix tree that stores shared sequence paths efficiently.</dd></div>
+            <div><dt>Reference count</dt><dd>Number of live users holding an entry, used to prevent unsafe eviction.</dd></div>
+            <div><dt>Roofline model</dt><dd>Upper-bound performance model combining compute peak, bandwidth, and arithmetic intensity.</dd></div>
+            <div><dt>Runtime</dt><dd>Software that loads artifacts, manages resources, and executes operations.</dd></div>
+            <div><dt>SafeTensors</dt><dd>Non-executable format for tensor metadata and data bytes.</dd></div>
+            <div><dt>Scheduler</dt><dd>Policy component selecting which requests and token work execute next.</dd></div>
+            <div><dt>Shared memory</dt><dd>Fast, limited, programmer-managed GPU memory shared within a thread block.</dd></div>
+            <div><dt>Structured output</dt><dd>Generated text required to obey a defined syntax or schema.</dd></div>
+            <div><dt>TensorRT</dt><dd>NVIDIA graph optimization and inference runtime ecosystem for target-specialized execution.</dd></div>
+            <div><dt>Throughput</dt><dd>Amount of work completed per unit time, such as output tokens per second.</dd></div>
+            <div><dt>Time to first token (TTFT)</dt><dd>Delay from request arrival until the first streamed output token.</dd></div>
+            <div><dt>Trie</dt><dd>Tree whose paths share common sequence prefixes.</dd></div>
+            <div><dt>Warp</dt><dd>NVIDIA scheduling group of threads that execute instructions together.</dd></div>
+            <div><dt>Workspace</dt><dd>Temporary memory reserved by an operation, tactic, builder, or runtime.</dd></div>
+          </dl>
+        </section>
+
+        <section id="design-exercise" class="content-section day-section" data-search-group="Cumulative design exercise">
+          <div class="section-heading" data-search-item data-keywords="capstone cumulative design exercise capacity plan SLO architecture">
+            <div>
+              <p class="eyebrow">Cumulative exercise</p>
+              <h2>Design a phase-2 inference service</h2>
+            </div>
+            <p>There is no single correct engine choice. A strong answer makes assumptions explicit and connects every choice to measured workload evidence.</p>
+          </div>
+
+          <h3>Scenario</h3>
+          <p>
+            You must serve an 8-billion-parameter chat model. Weights use BF16 initially. The model has 32 layers, 8 KV heads, and head dimension 128. Traffic averages 40 requests per second and peaks at 100. Seventy percent of prompts are 500 tokens and share a 300-token system prefix; twenty percent are 2,000-token retrieval prompts with little shared prefix; ten percent are 8,000-token document prompts. Median output is 180 tokens, but the 95th percentile is 800. Interactive targets are TTFT below 700 ms and p95 inter-token latency below 80 ms. Half of responses must satisfy one of three JSON schemas. The initial fleet is NVIDIA-only, but portability matters within a year.
+          </p>
+
+          <h3>Deliverable 1: performance hypothesis</h3>
+          <ol class="step-flow">
+            <li>Estimate BF16 weight bytes. Explain why decode likely reloads or streams a large weight working set while each active sequence adds only one token row.</li>
+            <li>Compute KV bytes per token from the supplied architecture. Estimate KV memory for the median and p95 active contexts, and include a safety reserve.</li>
+            <li>Draw a roofline sketch with an explicitly assumed GPU peak and bandwidth. Place small-batch decode, large-batch decode, 500-token prefill, and 8,000-token prefill qualitatively.</li>
+            <li>Name the profiler counters or service measurements that would falsify your hypothesis: achieved bandwidth, tensor-core utilization, kernel gaps, queue delay, TTFT, ITL, cache hit tokens, and transfer time.</li>
+          </ol>
+
+          <h3>Deliverable 2: engine and cache design</h3>
+          <p>
+            Choose a baseline among a flexible PyTorch path, vLLM, SGLang, or TensorRT-LLM, and explain the rejected alternatives. You may combine a production engine with a serving fabric. Specify KV block size and calculate worst-case final-block waste. Define maximum batched tokens and a policy for mixing long prefills with decodes. Decide whether the shared 300-token system prompt belongs in a prefix cache. Your cache key must include model revision, tokenizer, adapter, KV dtype, and any position-sensitive state. Define pinning and eviction behavior. Explain how JSON constraints compile and how application-level validation continues after syntactic generation.
+          </p>
+
+          <h3>Deliverable 3: artifact pipeline</h3>
+          <p>
+            Propose a trusted checkpoint format, model/config package, tokenizer revision, and checksums. If you use ONNX or a TensorRT-family build, define dynamic shape profiles, precision, target architecture, workspace limit, plugin set, and validation tolerances. Estimate the number of build artifacts if two GPU architectures, two precision modes, and three profile sets are supported. Describe a canary test that compares logits or tokens against an eager reference and a rollback rule based on both quality and latency.
+          </p>
+
+          <h3>Deliverable 4: colocated versus disaggregated serving</h3>
+          <p>
+            Start with a colocated design and identify the measured condition that triggers disaggregation. Estimate KV transfer bytes for a 2,000-token prompt. Assume an effective fabric bandwidth, add a setup cost, and calculate handoff time. Compare that cost with measured decode interruption from prefill. Define a routing score that considers prefill token work, decode free blocks, prefix locality, queue delay, adapter residency, and network domain. Include a short-prompt bypass so the control plane does not pay transfer overhead when separation cannot win.
+          </p>
+
+          <h3>Deliverable 5: failure, observability, and load test</h3>
+          <ul class="compact-list">
+            <li>Draw request states from admission through prefill, optional transfer, decode, stream completion, cancellation, and reclamation.</li>
+            <li>Handle a partial KV transfer, worker death after reservation, duplicate retry, client disconnect, and stale block-table reference.</li>
+            <li>Trace one request across router, prefill engine, transfer, decode engine, sampler, and streamer with a shared request ID.</li>
+            <li>Report TTFT and ITL distributions, queue time by stage, goodput, tokens per second, HBM used by category, block utilization, prefix-hit tokens, preemption, and errors.</li>
+            <li>Load-test realistic prompt/output distributions and arrival bursts. A closed-loop benchmark with a fixed number of clients can hide overload, so include an open-loop arrival test.</li>
+          </ul>
+
+          <div class="callout">
+            <strong>Self-review rubric.</strong>
+            Award one point for each explicit unit, assumption, production/simulation boundary, SLO tradeoff, failure cleanup rule, and measurement that could disprove a design claim. Deduct a point whenever “faster,” “efficient,” or “optimized” appears without a metric and workload.
+          </div>
+
+          <h3>Suggested implementation lab with mini_infer</h3>
+          <p>
+            Use the project as a conceptual laboratory rather than a performance benchmark. Submit requests with different prompt lengths to the synchronous engine and inspect the token-budget scheduler. Append toy keys and values into <code>PagedKVCache</code> and watch block tables change. Insert shared token prefixes into <code>RadixPrefixCache</code>, acquire/release them, and trigger eviction. Run the structured decoder through its JSON-like states. Route request IDs through <code>PrefillDecodeRouter</code>. Then write a one-page gap analysis listing everything a production implementation still needs: GPU tensors and kernels, thread safety, process boundaries, transfer protocols, failure recovery, autoscaling, security, and distributed observability.
+          </p>
+        </section>
+
+        <footer class="content-section">
+          <div class="callout">
+            <strong>End of phase 2.</strong>
+            You should now be able to explain an inference slowdown at four levels: hardware roof, kernel schedule, engine policy, and fleet control plane. When diagnosing a system, begin at the user-visible SLO, follow the request path, and use measurements to decide which level deserves intervention.
+          </div>
+          <p>
+            Continue with the <a href="../curriculum.html#phase-three">phase 3 curriculum</a>
+            or return to the <a href="../index.html">systems guide</a>.
+          </p>
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>

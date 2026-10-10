@@ -1,0 +1,701 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="A beginner-friendly textbook for Days 13–18 of LLM inference optimization: numerical formats, PTQ, speculative decoding, prefix caching, parallelism, and prefill/decode disaggregation."
+    >
+    <meta
+      name="keywords"
+      content="LLM inference, quantization, FP8, INT4, GPTQ, AWQ, SmoothQuant, speculative decoding, prefix caching, tensor parallelism, disaggregated serving"
+    >
+    <meta name="author" content="LLM Inference from Scratch">
+    <meta name="theme-color" content="#3156d3">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Phase 3 Optimization Textbook | LLM Inference from Scratch">
+    <meta property="og:description" content="Six detailed lessons that connect numerical compression to distributed LLM serving.">
+    <title>Days 13–18: Optimization Textbook | LLM Inference from Scratch</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%233156d3'/><text x='32' y='40' text-anchor='middle' font-size='24' font-family='sans-serif' font-weight='700' fill='white'>P3</text></svg>">
+    <link rel="stylesheet" href="../styles.css?v=6">
+    <script src="../app.js" defer></script>
+    <style>
+      .textbook-hero h1 { max-width: 16ch; }
+      .chapter { scroll-margin-top: 5.5rem; }
+      .chapter-lead { font-size: 1.08rem; color: var(--ink-soft); }
+      .chapter h3 { margin-top: 2.2rem; font-size: 1.45rem; }
+      .chapter h4 { margin-top: 1.5rem; font-size: 1.08rem; }
+      .term-list, .formula-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; padding: 0; list-style: none; }
+      .term-list li, .formula-list li { padding: .9rem; border: 1px solid var(--line); border-radius: var(--radius-small); background: var(--surface); }
+      .bit-strip { display: flex; overflow-x: auto; margin: 1rem 0; padding: .85rem; gap: .18rem; border: 1px solid var(--line); border-radius: var(--radius-small); background: var(--surface); }
+      .bit { min-width: 2rem; padding: .5rem .3rem; border-radius: .3rem; background: var(--surface-2); text-align: center; font: 700 .76rem var(--font-mono); }
+      .bit.sign { background: color-mix(in srgb, var(--accent) 18%, var(--surface)); }
+      .bit.exp { background: color-mix(in srgb, var(--brand) 18%, var(--surface)); }
+      .bit.frac { background: color-mix(in srgb, var(--teal) 18%, var(--surface)); }
+      .system-diagram { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); align-items: stretch; gap: .8rem; margin: 1.2rem 0; }
+      .system-node { position: relative; padding: 1rem; border: 1px solid var(--line); border-radius: var(--radius-small); background: var(--surface); text-align: center; }
+      .system-node:not(:last-child)::after { position: absolute; top: 50%; right: -.7rem; color: var(--accent); content: "→"; transform: translateY(-50%); }
+      .system-node strong { display: block; color: var(--brand); }
+      .worked { margin: 1.4rem 0; padding: 1.2rem; border: 1px solid var(--line); border-radius: var(--radius); background: linear-gradient(135deg, var(--surface), var(--surface-2)); }
+      .worked h4 { margin-top: 0; }
+      .decision { border-left: .35rem solid var(--success); }
+      .mistakes { border-left: .35rem solid var(--warning); }
+      .review-set { display: grid; gap: .6rem; }
+      .review-set details { border: 1px solid var(--line); border-radius: var(--radius-small); background: var(--surface); }
+      .review-set summary { padding: .85rem 2.7rem .85rem 1rem; font-weight: 760; cursor: pointer; }
+      .review-set p { margin: 0; padding: 0 1rem 1rem; color: var(--ink-soft); }
+      .exercise-list > li { margin-bottom: .85rem; }
+      .bridge { margin-top: 2rem; padding: 1.2rem; border-radius: var(--radius); background: color-mix(in srgb, var(--brand) 9%, var(--surface)); }
+      .source-link { display: inline-flex; margin: .4rem .4rem .4rem 0; padding: .35rem .65rem; border: 1px solid var(--line); border-radius: 999px; font-family: var(--font-mono); font-size: .78rem; text-decoration: none; }
+      .glossary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+      .glossary div { padding: .85rem; border: 1px solid var(--line); border-radius: var(--radius-small); background: var(--surface); }
+      .glossary dt { font-weight: 800; }
+      .glossary dd { margin: .25rem 0 0; color: var(--ink-soft); font-size: .9rem; }
+      @media (max-width: 56rem) {
+        .term-list, .formula-list, .glossary { grid-template-columns: 1fr; }
+        .system-node:not(:last-child)::after { display: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="../index.html" aria-label="Return to the systems guide">
+          <span class="brand-mark" aria-hidden="true">LLM</span>
+          <span class="brand-text">Inference from Scratch</span>
+        </a>
+        <div class="search-wrap">
+          <label for="site-search" aria-hidden="true">⌕</label>
+          <input id="site-search" type="search" placeholder="Search Phase 3 concepts" autocomplete="off" aria-controls="search-results" aria-label="Search this textbook">
+          <kbd class="search-key" aria-hidden="true">Ctrl K</kbd>
+          <ul id="search-results" class="search-results" aria-label="Search results" hidden></ul>
+        </div>
+        <div class="top-actions">
+          <button class="icon-button theme-button" type="button" data-theme-toggle aria-label="Change color theme"><span data-theme-icon aria-hidden="true">◐</span></button>
+          <button class="icon-button menu-button" type="button" data-menu-toggle aria-label="Open section navigation" aria-controls="section-navigation" aria-expanded="false"><span aria-hidden="true">☰</span></button>
+        </div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside id="section-navigation" class="sidebar" aria-label="Phase 3 navigation">
+        <p class="sidebar-title">Phase 3 · Optimization</p>
+        <nav>
+          <ul class="nav-list">
+            <li><a href="#overview" aria-current="true">How to use this book</a></li>
+            <li><a href="#day-13">Day 13 · Number formats</a></li>
+            <li><a href="#day-14">Day 14 · PTQ algorithms</a></li>
+            <li><a href="#day-15">Day 15 · Speculation</a></li>
+            <li><a href="#day-16">Day 16 · Prefix caching</a></li>
+            <li><a href="#day-17">Day 17 · Parallelism</a></li>
+            <li><a href="#day-18">Day 18 · Disaggregation</a></li>
+            <li><a href="#decision-matrix">Decision matrix</a></li>
+            <li><a href="#formula-sheet">Formula sheet</a></li>
+            <li><a href="#glossary">Glossary</a></li>
+            <li><a href="#capstone">Cumulative exercise</a></li>
+            <li><a href="phase-2-engines.html">Previous: Phase 2 ↗</a></li>
+            <li><a href="phase-4-production.html">Next: Phase 4 ↗</a></li>
+            <li><a href="../curriculum.html">26-day curriculum ↗</a></li>
+          </ul>
+        </nav>
+        <div class="sidebar-note"><strong>Reading promise</strong><br>Every optimization is connected to correctness, hardware, and an observable serving metric. “Smaller” and “faster” are never assumed to mean the same thing.</div>
+      </aside>
+
+      <main id="main-content">
+        <section id="overview" class="hero textbook-hero" data-search-group="Overview">
+          <p class="eyebrow">Days 13–18 · Long-form textbook</p>
+          <h1>Make inference efficient without losing the answer.</h1>
+          <p class="hero-copy">Phase 3 begins with a single number stored in fewer bits and ends with two specialized GPU fleets exchanging gigabytes of state. The connecting question is always the same: which scarce resource—memory capacity, memory bandwidth, arithmetic, network bandwidth, or queueing time—is limiting the request?</p>
+          <div class="hero-actions"><a class="button" href="#day-13">Start Day 13</a><a class="button button-secondary" href="#decision-matrix">Open the decision matrix</a></div>
+        </section>
+
+        <div class="metric-strip" aria-label="Textbook summary">
+          <div class="metric"><strong>6</strong><span>connected lessons</span></div>
+          <div class="metric"><strong>30+</strong><span>answered reviews</span></div>
+          <div class="metric"><strong>45+</strong><span>glossary terms</span></div>
+          <div class="metric"><strong>1</strong><span>system capstone</span></div>
+        </div>
+
+        <section class="content-section" data-search-group="Overview">
+          <div class="section-heading"><div><p class="eyebrow">Mental model</p><h2>Optimization is resource substitution</h2></div><p>Each technique spends one resource to save another. Name both sides before adopting it.</p></div>
+          <div class="card-grid three">
+            <article class="card" data-search-item id="resource-bytes"><h3>Fewer bytes</h3><p>Quantization reduces weight traffic and capacity, but spends calibration effort and numerical headroom.</p></article>
+            <article class="card" data-search-item id="resource-calls"><h3>Fewer target calls</h3><p>Speculation spends cheap draft work so one expensive target pass can validate several positions.</p></article>
+            <article class="card" data-search-item id="resource-reuse"><h3>More reuse</h3><p>Prefix caches spend memory and routing complexity to avoid repeating prefill.</p></article>
+            <article class="card" data-search-item id="resource-devices"><h3>More devices</h3><p>Parallelism adds communication so a model fits or more requests finish per second.</p></article>
+            <article class="card" data-search-item id="resource-specialization"><h3>Specialized pools</h3><p>Disaggregation spends KV-transfer bandwidth to isolate compute-heavy prefill from bandwidth-heavy decode.</p></article>
+            <article class="card" data-search-item id="resource-measure"><h3>Measurement first</h3><p>Track time to first token, inter-token latency, throughput, quality, cost, cache hit rate, and utilization separately.</p></article>
+          </div>
+        </section>
+
+        <section id="day-13" class="content-section chapter" data-search-group="Day 13">
+          <div class="section-heading"><div><p class="eyebrow">Day 13 · Representation</p><h2>Number formats: what a bit buys</h2></div><p>FP32, FP16, BF16, FP8, INT8, INT4, and NVFP4 are contracts between stored bits, arithmetic hardware, and acceptable error.</p></div>
+          <p class="chapter-lead">Imagine writing every price in a warehouse ledger. A luxurious ledger records $12.347891; a compact one records $12.35; an extremely compact one records “about $12.” The compact ledger is lighter and faster to carry, but two nearby prices may collapse to the same entry. Quantization applies this idea to billions of model values. It does not make the original numbers intrinsically smaller; it chooses a smaller alphabet and records enough scaling information to interpret that alphabet.</p>
+
+          <h3>First principles and terminology</h3>
+          <p>A bit has two states. With <em>b</em> bits, an unsigned integer can name 2<sup>b</sup> patterns. Floating-point formats divide their patterns into a sign, an exponent that selects a scale, and a fraction (often called a mantissa) that selects a point within that scale. Integers devote nearly all patterns to evenly spaced values. Therefore integers are locally precise over a chosen interval but have no built-in way to span tiny and huge magnitudes simultaneously. Floating point has broad <strong>dynamic range</strong> but uneven spacing: representable numbers become farther apart as magnitude grows.</p>
+          <ul class="term-list">
+            <li><strong>Precision:</strong> how finely nearby values can be distinguished.</li>
+            <li><strong>Dynamic range:</strong> the ratio between useful smallest and largest magnitudes.</li>
+            <li><strong>Scale:</strong> a multiplier that converts a stored low-bit code back toward a real value.</li>
+            <li><strong>Zero point:</strong> the integer code representing real zero in asymmetric quantization.</li>
+            <li><strong>Granularity:</strong> which values share a scale: tensor, channel, group, or small block.</li>
+            <li><strong>Saturation:</strong> clipping a value beyond the representable minimum or maximum.</li>
+          </ul>
+
+          <h3>Bit layouts, from broadest to smallest</h3>
+          <p>IEEE-style FP32 uses one sign bit, eight exponent bits, and twenty-three stored fraction bits. FP16 uses 1/5/10: more fraction precision than BF16, but a much narrower exponent range. BF16 uses 1/8/7, retaining FP32-like range while accepting coarse spacing. That makes BF16 robust when values vary widely. An FP8 E4M3 value uses one sign, four exponent, and three fraction bits; E5M2 trades one fraction bit for one exponent bit. Exact encodings reserve some patterns for special values, so “largest number” is format-specific rather than simply 2 raised to a power.</p>
+          <div class="bit-strip" aria-label="FP32 bit layout"><span class="bit sign">S</span><span class="bit exp">E</span><span class="bit exp">E</span><span class="bit exp">E</span><span class="bit exp">E</span><span class="bit exp">E</span><span class="bit exp">E</span><span class="bit exp">E</span><span class="bit exp">E</span><span class="bit frac">23 fraction bits</span></div>
+          <div class="bit-strip" aria-label="FP16, BF16, and FP8 summary"><span class="bit sign">FP16 S</span><span class="bit exp">5E</span><span class="bit frac">10F</span><span class="bit sign">BF16 S</span><span class="bit exp">8E</span><span class="bit frac">7F</span><span class="bit sign">FP8 S</span><span class="bit exp">4E</span><span class="bit frac">3F</span></div>
+          <p>INT8 usually represents −128 through 127, although symmetric schemes often use −127 through 127 so positive and negative ranges match. INT4 stores sixteen codes in a four-bit <strong>nibble</strong>; symmetric inference schemes commonly use −7 through 7 and leave one pattern unused or reserved. Two INT4 values pack into one byte. NVFP4 uses a tiny E2M1 floating value for each element plus a shared scale for a small block (commonly sixteen values in the NVIDIA scheme). The shared scale restores local dynamic range. Its metadata means “4-bit” does not imply exactly four total bits per parameter.</p>
+
+          <h3>Quantization and reconstruction, step by step</h3>
+          <div class="system-diagram" aria-label="Quantization flow">
+            <div class="system-node"><strong>1 · Observe</strong>Find a range per tensor, channel, group, or block.</div>
+            <div class="system-node"><strong>2 · Scale</strong>Map real magnitudes into available codes.</div>
+            <div class="system-node"><strong>3 · Round</strong>Choose a code and clip overflow.</div>
+            <div class="system-node"><strong>4 · Pack</strong>Store codes plus scale metadata.</div>
+            <div class="system-node"><strong>5 · Compute</strong>Dequantize or use a native low-bit kernel.</div>
+          </div>
+          <div class="formula">Symmetric: q = clamp(round(x / s), q_min, q_max) &nbsp;&nbsp; and &nbsp;&nbsp; x̂ = s · q</div>
+          <p>Here <em>x</em> is the original value; <em>s</em> is the positive real scale; <em>q</em> is the stored integer; <em>q_min</em> and <em>q_max</em> are legal code bounds; <em>x̂</em> (“x-hat”) is the reconstructed approximation. A common scale is <em>s = max(|x|)/q_max</em>. Asymmetric quantization adds a zero point <em>z</em>: <em>q = round(x/s)+z</em> and <em>x̂ = s(q−z)</em>. Symmetric math is simpler and often favored for weights; asymmetric mapping can use the code range better when data are lopsided.</p>
+
+          <div class="worked" data-search-item id="day13-worked">
+            <h4>Worked numeric example: four weights in INT4</h4>
+            <p>Take weights [−1.00, −0.20, 0.55, 0.90] and symmetric codes −7…7. The maximum absolute value is 1.00, so <em>s = 1/7 ≈ 0.142857</em>. Divide by the scale and round: [−7.00, −1.40, 3.85, 6.30] becomes q = [−7, −1, 4, 6]. Reconstruct by multiplication: x̂ = [−1.000, −0.143, 0.571, 0.857]. The errors x̂−x are [0, +0.057, +0.021, −0.043]. Mean absolute error is (0 + .057 + .021 + .043)/4 ≈ 0.030.</p>
+            <p>Now imagine adding an outlier 8.0 while sharing one scale. The scale becomes 8/7 ≈ 1.143. Our original 0.55 rounds to zero, losing its signal. Smaller groups isolate outliers and improve fidelity, but each group needs metadata and kernels must load it. This single example motivates Day 14.</p>
+          </div>
+
+          <h3>Storage is not computation</h3>
+          <div class="callout"><strong>Crucial distinction:</strong> a model file can store INT4 weights while the GPU kernel unpacks them to FP16, multiplies in FP16, and accumulates partial sums in FP32. Calling the whole operation “INT4 compute” hides three separate choices: storage format, multiply/input dtype, and accumulation dtype.</div>
+          <p>A low-bit checkpoint only guarantees capacity savings. Speed requires a kernel that understands its packing, grouping, scales, matrix shapes, and target device. A generic kernel may unpack weights into a temporary buffer and become slower than an optimized FP16 matrix multiplication. Accumulation deserves extra precision because a dot product sums hundreds or thousands of products; small rounding errors can build coherently. Many tensor-core paths multiply low-precision operands but accumulate into FP16 or FP32. Always report all three layers of the contract.</p>
+
+          <h3>Exactness, quality, performance, and hardware</h3>
+          <div class="table-wrap"><table class="comparison"><thead><tr><th>Format</th><th>Strength</th><th>Risk</th><th>Hardware reality</th></tr></thead><tbody>
+            <tr><td>FP32</td><td>Wide range and high precision; reference-friendly</td><td>4 bytes/value and heavy bandwidth</td><td>Universal, but rarely optimal for inference weights</td></tr>
+            <tr><td>FP16</td><td>Good precision and mature kernels</td><td>Narrow exponent range can overflow</td><td>Fast on modern accelerators</td></tr>
+            <tr><td>BF16</td><td>FP32-like exponent range</td><td>Fewer fraction bits than FP16</td><td>Excellent where BF16 tensor cores exist</td></tr>
+            <tr><td>FP8</td><td>Half FP16 storage; floating range</td><td>Needs scaling and careful variant choice</td><td>Large gains only with native FP8 paths</td></tr>
+            <tr><td>INT8</td><td>Mature, predictable, often robust</td><td>Activation outliers can waste range</td><td>Broad support, but kernel details vary</td></tr>
+            <tr><td>INT4</td><td>Fourfold smaller than FP16</td><td>High rounding error and metadata overhead</td><td>Weight-only kernels are common; shape-sensitive</td></tr>
+            <tr><td>NVFP4</td><td>Block scale plus floating codes</td><td>Format and ecosystem are hardware-specific</td><td>Designed for native Blackwell-class execution</td></tr>
+          </tbody></table></div>
+          <p>Quantization usually changes logits slightly, so it is not bit-exact with a higher-precision model. Greedy decoding may diverge after a close argmax; sampling amplifies small probability differences. Evaluate perplexity and task accuracy, but also refusal behavior, tool-call syntax, multilingual prompts, long-context retrieval, and rare-token tails. Memory-bandwidth-bound decode can approach the byte-reduction ratio in an ideal kernel, while compute-bound prefill may see less benefit unless native low-bit tensor cores are used.</p>
+
+          <h3>Code connection and decision guide</h3>
+          <p>The learning implementation stores one INT8 scale for a matrix and uses grouped INT4 with packed nibbles. Read the validation checks as part of the algorithm: empty tensors, group sizes, scale counts, signed nibble recovery, and clipping all matter.</p>
+          <a class="source-link" href="../../src/mini_infer/optimizations/int8_quantization.py">mini_infer/optimizations/int8_quantization.py</a>
+          <a class="source-link" href="../../src/mini_infer/optimizations/int4_quantization.py">mini_infer/optimizations/int4_quantization.py</a>
+          <div class="card decision"><h4>Choose deliberately</h4><ul><li>Use BF16/FP16 for a quality baseline and when kernels dominate engineering cost.</li><li>Try FP8 for native recent accelerators and W8A8-style throughput.</li><li>Try INT8 when portability and predictable accuracy matter.</li><li>Try grouped INT4 when model fit or decode bandwidth is the hard limit.</li><li>Consider NVFP4 only when the serving stack and hardware support its actual kernels.</li></ul></div>
+          <div class="card mistakes"><h4>Common mistakes</h4><ul><li>Counting codes but forgetting scale, zero-point, alignment, and padding bytes.</li><li>Assuming an INT4 file means INT4 multiplication or a 4× speedup.</li><li>Using one global scale in the presence of outliers.</li><li>Comparing quality with different prompts, tokenizers, or sampling seeds.</li><li>Ignoring accumulation dtype and overflow.</li><li>Quoting peak hardware FLOPS for a bandwidth-bound decode workload.</li></ul></div>
+
+          <h3>Review questions with answers</h3>
+          <div class="review-set">
+            <details><summary>1. Why can BF16 represent larger magnitudes than FP16?</summary><p>BF16 keeps eight exponent bits, matching FP32’s exponent width, while FP16 has five. BF16 spends fewer bits on the fraction, so its range is broader but nearby values are coarser.</p></details>
+            <details><summary>2. Why do group scales improve INT4 quality?</summary><p>Each group adapts its interval to local magnitudes. One outlier then stretches only its group’s step size rather than reducing precision for an entire tensor.</p></details>
+            <details><summary>3. What are the three dtype questions for a low-bit linear layer?</summary><p>Ask how weights/activations are stored, what dtype the multiply kernel consumes or converts to, and which dtype accumulates the products.</p></details>
+            <details><summary>4. Is quantization lossless?</summary><p>Usually not. Rounding maps many real values to one code. Lossless packing can reduce representation overhead, but low-bit numerical quantization introduces approximation unless every input is exactly representable.</p></details>
+            <details><summary>5. Why might an INT4 model use more than four bits per parameter?</summary><p>It also stores group scales, perhaps zero points, padding, indices, and alignment. Effective bits per parameter include amortized metadata.</p></details>
+            <details><summary>6. When does a smaller checkpoint fail to run faster?</summary><p>When the device lacks a matching kernel, unpacking is expensive, batches or shapes are inefficient, metadata loads dominate, or another bottleneck such as networking limits the request.</p></details>
+          </div>
+          <h3>Exercises</h3>
+          <ol class="exercise-list"><li>Compute weight memory for 7B and 70B parameters in FP32, BF16, FP8, and INT4 before metadata. Convert decimal GB and binary GiB separately.</li><li>Quantize [−2.0, −0.1, 0.0, 0.7, 1.8] to symmetric INT8 and INT4. Report scale, codes, reconstructions, maximum error, and mean absolute error.</li><li>Add an outlier of 20, then compare one tensor scale with groups of two values. Explain the quality/metadata tradeoff.</li><li>Design a benchmark that separates model-load time, prefill throughput, decode tokens/second, and end-to-end latency.</li></ol>
+          <div class="bridge"><strong>Bridge to Day 14:</strong> today used nearest rounding and exposed the outlier problem. Tomorrow asks which errors matter to the network, then uses calibration data to spend scarce codes where they protect outputs most.</div>
+        </section>
+
+        <section id="day-14" class="content-section chapter" data-search-group="Day 14">
+          <div class="section-heading"><div><p class="eyebrow">Day 14 · Calibration</p><h2>Post-training quantization: protect what matters</h2></div><p>GPTQ, AWQ, and SmoothQuant improve on blind rounding by modeling sensitivity, activation importance, or outlier migration.</p></div>
+          <p class="chapter-lead">Suppose a moving company must round the weight of every box to a whole kilogram. Rounding pillows carelessly changes little; rounding a fragile machine’s counterweight may break it. A plain quantizer sees only kilograms. A post-training quantization algorithm observes how boxes interact and protects the consequential ones. It changes representation after training, using a small calibration set rather than a full retraining run.</p>
+
+          <h3>First principles: error must be measured at the output</h3>
+          <p>For a linear layer, the unquantized output is <em>Y = XW</em>, where rows of <em>X</em> are calibration activations and <em>W</em> is a weight matrix. Replacing W by Ŵ creates output error <em>E = X(W−Ŵ)</em>. Minimizing the element-wise weight difference alone ignores X. If one input channel is almost always zero, a large error in its weights may barely affect Y. If another channel is frequently large, a small weight error may matter greatly. PTQ methods use this observation in different ways.</p>
+          <ul class="term-list">
+            <li><strong>PTQ:</strong> quantization applied to a trained model without full training.</li>
+            <li><strong>Calibration set:</strong> representative inputs used to collect activation statistics.</li>
+            <li><strong>Hessian:</strong> a curvature matrix describing sensitivity and interaction of perturbations.</li>
+            <li><strong>Salient channel:</strong> a dimension whose activation/weight interaction strongly affects outputs.</li>
+            <li><strong>Weight-only:</strong> weights are low-bit while activations remain floating point.</li>
+            <li><strong>W8A8:</strong> eight-bit weights and eight-bit activations, commonly with wider accumulation.</li>
+          </ul>
+
+          <h3>GPTQ: compensate sequential rounding</h3>
+          <p>GPTQ treats layer quantization as a reconstruction problem. Using calibration activations, a common local curvature approximation is <em>H ≈ 2XᵀX</em> (constants vary by derivation). XᵀX records correlations among input features. GPTQ processes weights in an order or blocks. After quantizing one column, it uses information from the inverse curvature to adjust unquantized columns so their future contribution compensates for the new error. The intuition is like correcting the remaining ingredients after accidentally over-salting a soup.</p>
+          <div class="formula">δ = (w − q(w)) / [H⁻¹]ⱼⱼ &nbsp;&nbsp; ; &nbsp;&nbsp; W_remaining ← W_remaining − δ · [H⁻¹]ⱼ,remaining</div>
+          <p><em>w</em> is the weight or column being quantized; <em>q(w)</em> is its reconstructed low-bit value; <em>w−q(w)</em> is rounding error; <em>H⁻¹</em> is the inverse approximate Hessian; subscript <em>jj</em> is the current diagonal sensitivity; and the remaining row slice distributes a correction across correlated dimensions. Practical GPTQ works blockwise, adds damping for numerical stability, and uses matrix factorizations rather than literally inverting a giant matrix. Its strength is high-quality weight-only INT4. Its costs are calibration, substantial offline quantization time, and kernels/checkpoint layouts that must agree.</p>
+
+          <h3>AWQ: preserve activation-aware channels</h3>
+          <p>AWQ begins from an empirical fact: a small fraction of channels can dominate output error because their activations are large. Rather than solve a second-order optimization for every weight, it searches for per-channel scaling that makes important weights easier to represent. The equivalent transform must preserve the original linear function before rounding. For diagonal scale matrix S, <em>XW = (XS⁻¹)(SW)</em>. AWQ quantizes the scaled weights SW; activations are inversely scaled at runtime or the scaling is fused into neighboring operations.</p>
+          <div class="formula">sⱼ ≈ aⱼ<sup>α</sup> / wⱼ<sup>1−α</sup> &nbsp;&nbsp; ; &nbsp;&nbsp; Y = (X S⁻¹)(S W)</div>
+          <p>Here <em>aⱼ</em> summarizes activation magnitude for channel j, <em>wⱼ</em> summarizes weight magnitude, <em>α</em> balances them, and S is diagonal with entries sⱼ. Exact search objectives differ among implementations. The important idea is not “keep the largest 1% unquantized” as a universal rule; it is to protect output-important channels through activation-aware scaling and group quantization. AWQ is attractive because calibration can be lighter than GPTQ and quality is strong for weight-only 4-bit inference, provided optimized AWQ kernels exist.</p>
+
+          <h3>SmoothQuant: move difficulty from activations into weights</h3>
+          <p>Activation outliers are troublesome for W8A8 because activations change per request and can have channels whose magnitude dwarfs the rest. Weights are static, so per-channel difficulty can be folded into them offline. SmoothQuant chooses a positive scale per input channel, divides activations by it, and multiplies the corresponding weight row by it. Before quantization the products are algebraically identical. After transformation, activation ranges are smoother, so INT8 codes are used more evenly.</p>
+          <div class="formula">sⱼ = max(|Xⱼ|)<sup>α</sup> / max(|Wⱼ|)<sup>1−α</sup> &nbsp;&nbsp; ; &nbsp;&nbsp; XW = (X / s)(sW)</div>
+          <p>Division and multiplication are channel-wise. <em>max(|Xⱼ|)</em> comes from calibration activations; <em>max(|Wⱼ|)</em> comes from the corresponding weight channel; and α between zero and one decides how much quantization difficulty migrates. α near one strongly smooths activations but makes weights more uneven; α near zero protects weights but leaves activation outliers. The equality holds in real arithmetic, but quantizing both transformed operands introduces a new balance of errors.</p>
+
+          <div class="system-diagram" aria-label="PTQ calibration flow">
+            <div class="system-node"><strong>1 · Sample</strong>Choose representative prompts and sequence lengths.</div>
+            <div class="system-node"><strong>2 · Observe</strong>Record layer inputs, ranges, and channel statistics.</div>
+            <div class="system-node"><strong>3 · Transform</strong>Compensate or rescale according to the algorithm.</div>
+            <div class="system-node"><strong>4 · Quantize</strong>Round by group and serialize metadata.</div>
+            <div class="system-node"><strong>5 · Validate</strong>Measure quality and real serving kernels.</div>
+          </div>
+
+          <div class="worked" data-search-item id="day14-worked">
+            <h4>Worked numeric example: why activation awareness changes the answer</h4>
+            <p>Consider one output y = 0.1w₁ + 10w₂ with w₁ = w₂ = 0.60. Suppose a coarse quantizer reconstructs either 0.50 or 0.75. Both weights have the same nearest error if rounded to 0.50: −0.10. Yet their output effects differ. Error from w₁ is 0.1(−0.1)=−0.01; error from w₂ is 10(−0.1)=−1.0. Protecting the second channel is one hundred times more valuable for this sample.</p>
+            <p>Scale the important weight by 2 before quantization and its activation by 1/2: y = 0.1w₁ + (10/2)(2w₂). If the scaled 1.20 is represented as 1.25, reconstruction after the paired transform behaves like w₂≈0.625, an error of +0.025 rather than −0.10. The function was identical before rounding; code placement changed after rounding. Real AWQ searches scales across many samples and layers, but this toy arithmetic exposes the mechanism.</p>
+          </div>
+
+          <h3>Algorithm comparison, exactness, and hardware dependence</h3>
+          <div class="table-wrap"><table class="comparison"><thead><tr><th>Method</th><th>Primary goal</th><th>Typical target</th><th>Offline cost</th><th>Runtime requirement</th></tr></thead><tbody>
+            <tr><td>RTN</td><td>Nearest representable value</td><td>Baseline weight-only</td><td>Very low</td><td>Matching grouped kernel</td></tr>
+            <tr><td>GPTQ</td><td>Compensate error using curvature/correlation</td><td>W4A16</td><td>Higher</td><td>GPTQ packing and fast dequantized GEMM</td></tr>
+            <tr><td>AWQ</td><td>Protect activation-important channels</td><td>W4A16</td><td>Moderate</td><td>AWQ scale/layout-aware kernel</td></tr>
+            <tr><td>SmoothQuant</td><td>Make activations INT8-friendly</td><td>W8A8</td><td>Moderate</td><td>INT8 GEMM and fused scales</td></tr>
+          </tbody></table></div>
+          <p>None is generally bit-exact to the original model. Their ranking depends on architecture, calibration corpus, group size, layer exceptions, tokenizer, evaluation distribution, and kernel implementation. GPTQ can reconstruct calibration-layer outputs exceptionally well yet overfit unrepresentative calibration. AWQ may be faster to prepare but still lose quality on domains missing from calibration. SmoothQuant can unlock genuine W8A8 acceleration, but only if the accelerator has efficient INT8 matrix operations and the runtime fuses scaling; otherwise extra conversions consume the gain.</p>
+          <p>Separate model quality from numerical reconstruction. Mean squared layer error is a diagnostic, not a product metric. Also separate file size from resident memory and measured speed. Some runtimes dequantize all weights at load time, preserving neither capacity nor bandwidth savings. Others fuse unpack, scale, and matrix multiplication. Small matrices, odd group sizes, or unsupported batch shapes may fall back to slow kernels.</p>
+
+          <h3>Code connection and decision guide</h3>
+          <p>The project’s grouped INT4 and symmetric INT8 modules are deliberately small foundations rather than full GPTQ/AWQ/SmoothQuant implementations. Use them to observe how a PTQ algorithm ultimately must emit concrete codes, scales, group size, packing order, and reconstruction rules. The curriculum notebook experiments sit conceptually above these primitives.</p>
+          <a class="source-link" href="../../src/mini_infer/optimizations/int4_quantization.py">grouped INT4 primitive</a>
+          <a class="source-link" href="../../src/mini_infer/optimizations/int8_quantization.py">symmetric INT8 primitive</a>
+          <div class="card decision"><h4>Decision guide</h4><ul><li>Start with RTN only as a baseline or at forgiving precision.</li><li>Choose GPTQ when offline time is acceptable and proven kernels/checkpoints exist for weight-only INT4.</li><li>Choose AWQ for practical W4A16 deployment with activation-aware quality and strong runtime support.</li><li>Choose SmoothQuant when W8A8 hardware acceleration is the goal and activation outliers are the obstacle.</li><li>Keep sensitive layers, embeddings, or output heads at higher precision if evaluation justifies the mixed policy.</li></ul></div>
+          <div class="card mistakes"><h4>Common mistakes</h4><ul><li>Calibrating only on short, easy, single-language prompts.</li><li>Calling XᵀX “the exact model Hessian” rather than a layer-local approximation.</li><li>Applying a scale without its inverse companion, changing the function before quantization.</li><li>Assuming an algorithm name guarantees a compatible checkpoint layout.</li><li>Optimizing layer MSE while ignoring generation and product quality.</li><li>Benchmarking a dequantize-then-FP16 fallback as if it were a native low-bit kernel.</li></ul></div>
+
+          <h3>Review questions with answers</h3>
+          <div class="review-set">
+            <details><summary>1. Why is calibration needed?</summary><p>Weights alone do not reveal which perturbations matter for actual layer outputs. Representative activations expose channel magnitudes, correlations, and outliers.</p></details>
+            <details><summary>2. What does GPTQ compensate?</summary><p>After rounding a weight or column, GPTQ adjusts remaining unquantized weights using approximate inverse-curvature information so correlated dimensions absorb some output error.</p></details>
+            <details><summary>3. How can AWQ scaling preserve the original function?</summary><p>Multiplying a weight channel by s and dividing its matching activation channel by s cancels in the dot product before quantization.</p></details>
+            <details><summary>4. What problem does SmoothQuant target?</summary><p>Per-channel activation outliers that force a large INT8 scale and erase resolution for ordinary activation values. It migrates some range difficulty into static weights.</p></details>
+            <details><summary>5. Why can two calibration sets produce different checkpoints?</summary><p>Their activation ranges, frequencies, and correlations differ, changing sensitivity estimates and selected scales. Calibration is a sampled model of production traffic.</p></details>
+            <details><summary>6. Which method automatically guarantees fastest inference?</summary><p>None. Speed depends on device, kernel, shape, packing, fusions, and workload. The PTQ algorithm chooses values; the runtime must execute them efficiently.</p></details>
+          </div>
+          <h3>Exercises</h3>
+          <ol class="exercise-list"><li>For X = [[1,10],[1,−10]], compute XᵀX and interpret the diagonal and off-diagonal entries.</li><li>Construct a two-channel example where minimizing weight error selects the wrong channel to protect, then evaluate output error.</li><li>Sweep α conceptually from 0 to 1 in SmoothQuant. Predict weight range and activation range at each extreme.</li><li>Write a validation plan with one reconstruction metric, two language-model metrics, two product tasks, and two serving metrics.</li></ol>
+          <div class="bridge"><strong>Bridge to Day 15:</strong> quantization reduces the cost of every model pass. Speculative decoding attacks a different unit: how many expensive target passes are needed per emitted token while preserving the target distribution exactly.</div>
+        </section>
+
+        <section id="day-15" class="content-section chapter" data-search-group="Day 15">
+          <div class="section-heading"><div><p class="eyebrow">Day 15 · Exact acceleration</p><h2>Speculative decoding: draft, verify, correct</h2></div><p>A cheap proposer guesses several future tokens; the authoritative target scores them together, and rejection sampling keeps exactly the target distribution.</p></div>
+          <p class="chapter-lead">Picture a senior editor who must approve every word but reads much faster in batches than one word at a time. A junior writer drafts a short phrase. The editor checks the entire phrase in one sitting, keeps the valid beginning, corrects the first unacceptable word, and discards the unsupported tail. The junior never becomes the authority. The speedup comes from converting several expensive, sequential target calls into one target verification pass—not from trusting a cheaper model’s answers.</p>
+
+          <h3>First principles: why decode leaves hardware idle</h3>
+          <p>Autoregressive generation factorizes a sequence probability as <em>P(y₁…yₙ|x)=∏ᵢP(yᵢ|x,y&lt;i)</em>. Position i cannot be sampled until positions before it are known. At small batches, a target model often loads a huge quantity of weights for one token and performs too little arithmetic to saturate compute units. A target can nevertheless score several already-known candidate positions in parallel: teacher forcing supplies the proposed tokens as inputs. Speculation manufactures those candidates cheaply, allowing verification to use a wider, more compute-efficient pass.</p>
+          <ul class="term-list">
+            <li><strong>Draft distribution q:</strong> the cheap proposer’s next-token probabilities.</li>
+            <li><strong>Target distribution p:</strong> the authoritative model’s probabilities to preserve.</li>
+            <li><strong>Proposal length K:</strong> maximum candidate tokens in one round.</li>
+            <li><strong>Acceptance rate:</strong> fraction of proposed positions accepted.</li>
+            <li><strong>Bonus token:</strong> a target-sampled token emitted after all K proposals pass.</li>
+            <li><strong>Residual distribution:</strong> normalized positive probability mass p−q used after rejection.</li>
+          </ul>
+
+          <h3>The draft-target flow, step by step</h3>
+          <div class="system-diagram" aria-label="Speculative decoding flow">
+            <div class="system-node"><strong>1 · Draft</strong>Sample K tokens autoregressively from q and retain each q distribution.</div>
+            <div class="system-node"><strong>2 · Verify</strong>Run the target once across candidate positions to obtain p distributions.</div>
+            <div class="system-node"><strong>3 · Accept</strong>Walk left to right with probability min(1,p(token)/q(token)).</div>
+            <div class="system-node"><strong>4 · Correct</strong>At first rejection, sample from normalized max(0,p−q).</div>
+            <div class="system-node"><strong>5 · Commit</strong>Emit accepted prefix plus correction, or all K plus a bonus.</div>
+          </div>
+          <p>Verification must stop logically at the first rejection because later target distributions were conditioned on a draft token that will not be in the final sequence. Their logits are no longer valid for the corrected history. If every candidate passes, the target has also computed logits after the Kth candidate, so sampling one bonus token makes full use of the pass.</p>
+
+          <h3>Why naïve acceptance changes the distribution</h3>
+          <p>A tempting shortcut is “accept a draft token whenever the target likes it,” or accept with probability p(token), then sample from p after rejection. Both are biased. The proposal token was already sampled from q, so its chance of appearing includes q. If we accept with probability p rather than p/q, its accepted mass becomes q·p, not the mass target p assigned. Sampling from full p after rejection adds target mass again to tokens that already received accepted proposal mass. Frequent draft tokens are overrepresented and rare target-favored tokens may be underrepresented.</p>
+          <p>Exact rejection sampling accounts for how often a token was proposed. A proposal token t is accepted with <em>a(t)=min(1,p(t)/q(t))</em>. Its unconditional accepted mass is <em>q(t)a(t)=min(q(t),p(t))</em>. That covers the overlap between distributions. The target still needs the uncovered mass <em>p(t)−min(p(t),q(t))=max(0,p(t)−q(t))</em>. When any proposal is rejected, drawing a correction from the normalized positive residual supplies exactly that missing mass. Over acceptance and rejection branches together, each token’s total probability is p(t).</p>
+          <div class="formula">a(t) = min(1, p(t)/q(t)); &nbsp; r(v) = max(0, p(v)−q(v)) / Σᵤ max(0, p(u)−q(u))</div>
+          <p>Here t is the proposed token; v and u range over vocabulary items; p is the target probability at the current prefix; q is the draft probability at the same prefix; a is acceptance probability; and r is the correction distribution. If q(t)=0, the draft cannot have sampled t in a well-formed implementation. Numerical code still guards against zero and normalizes imperfect input distributions.</p>
+
+          <div class="worked" data-search-item id="day15-worked">
+            <h4>Worked numeric example: exact mass recovery</h4>
+            <p>Let vocabulary be {A,B,C}. Draft q=[0.60,0.30,0.10]; target p=[0.30,0.40,0.30]. Acceptance probabilities are A: min(1,.30/.60)=.50; B: min(1,.40/.30)=1; C: min(1,.30/.10)=1. Unconditional accepted mass is q·a=[.30,.30,.10], exactly min(p,q).</p>
+            <p>The total rejection probability is 1−(.30+.30+.10)=.30. Positive residual p−q is [0,.10,.20], which normalizes to r=[0,1/3,2/3]. Multiplying by rejection probability adds [0,.10,.20]. Total output mass is [.30,.40,.30]=p. By contrast, accepting with probability p gives accepted mass [.18,.12,.03], and then resampling naïvely from p cannot generally repair the distortion without deriving the missing mass.</p>
+          </div>
+
+          <h3>Medusa, EAGLE, and multi-token prediction</h3>
+          <p><strong>Medusa</strong> attaches several prediction heads to target hidden states. Heads predict tokens at different future offsets, producing branches that the target verifies with a tree-aware attention pattern. It avoids loading a separate draft model but requires trained heads, additional parameters, and an engine capable of tree construction and verification. Because future predictions are not independent, tree topology and pruning strongly affect useful acceptance.</p>
+          <p><strong>EAGLE</strong> drafts in a feature space informed by the target’s hidden states, then maps candidates to tokens and verifies them. Later variants adapt tree expansion or use richer feature prediction. The useful mental distinction is that token-level draft-target predicts only discrete next tokens with a separate model, while EAGLE exploits internal target representations that carry more information. It can increase acceptance but couples the draft artifact to a particular target architecture and serving implementation.</p>
+          <p><strong>Multi-token prediction (MTP)</strong> trains auxiliary objectives or heads to predict multiple future positions. At inference these predictions can form speculative candidates. MTP is a broad training/design concept; it is not automatically the exact serving algorithm. Exactness still depends on authoritative target verification and a correct acceptance/correction procedure. A head that simply emits several tokens without verification changes the model being sampled.</p>
+          <p><strong>N-gram speculation</strong> needs no neural draft. It finds the recent token pattern earlier in the prompt or output and proposes what followed. This is powerful for copied text, retrieval contexts, repetitive templates, and code. It is weak on novel prose. The project’s proposer deliberately returns an empty proposal when no repeated context exists, which is preferable to inventing low-quality guesses.</p>
+
+          <h3>Expected work, quality, and hardware dependence</h3>
+          <div class="formula">E[accepted prefix] = Σᵢ₌₁ᴷ P(first i proposals all accepted)</div>
+          <p>If each position had independent acceptance α, this simplifies to Σᵢ₌₁ᴷ αⁱ. Real positions are correlated, so measure empirical accepted tokens per round. Speedup is not merely accepted tokens. Draft latency, target verification efficiency, KV-cache rollback/commit, sampling overhead, batch interference, and memory occupied by the draft all matter. A large K can waste verification on tails after an early rejection. A draft that is too strong may cost nearly as much as the target; one that is too weak produces little accepted work.</p>
+          <p>Exact speculative decoding preserves the target sampling distribution under identical logits-processing rules and mathematically correct sampling. It does not promise bit-identical random-number streams or identical token sequences for a fixed seed, because batching and branch decisions consume random values differently. Greedy “verify matching argmax” can preserve greedy output but is a different guarantee from distribution-preserving sampling. Top-k, top-p, temperature, repetition penalties, grammar masks, and banned tokens must be applied consistently to p and q at each prefix.</p>
+          <p>Hardware determines whether verification is cheaper than K target decode steps. On a bandwidth-bound GPU with idle compute, scoring K positions together can be highly efficient. On an already compute-saturated large batch, extra candidate work may reduce fleet throughput. Separate user latency from aggregate throughput: a single request can speed up while shared-server tokens per second decline due to draft work and longer verification batches.</p>
+
+          <h3>Code connection and decision guide</h3>
+          <p><code>speculative_decode_step</code> normalizes distributions, verifies left to right, samples the positive residual at rejection, and samples a bonus after full acceptance. <code>NGramProposer</code> demonstrates a zero-model candidate source. They are inspectable correctness models, not fused production kernels.</p>
+          <a class="source-link" href="../../src/mini_infer/optimizations/speculative_decoding.py">mini_infer/optimizations/speculative_decoding.py</a>
+          <a class="source-link" href="../../src/mini_infer/optimizations/ngram_proposer.py">mini_infer/optimizations/ngram_proposer.py</a>
+          <div class="card decision"><h4>Decision guide</h4><ul><li>Use n-gram proposals for copy-heavy RAG, code, and repeated templates.</li><li>Use draft-target when a compatible small model has high agreement and spare memory is available.</li><li>Consider Medusa/MTP heads when model modification and tree-verification support are practical.</li><li>Consider EAGLE when a target-specific draft artifact and mature runtime integration exist.</li><li>Disable or shorten speculation dynamically for low acceptance, high server load, or compute-saturated batches.</li></ul></div>
+          <div class="card mistakes"><h4>Common mistakes</h4><ul><li>Keeping tokens merely because target probability exceeds a threshold.</li><li>Resampling from p rather than the positive residual after rejection.</li><li>Using logits conditioned on a rejected draft tail.</li><li>Applying different temperature or masks to draft and target distributions.</li><li>Reporting accepted tokens without end-to-end latency and throughput.</li><li>Calling “same quality” the same as distributional exactness.</li></ul></div>
+
+          <h3>Review questions with answers</h3>
+          <div class="review-set">
+            <details><summary>1. How can a target verify sequential tokens in parallel?</summary><p>The proposed tokens are already known, so teacher forcing lets one target pass compute logits for each candidate position under its preceding proposed prefix.</p></details>
+            <details><summary>2. Why is acceptance p/q rather than p?</summary><p>The candidate is sampled from q. Dividing by q corrects proposal frequency so accepted unconditional mass becomes min(p,q), not q·p.</p></details>
+            <details><summary>3. What happens at the first rejection?</summary><p>Emit a correction from normalized max(0,p−q), discard later proposals, update the real history, and begin a new round.</p></details>
+            <details><summary>4. Why is a bonus token available?</summary><p>If all K candidates pass, verification has computed the target distribution following them. Sampling it uses work already produced by the target pass.</p></details>
+            <details><summary>5. Does exact speculation reproduce the same seeded sequence?</summary><p>Not necessarily. It preserves the probability distribution, but random draws can be consumed in a different order, producing another valid sample.</p></details>
+            <details><summary>6. When can speculation hurt throughput?</summary><p>When acceptance is low, draft cost is high, verification wastes many tail positions, cache bookkeeping is expensive, or ordinary batching already saturates compute.</p></details>
+          </div>
+          <h3>Exercises</h3>
+          <ol class="exercise-list"><li>For q=[.5,.25,.25] and p=[.2,.5,.3], compute acceptance probabilities, residual, and final mass.</li><li>Show algebraically why “accept with p, otherwise sample p” is biased for a two-token vocabulary.</li><li>Measure the project function with deterministic random sources that force acceptance and rejection branches.</li><li>Design an adaptive K policy using recent acceptance, draft latency, queue depth, and target batch utilization.</li></ol>
+          <div class="bridge"><strong>Bridge to Day 16:</strong> speculation avoids some target decode calls. Prefix caching avoids repeated target prefill work across requests. Both rely on exact token histories, but the cache adds ownership, eviction, placement, and routing problems.</div>
+        </section>
+
+        <section id="day-16" class="content-section chapter" data-search-group="Day 16">
+          <div class="section-heading"><div><p class="eyebrow">Day 16 · Reuse</p><h2>Prefix caching: make identical history reusable</h2></div><p>A cached prefix is computed KV state tied to an exact token sequence, model configuration, positions, and numerical execution contract.</p></div>
+          <p class="chapter-lead">A restaurant prepares the same soup base for many dishes. If every order starts with the identical base, the kitchen reuses one pot and adds the customer-specific ingredients at the end. If a customer’s special ingredient is mixed into the base at the beginning, every later step changes and reuse disappears. Prefix caching is the serving equivalent: stable instructions first, variable content last.</p>
+
+          <h3>First principles and cache identity</h3>
+          <p>During causal attention, key and value vectors at position i depend only on tokens through i. Two requests with exactly the same first k token IDs, positions, model weights, adapters, and relevant execution settings produce reusable KV entries for positions 0…k−1. They may diverge after k without invalidating the shared prefix. A matching substring in the middle is not generally reusable because its vectors were computed with different earlier context and positions.</p>
+          <ul class="term-list">
+            <li><strong>Prefix hit:</strong> a cached initial token run that can skip corresponding prefill work.</li>
+            <li><strong>Radix tree/trie:</strong> a structure that shares common token paths and finds the longest prefix.</li>
+            <li><strong>Reference count:</strong> number of active users pinning an entry against eviction.</li>
+            <li><strong>LRU:</strong> least-recently-used eviction among eligible entries.</li>
+            <li><strong>Cache affinity:</strong> routing preference for a worker already holding useful state.</li>
+            <li><strong>Re-prefill:</strong> recomputing KV instead of retrieving or transferring it.</li>
+          </ul>
+          <p>A safe cache key includes more than visible text. Tokenizer version and chat template determine token IDs. Model revision, adapter/LoRA identity, KV dtype, positional encoding configuration, multimodal inputs, and sometimes attention backend affect state. Security domains and tenant isolation may forbid sharing even when bytes match. Hashes accelerate lookup, but collision handling or full-key confirmation preserves correctness.</p>
+
+          <h3>System flow, step by step</h3>
+          <div class="system-diagram" aria-label="Prefix cache flow">
+            <div class="system-node"><strong>1 · Tokenize</strong>Build the canonical prompt and exact cache identity.</div>
+            <div class="system-node"><strong>2 · Route</strong>Estimate which replica owns the longest warm prefix.</div>
+            <div class="system-node"><strong>3 · Match</strong>Walk token blocks or a radix tree to the first mismatch.</div>
+            <div class="system-node"><strong>4 · Acquire</strong>Pin matching KV blocks and prefill only the suffix.</div>
+            <div class="system-node"><strong>5 · Release</strong>Unpin after use; evict cold entries under pressure.</div>
+          </div>
+          <p>Production caches often hash fixed-size token blocks rather than every individual token. Block alignment simplifies paged KV management but means a partial final block may not be reusable. Radix trees naturally represent shared paths and partial prefixes. The project’s learning cache stores whole prefix tuples in a trie, returns the longest stored match, increments a reference count on acquisition, and evicts the oldest unpinned entry. Its capacity is entries rather than bytes, a simplification worth noticing.</p>
+
+          <h3>Memory and the offload-versus-re-prefill race</h3>
+          <div class="formula">KV bytes = 2 · L · Hkv · Dhead · T · B · e</div>
+          <p>The factor 2 is keys plus values; L is layer count; Hkv is KV-head count; Dhead is dimensions per head; T is cached tokens; B is concurrent sequences or copies; and e is bytes per element. Grouped-query or multi-query attention reduces Hkv. Prefix caching does not make state free: retaining many popular prefixes competes with active sequences and model workspace.</p>
+          <div class="worked" data-search-item id="day16-worked">
+            <h4>Worked numeric example: transfer or recompute?</h4>
+            <p>Take L=32 layers, Hkv=8, Dhead=128, e=2 bytes, and a reusable T=4,096-token prefix. Bytes per token are 2·32·8·128·2 = 131,072 bytes = 128 KiB. Total prefix KV is 536,870,912 bytes = 512 MiB.</p>
+            <p>If host-to-device effective bandwidth is 32 GB/s, ideal transfer time is about 0.537/32 = 16.8 ms, before protocol and contention. If the engine prefills 4,096 tokens in 45 ms, transfer wins. If local SSD supplies only 7 GB/s, ideal read time is 76.7 ms, so re-prefill wins unless compute is congested or the data is compressed. The decision is <em>min(fetch latency, recompute latency)</em>, not “always offload.” Include queueing, serialization, network contention, and opportunity cost.</p>
+          </div>
+          <p>A practical hierarchy may place hottest entries in GPU HBM, warm entries in host memory, colder entries on local NVMe, and durable shared artifacts in remote storage. Moving down tiers increases capacity but also latency and bandwidth contention. Admission should consider expected reuse value: prefix tokens saved × reuse probability × prefill cost, compared with bytes occupied × eviction pressure. Large one-off prompts should not evict small frequently reused system prompts merely because they are recent.</p>
+
+          <h3>Cache-aware routing</h3>
+          <p>Round-robin routing balances request counts but destroys locality: the useful cache may sit on another replica. Pure affinity routing maximizes hits but can overload a popular replica. A production score combines prefix overlap, queue delay, available KV blocks, worker health, and transfer cost. One conceptual score is:</p>
+          <div class="formula">score(worker) = saved_prefill_ms − queue_delay_ms − transfer_ms − pressure_penalty_ms</div>
+          <p>Choose the highest score, not simply the largest hit. A 10,000-token hit on a saturated worker may lose to a 6,000-token hit on an idle one. Directory metadata describing which worker owns which prefix can itself be stale. Systems use leases, bloom filters, approximate ownership maps, or consistent hashing. On failure, correctness falls back to re-prefill; caches are optimization state, not the only copy of user truth.</p>
+
+          <h3>Exactness, quality, performance, and hardware</h3>
+          <p>Reusing KV generated under an identical execution contract should preserve the same model computation, apart from permitted nondeterminism in floating kernels. Reusing state across a different model revision, adapter, RoPE scaling, tokenizer, or attention semantics is a correctness bug, not graceful quality degradation. Multi-tenant reuse adds privacy risks: timing can reveal whether a prefix was warm, and cached user data requires retention and isolation policy.</p>
+          <p>Prefix caching primarily improves time to first token and reduces prefill compute. It may increase throughput by freeing compute, but decode time after the divergent suffix remains. A “hit rate” by request is misleading: one hit may save ten tokens and another ten thousand. Track cached tokens, prefill FLOPs avoided, byte residency, lookup latency, eviction churn, and P50/P95/P99 TTFT. Hardware shifts the tier boundary: fast coherent CPU–GPU links make host offload attractive; slow PCIe or oversubscribed networks favor recomputation.</p>
+
+          <h3>Code connection and decision guide</h3>
+          <a class="source-link" href="../../src/mini_infer/engine/prefix_cache.py">mini_infer/engine/prefix_cache.py</a>
+          <a class="source-link" href="../../src/mini_infer/optimizations/kv_cache_estimator.py">mini_infer/optimizations/kv_cache_estimator.py</a>
+          <p>Trace <code>insert</code>, <code>longest_prefix</code>, <code>release</code>, and <code>evict_one</code>. The implementation refuses to evict when every entry is pinned, turning memory pressure into an explicit signal rather than corrupting active state. The estimator makes the K/V factor and GQA-sensitive head count visible.</p>
+          <div class="card decision"><h4>Decision guide</h4><ul><li>First canonicalize prompts: stable system text and tools before variable user content.</li><li>Use token/block identity, not raw string similarity.</li><li>Route with locality plus load, not affinity alone.</li><li>Keep hot shared prefixes in HBM when saved prefill value exceeds capacity cost.</li><li>Offload only when effective fetch plus queue time beats re-prefill.</li><li>Partition identity and policy by model, adapter, tenant, and security boundary.</li></ul></div>
+          <div class="card mistakes"><h4>Common mistakes</h4><ul><li>Inserting timestamps or request IDs near the beginning of a prompt.</li><li>Counting character equality instead of token equality.</li><li>Ignoring cache-key dimensions such as LoRA or model revision.</li><li>Evicting pinned blocks that active requests still reference.</li><li>Optimizing hit rate while making queue imbalance worse.</li><li>Assuming remote cache always beats recomputation.</li></ul></div>
+
+          <h3>Review questions with answers</h3>
+          <div class="review-set">
+            <details><summary>1. Why are prefixes reusable but arbitrary substrings are not?</summary><p>Causal KV at a position depends on every earlier token and its position. A matching prefix preserves that history; a middle substring usually has a different preceding context.</p></details>
+            <details><summary>2. What should a cache identity include?</summary><p>Exact token IDs plus all settings that influence KV: model and adapter revision, positional configuration, KV dtype/backend where relevant, multimodal inputs, and security scope.</p></details>
+            <details><summary>3. Why use reference counts?</summary><p>They prevent eviction while active requests still depend on cached blocks. An unpinned cold entry is safe to reclaim; a pinned one is not.</p></details>
+            <details><summary>4. Does a high request hit rate guarantee large savings?</summary><p>No. Hits vary in prefix length and compute value. Token-weighted hit rate and prefill time avoided are more informative.</p></details>
+            <details><summary>5. When should an offloaded prefix be recomputed instead?</summary><p>When retrieval, transfer, queueing, and deserialization take longer or consume more valuable resources than prefill on the selected worker.</p></details>
+            <details><summary>6. Why can cache-aware routing reduce balance?</summary><p>Popular prefixes attract traffic to their owner. The routing score must price queue delay and memory pressure, and may choose a miss on an idle worker.</p></details>
+          </div>
+          <h3>Exercises</h3>
+          <ol class="exercise-list"><li>Reorder a prompt containing system rules, tool schemas, current time, user profile, and user query to maximize stable prefix length without changing semantics.</li><li>Use the KV formula for L=80, Hkv=8, Dhead=128, T=32K, e=2. Compare transfer on 32, 100, and 900 GB/s links.</li><li>Design a worker score using overlap tokens, prefill rate, queue length, and memory pressure. Test two hypothetical workers.</li><li>Extend the learning cache design from entry capacity to byte capacity and state which metadata is needed.</li></ol>
+          <div class="bridge"><strong>Bridge to Day 17:</strong> one replica eventually runs out of memory or throughput. Parallelism decides how a request and model span devices; prefix locality then has to be understood inside those device groups rather than on one GPU.</div>
+        </section>
+
+        <section id="day-17" class="content-section chapter" data-search-group="Day 17">
+          <div class="section-heading"><div><p class="eyebrow">Day 17 · Scale-out</p><h2>Parallelism: divide work, then pay to reconnect it</h2></div><p>Tensor, pipeline, data, expert, and context parallelism split different dimensions. Every split creates a communication pattern and a latency/throughput consequence.</p></div>
+          <p class="chapter-lead">Imagine producing a newspaper. Several printers can each print complete independent editions (data parallelism). Specialists can print different color layers of the same page and combine them (tensor parallelism). Stations can perform layout, printing, folding, and packing in a line (pipeline parallelism). Separate desks can handle sports, finance, and culture articles selected by a router (expert parallelism). A very wide poster can be divided into panels whose boundary information must be exchanged (context parallelism). “Use more workers” is incomplete until we say what is divided and how results reunite.</p>
+
+          <h3>First principles: fit, latency, and throughput are different goals</h3>
+          <p>A model may be sharded because its weights do not fit on one accelerator. That is a capacity requirement. It may be sharded to reduce one request’s latency. That is a critical-path goal. Or it may be replicated to finish more independent requests per second. That is throughput. Adding devices can solve one while harming another. Communication, synchronization, idle bubbles, smaller per-device matrix shapes, and queueing prevent linear scaling.</p>
+          <ul class="term-list">
+            <li><strong>World size:</strong> total ranks participating in a distributed plan.</li>
+            <li><strong>Rank:</strong> one process/device identity within a communication group.</li>
+            <li><strong>Collective:</strong> coordinated communication such as all-reduce or all-to-all.</li>
+            <li><strong>Critical path:</strong> operations that determine one request’s completion time.</li>
+            <li><strong>Strong scaling:</strong> same work distributed over more devices.</li>
+            <li><strong>Bubble:</strong> time a pipeline stage is idle because no microbatch is ready.</li>
+          </ul>
+
+          <h3>Tensor parallelism (TP)</h3>
+          <p>TP splits matrix dimensions within each transformer layer. In a column-parallel linear layer, each rank owns a slice of output columns and computes a partial output feature set. In a row-parallel layer, each rank owns input rows and creates a partial sum that must be combined. Attention heads naturally partition when head counts divide the TP degree. TP reduces weight memory per rank and can shorten local GEMMs, but communication occurs repeatedly inside every layer. Decode’s small token dimension makes those GEMMs narrow and synchronization comparatively expensive.</p>
+          <p>A common reconnection is <strong>all-reduce</strong>: every rank contributes an equally shaped partial tensor; the operation sums them and returns the full sum to every rank. <strong>Reduce-scatter</strong> sums and leaves a different shard on each rank, often paired later with <strong>all-gather</strong>, which concatenates shards so every rank receives the whole. Efficient implementations overlap communication, fuse collectives, and respect topology. TP usually stays within a high-bandwidth, low-latency node because it communicates on the critical path of many layers.</p>
+
+          <h3>Pipeline parallelism (PP)</h3>
+          <p>PP assigns contiguous layer ranges to stages. Activations flow from stage 0 to stage 1, then onward; the final stage produces logits. Weight capacity scales with stage count, and boundary tensors are smaller than constant TP collectives, making PP suitable across nodes. For one request, however, stages execute serially: splitting layers does not automatically reduce latency and can add transfer overhead. Throughput improves when many microbatches occupy different stages simultaneously.</p>
+          <div class="formula">Ideal pipeline utilization ≈ m / (m + p − 1) &nbsp;&nbsp; ; &nbsp;&nbsp; bubble fraction ≈ (p−1)/(m+p−1)</div>
+          <p><em>p</em> is the number of balanced stages and <em>m</em> is the number of microbatches in a simple schedule. With p=4 and m=1, utilization is 1/4: three stage-slots are bubbles. With m=16, utilization is 16/19≈84%. Real imbalance, decode dependencies, and variable sequence lengths lower it. Continuous inference schedulers do not map perfectly to training microbatch formulas, but the bubble intuition remains.</p>
+
+          <h3>Data parallelism (DP)</h3>
+          <p>DP replicates the complete serving shard group and routes independent requests to replicas. During inference there is usually no per-token gradient synchronization. If one model replica requires TP=4, adding DP=8 creates eight independent four-GPU replica groups, not a 32-way collective for each token. DP is often the cleanest throughput scaling because requests do not communicate across replicas. It multiplies weight memory and does little for the latency of one request. Cache-aware routing, load balancing, and failure domains operate across these replicas.</p>
+
+          <h3>Expert parallelism (EP)</h3>
+          <p>Mixture-of-Experts models activate only selected experts per token. EP places experts on different ranks. A router chooses top-k experts, then tokens travel to owners through <strong>all-to-all</strong>: each rank sends different token subsets to every other rank and receives different subsets in return. After expert computation, another exchange restores token order. EP saves active compute relative to dense use of every expert and distributes expert weights, but load imbalance is dangerous. A popular expert becomes a straggler; capacity limits may drop or reroute tokens, changing quality or latency.</p>
+          <p>All-to-all stresses network bisection bandwidth and produces irregular messages. Locality-aware expert placement, expert replication, balanced routing losses during training, and token batching help. EP and TP can coexist: experts are distributed among groups while each large expert itself is tensor-sharded.</p>
+
+          <h3>Context/sequence parallelism (CP/SP)</h3>
+          <p>Long sequences make activations and KV state large even when weights fit. Context parallelism partitions token positions across ranks. Attention is globally dependent: each query may need keys and values owned elsewhere, so ranks exchange KV blocks or circulate them in a ring. Sequence parallelism can also shard token-wise activations around operations that otherwise replicate them. Names vary across frameworks; inspect the actual tensors and collectives rather than trusting labels.</p>
+          <p>Context parallelism reduces per-rank sequence memory and distributes long-context attention work, but adds communication proportional to sequence-related tensors. It is especially relevant to long prefill; decode has only one new query per sequence but reads distributed historical KV, so implementation strategy matters. Ring attention overlaps computation on one KV block with movement of the next; poor overlap exposes the network directly on latency.</p>
+
+          <div class="system-diagram" aria-label="Parallelism axes">
+            <div class="system-node"><strong>DP</strong>Independent request replicas; route, do not synchronize tokens.</div>
+            <div class="system-node"><strong>PP</strong>Layer blocks; send activations between stages.</div>
+            <div class="system-node"><strong>TP</strong>Matrix/head slices; reduce partial results frequently.</div>
+            <div class="system-node"><strong>EP</strong>Expert ownership; all-to-all dispatched tokens.</div>
+            <div class="system-node"><strong>CP</strong>Token ranges; exchange or rotate attention state.</div>
+          </div>
+
+          <h3>Communication math and a worked plan</h3>
+          <div class="formula">T_comm ≈ latency_steps · ℓ + bytes_transferred / effective_bandwidth</div>
+          <p><em>ℓ</em> is per-step network latency, not model loss; latency_steps depends on the collective algorithm and rank count; bytes include tensors actually sent per rank; effective bandwidth is lower than link peak because of protocol, contention, topology, and message size. Ring all-reduce moves approximately <em>2(n−1)/n</em> times the tensor bytes per rank across its reduce-scatter and all-gather phases. This volume approaches twice the tensor size as n grows, while step latency also grows.</p>
+          <div class="worked" data-search-item id="day17-worked">
+            <h4>Worked numeric example: a 16-GPU serving plan</h4>
+            <p>A 64-layer dense model needs 240 GiB for weights and reserved runtime state. Each GPU offers 80 GiB, but only 64 GiB is budgeted after safety margin. Capacity needs at least ceil(240/64)=4 GPUs. Suppose we choose TP=4 in one high-bandwidth node. Each rank holds roughly 60 GiB before uneven buffers, so it fits.</p>
+            <p>We have 16 GPUs total. With TP=4 and no PP/EP/CP, DP=4 creates four replicas: world size = DP·TP = 16. This does not make one request 16 times faster. At best TP reduces some local math while introducing per-layer collectives; DP lets four replica groups serve independent batches, raising aggregate throughput. If a 2 MiB activation partial is all-reduced over n=4 with an ideal ring, each rank moves 2(n−1)/n·2 MiB = 3 MiB. At effective 150 GB/s, bandwidth time is about 0.021 ms, but collective launch/step latency and 64 repeated layers can dominate small decode steps. Replacing intra-node links with a slower inter-node network can erase TP gains even if capacity still fits.</p>
+          </div>
+
+          <h3>Exactness, quality, performance, and topology</h3>
+          <p>Sharding an exact mathematical operation should preserve model semantics, but floating-point reductions are not associative. Different collective orders can produce small logit changes and therefore different samples. EP capacity overflow, approximate routing, communication quantization, or dropped tokens can create larger quality changes. Report whether parallelism is mathematically equivalent, numerically close, or intentionally approximate.</p>
+          <p>Latency and throughput must be charted separately. TP may lower single-request compute time while synchronization raises inter-token latency. PP may raise latency but improve throughput at sufficient concurrency. DP almost linearly raises capacity until routing, memory, host, or network bottlenecks emerge. EP enables sparse models to fit but is sensitive to token distribution. CP enables contexts that otherwise fail but can add network-bound attention. Measure P50/P99 TTFT, inter-token latency, tokens/s/GPU, batch size, collective time, and idle fraction.</p>
+          <p>Topology is part of the algorithm. “Eight GPUs” could mean eight devices behind one high-speed fabric, two four-GPU islands crossing PCIe, or eight hosts on a congested network. Place chatty TP groups on fastest links; place lower-frequency PP boundaries across nodes; keep expert communication within high-bisection groups when possible; and replicate with DP across failure domains. Hardware-aware rank mapping often matters as much as the degree values.</p>
+
+          <h3>Code connection and decision guide</h3>
+          <a class="source-link" href="../../src/mini_infer/optimizations/parallel_planning.py">mini_infer/optimizations/parallel_planning.py</a>
+          <p>The planner makes five axes explicit, verifies divisibility, computes world size as their product, assigns pipeline layer ranges, and optionally assigns context ranges. It does not simulate collectives or speedup. That separation is healthy: a partition plan is necessary, not sufficient, evidence of performance.</p>
+          <div class="table-wrap"><table class="comparison"><thead><tr><th>Need</th><th>First axis to consider</th><th>Main cost</th><th>Primary metric</th></tr></thead><tbody>
+            <tr><td>Model does not fit one device</td><td>TP within node; PP across nodes</td><td>Collectives or stage transfer</td><td>Feasibility, latency</td></tr>
+            <tr><td>More independent QPS</td><td>DP</td><td>Replicated weights and routing</td><td>Throughput, cost/request</td></tr>
+            <tr><td>Many sparse experts</td><td>EP</td><td>All-to-all and imbalance</td><td>Expert load, tail latency</td></tr>
+            <tr><td>Very long context</td><td>CP/SP</td><td>KV/activation exchange</td><td>Memory, TTFT</td></tr>
+            <tr><td>Cross-node weight capacity</td><td>PP</td><td>Bubbles and stage imbalance</td><td>Utilization, throughput</td></tr>
+          </tbody></table></div>
+          <div class="card mistakes"><h4>Common mistakes</h4><ul><li>Multiplying all degrees without checking whether axes share or duplicate resources.</li><li>Saying TP cuts latency by its degree while ignoring collectives and smaller GEMMs.</li><li>Using peak link bandwidth instead of effective collective bandwidth.</li><li>Confusing DP throughput scaling with single-request latency scaling.</li><li>Ignoring pipeline stage imbalance and insufficient concurrency.</li><li>Assuming “context parallel” means the same algorithm in every framework.</li></ul></div>
+
+          <h3>Review questions with answers</h3>
+          <div class="review-set">
+            <details><summary>1. Why is TP usually topology-sensitive?</summary><p>It combines partial results frequently within layers. Latency and bandwidth therefore sit repeatedly on the token’s critical path.</p></details>
+            <details><summary>2. What does DP improve?</summary><p>Aggregate throughput and fault/capacity scaling for independent requests. It replicates weights and generally does not reduce one request’s model computation.</p></details>
+            <details><summary>3. Why does PP need concurrency?</summary><p>Without multiple microbatches, only one stage has useful work at a time. Concurrency fills different stages and amortizes startup/drain bubbles.</p></details>
+            <details><summary>4. Which collective characterizes EP?</summary><p>All-to-all, because each source rank sends different routed token subsets to different expert-owning ranks, then results return.</p></details>
+            <details><summary>5. What problem does CP solve?</summary><p>It partitions token positions to distribute long-sequence activation, attention, and KV memory/work, at the cost of exchanging attention state.</p></details>
+            <details><summary>6. Can parallel execution change outputs?</summary><p>Equivalent sharding can differ slightly from floating reduction order; approximate routing, capacity overflow, dropped tokens, or communication quantization can change quality more substantially.</p></details>
+          </div>
+          <h3>Exercises</h3>
+          <ol class="exercise-list"><li>For DP=2, PP=2, TP=4, EP=1, CP=2, compute world size and describe each rank’s conceptual coordinates.</li><li>Calculate simple pipeline utilization for p=8 and m in {1,8,32}. Explain why balanced stage time is assumed.</li><li>Estimate ring all-reduce bytes per rank for 8 ranks and a 16 MiB tensor; compare 50 and 400 GB/s effective links before latency.</li><li>Design a topology map for two eight-GPU nodes: identify which axes stay within a node and justify any cross-node boundary.</li></ol>
+          <div class="bridge"><strong>Bridge to Day 18:</strong> parallelism decides how one homogeneous replica executes the whole request. Disaggregation goes further: it separates the two phases of a request into heterogeneous worker pools and must transfer the KV state between them.</div>
+        </section>
+
+        <section id="day-18" class="content-section chapter" data-search-group="Day 18">
+          <div class="section-heading"><div><p class="eyebrow">Day 18 · Specialization</p><h2>Prefill/decode disaggregation: move state between optimized pools</h2></div><p>Prefill favors parallel arithmetic; decode repeatedly streams weights and KV. Separate pools isolate interference, but the KV handoff becomes a first-class distributed operation.</p></div>
+          <p class="chapter-lead">A parcel service uses a sorting hub for a huge burst of parallel scanning, then local vans for incremental doorstep delivery. Asking every van to run a sorting warehouse wastes equipment; asking one warehouse to drive every route creates queues. Disaggregated inference assigns prompt processing to prefill workers and token-by-token generation to decode workers. The handoff—the KV cache plus request metadata—is the parcel transfer whose size, route, and timing decide whether specialization helps.</p>
+
+          <h3>First principles: two arithmetic regimes</h3>
+          <p>Prefill processes many prompt positions together. Large matrix multiplications reuse weights across tokens, increasing arithmetic intensity and tensor-core utilization. Its visible metric is time to first token (TTFT), and long prompts can occupy a GPU for substantial bursts. Decode adds one position per active sequence each step. It repeatedly reads model weights and growing KV history for relatively little arithmetic, often making high-bandwidth memory and batching the limits. Its user metric is inter-token latency (ITL), while the fleet also cares about decode tokens per second.</p>
+          <p>When both phases share workers, a long prefill can delay decode steps and create ITL spikes. Reserving decode-only workers protects cadence; prefill-only workers can use larger chunks or different tensor-parallel degrees without blocking active streams. The price is duplicated or differently sharded model weights, separate schedulers, more failure modes, and KV transfer.</p>
+          <ul class="term-list">
+            <li><strong>Disaggregation:</strong> assigning prefill and decode to separate worker pools.</li>
+            <li><strong>xPyD:</strong> x prefill workers paired operationally with y decode workers.</li>
+            <li><strong>KV handoff:</strong> transfer of attention cache and metadata after prefill.</li>
+            <li><strong>Goodput:</strong> work meeting service-level objectives, not merely completed work.</li>
+            <li><strong>Backpressure:</strong> slowing admission when downstream capacity cannot accept work.</li>
+            <li><strong>Rendezvous:</strong> coordination that tells sender and receiver where/how to exchange state.</li>
+          </ul>
+
+          <h3>End-to-end flow</h3>
+          <div class="system-diagram" aria-label="Disaggregated inference flow">
+            <div class="system-node"><strong>1 · Admit</strong>Classify prompt/output expectations and choose pools.</div>
+            <div class="system-node"><strong>2 · Prefill</strong>Compute prompt hidden states, KV blocks, and first-token logits.</div>
+            <div class="system-node"><strong>3 · Allocate</strong>Reserve compatible destination KV pages on a decode worker.</div>
+            <div class="system-node"><strong>4 · Transfer</strong>Move KV directly or through a tier; send block metadata.</div>
+            <div class="system-node"><strong>5 · Decode</strong>Confirm ownership, continue positions, sample, and stream.</div>
+          </div>
+          <p>The router should select a decode worker before or during prefill so memory can be reserved and transfer can overlap tail computation where supported. The handoff needs request ID, sequence length, block table, model/shard identity, KV dtype/layout, positions, and completion signaling. The receiver must not decode from partially transferred blocks. Retries need idempotent ownership rules: after a timeout, the system must know whether to reuse received blocks, discard them, or re-prefill.</p>
+          <p>KV layouts must be compatible. If prefill uses TP=8 and decode TP=2, the cache may need redistribution, not a simple byte copy. Head ownership, layer partitioning, page size, alignment, dtype, and tensor layout determine which source rank sends to which destination rank. A transport library can coordinate GPU-direct movement over NVLink, PCIe, or RDMA, but it cannot remove the volume or topology constraints.</p>
+
+          <h3>The transfer equation and break-even condition</h3>
+          <div class="formula">T_handoff = T_queue + T_setup + KV_bytes / B_effective + T_redistribute + T_sync</div>
+          <p><em>T_queue</em> is waiting for a decode destination; <em>T_setup</em> covers rendezvous and registration; <em>KV_bytes</em> follows the Day 16 formula; <em>B_effective</em> is achieved transfer bandwidth; <em>T_redistribute</em> covers reshaping or cross-rank exchange; and <em>T_sync</em> ensures completion and visibility. Disaggregation helps latency only if phase isolation and better specialization save more than this handoff plus added queues. It can still improve SLO goodput by reducing interference even if mean latency barely changes.</p>
+          <div class="worked" data-search-item id="day18-worked">
+            <h4>Worked numeric example: 32K prompt handoff</h4>
+            <p>Use L=80, Hkv=8, Dhead=128, T=32,768, e=2 bytes. Per token: 2·80·8·128·2 = 327,680 bytes. Total: 10,737,418,240 bytes, exactly 10 GiB (about 10.74 GB). At an achieved 800 GB/s, raw transfer is 13.4 ms. At 50 GB/s it is 214.7 ms. Add 3 ms setup and 5 ms synchronization: approximately 21.4 ms versus 222.7 ms, before queueing or redistribution.</p>
+            <p>Suppose colocated serving gives a decode request a 180 ms queue/interference penalty after long prefills, while specialization reduces it to 20 ms. The saved 160 ms beats the fast-link 21.4 ms handoff but not the slow-link 222.7 ms handoff. On the slow link, disaggregation might still work for shorter prompts, compressed KV, or much larger interference, but the architecture is not automatically beneficial.</p>
+          </div>
+
+          <h3>Capacity planning and routing</h3>
+          <p>Let λ be request arrival rate, E[T] expected input tokens, E[O] expected output tokens, Rp aggregate sustainable prefill tokens/s per prefill worker, and Rd decode tokens/s per decode worker at the target latency. Rough first estimates are <em>Np ≥ λE[T]/Rp</em> and <em>Nd ≥ λE[O]/Rd</em>, followed by queueing simulation and headroom. Averages are not enough: long prompts and outputs create heavy tails; prompt/output correlation matters; and decode capacity is occupied over time, not in one burst.</p>
+          <p>Routing should consider prompt length, deadline, cache locality, predicted output length, destination KV capacity, and pool queues. Least-loaded routing, as demonstrated in the project, is a baseline. Production may reserve short-prompt lanes, prioritize active decode, or choose colocated execution for tiny prompts where transfer setup dominates. Backpressure should begin before decode HBM is exhausted; otherwise prefill completes work that has nowhere to land.</p>
+          <p>Pool ratios can change over time. Workloads with huge retrieved contexts and short answers need more prefill capacity. Chat or reasoning traffic with short prompts and long outputs needs more decode capacity. Autoscaling is slower than request fluctuations, so admission and routing need stable fallbacks: colocate, queue, re-prefill elsewhere, shorten cache retention, or reject according to policy.</p>
+
+          <h3>Failure and correctness</h3>
+          <p>Disaggregation should preserve the target model’s computation when KV is transferred losslessly with compatible layout and dtype. Compressing or requantizing KV can introduce quality error and must be evaluated separately. A partial, duplicated, stale, or mismatched cache is more dangerous: positions can shift silently, producing plausible but wrong generation. Include checksums or versioned descriptors, validate token count and model identity, and make state transitions explicit: allocated, transferring, ready, owned, released.</p>
+          <p>If the prefill worker fails before transfer completion, retry prefill or resume only from a durable compatible cache. If the decode worker fails after accepting ownership, another worker generally needs the token history and KV; re-prefill is the correctness fallback. Transports can retry chunks, but application-level ownership prevents two workers from streaming divergent continuations. Cancellation must reclaim both source staging buffers and destination blocks.</p>
+
+          <h3>Performance and hardware dependence</h3>
+          <p>Fast GPU fabrics make large handoffs feasible; PCIe, Ethernet, or oversubscribed InfiniBand change the break-even point. GPUDirect/RDMA avoids host copies but requires registration, topology-aware placement, and operational maturity. HBM capacity on decode workers often limits concurrency before compute. Prefill workers value compute throughput and may use higher TP; decode workers value memory bandwidth and may choose a different TP or quantization. Different GPU types can be economically sensible, but checkpoint and KV compatibility complicate operations.</p>
+          <p>Measure TTFT, ITL, end-to-end latency, transfer duration and bandwidth, source/destination queue time, KV bytes, allocation failures, prefill/decode utilization, and SLO goodput. A high link utilization is not inherently good if transfers delay decode collectives. Compare against a tuned colocated baseline at the same traffic and quality. Model isolated microbenchmarks do not capture queueing interference—the principal reason to disaggregate.</p>
+
+          <h3>Code connection and decision guide</h3>
+          <a class="source-link" href="../../src/mini_infer/optimizations/disaggregated_routing.py">mini_infer/optimizations/disaggregated_routing.py</a>
+          <a class="source-link" href="../../src/mini_infer/optimizations/kv_cache_estimator.py">mini_infer/optimizations/kv_cache_estimator.py</a>
+          <p><code>PrefillDecodeRouter</code> keeps distinct pools, chooses the least-loaded worker with deterministic tie-breaking, and records which prefill worker supplied each request. Its module docstring correctly warns that this models routing decisions, not a distributed runtime or a promised speedup. Combine it with the estimator to price the missing handoff.</p>
+          <div class="card decision"><h4>Decision guide</h4><ul><li>Prefer colocated serving for modest traffic, short prompts, or slow/contended interconnects.</li><li>Consider disaggregation when long prefills disrupt decode SLOs at sustained scale.</li><li>Compute KV bytes and achieved transfer time for real model geometry and topology.</li><li>Plan destination memory, TP-layout conversion, retry ownership, and backpressure before rollout.</li><li>Choose pool ratios from input/output token demand distributions, not request counts alone.</li><li>Canary against equal-cost colocated capacity and optimize SLO goodput, not peak utilization.</li></ul></div>
+          <div class="card mistakes"><h4>Common mistakes</h4><ul><li>Calling prefill always compute-bound and decode always bandwidth-bound without profiling shapes.</li><li>Using link peak instead of achieved end-to-end transfer bandwidth.</li><li>Ignoring KV redistribution when source and destination sharding differ.</li><li>Finishing prefill without reserving decode KV capacity.</li><li>Comparing mean latency while tail ITL or TTFT worsens.</li><li>Omitting failure ownership, cancellation, and security of transferred user state.</li></ul></div>
+
+          <h3>Review questions with answers</h3>
+          <div class="review-set">
+            <details><summary>1. Why can prefill and decode benefit from different workers?</summary><p>Prefill exposes broad token-parallel matrix work; decode performs small sequential steps that repeatedly stream weights and KV. Their optimal batching, TP, scheduling, and sometimes hardware differ.</p></details>
+            <details><summary>2. What must cross from prefill to decode?</summary><p>KV tensors plus request/position metadata, block ownership/layout, model/shard identity, and a completion signal; often the first sampled token or logits state also participates in the handoff protocol.</p></details>
+            <details><summary>3. Why is bandwidth alone insufficient for transfer time?</summary><p>Queueing, setup, registration, redistribution, protocol overhead, contention, and synchronization add latency around the raw bytes/bandwidth term.</p></details>
+            <details><summary>4. What is the correctness fallback after lost KV?</summary><p>Re-prefill from the authoritative token history on a compatible worker, then continue decode. Cached KV is derived state.</p></details>
+            <details><summary>5. How should pool ratio be estimated?</summary><p>From arrival rate and input/output token demand divided by sustainable phase-specific capacity, then refined with tail distributions, queueing simulation, and headroom.</p></details>
+            <details><summary>6. Can disaggregation improve SLOs without reducing mean compute?</summary><p>Yes. Isolating long prefill bursts can reduce decode interference and tail ITL, increasing goodput even after paying handoff overhead.</p></details>
+          </div>
+          <h3>Exercises</h3>
+          <ol class="exercise-list"><li>Compute KV handoff for a model with L=48, Hkv=8, Dhead=128, e=2 at 2K, 8K, and 32K prompts over 25 and 200 GB/s links.</li><li>Given 20 requests/s, mean 2,000 input and 300 output tokens, Rp=20K input tokens/s and Rd=1,500 output tokens/s per worker, estimate minimum pools before headroom.</li><li>Draw state transitions for allocation, transfer, decode ownership, cancellation, and worker failure. Identify idempotent operations.</li><li>Design a benchmark comparing colocated and disaggregated serving under a mixture of short-chat and long-RAG prompts, including tail metrics.</li></ol>
+          <div class="bridge"><strong>Bridge to Day 19:</strong> Phase 3 has chosen representations, avoided redundant work, distributed models, and specialized phases. The next layer is GPU execution itself: kernels, memory hierarchy, streams, and profiling explain whether these architectural plans become real speedups.</div>
+        </section>
+
+        <section id="decision-matrix" class="content-section" data-search-group="Reference">
+          <div class="section-heading"><div><p class="eyebrow">Cross-day synthesis</p><h2>Decision matrix</h2></div><p>Identify the bottleneck and required correctness guarantee before selecting an optimization.</p></div>
+          <div class="table-wrap"><table class="comparison"><thead><tr><th>Observed problem</th><th>Likely first move</th><th>Evidence required</th><th>Watch for</th></tr></thead><tbody>
+            <tr><td>Weights do not fit</td><td>INT8/INT4 PTQ; then TP/PP if needed</td><td>Resident bytes, quality suite, supported kernel</td><td>Metadata and fallback dequantization</td></tr>
+            <tr><td>Decode reads dominate</td><td>Lower-bit weights or speculation</td><td>Roofline/profile, ITL, accepted tokens/target call</td><td>Compute saturation and draft overhead</td></tr>
+            <tr><td>Activation outliers block W8A8</td><td>SmoothQuant or FP8 with scaling</td><td>Channel ranges and native device kernel</td><td>Calibration shift</td></tr>
+            <tr><td>Repeated long system prompts</td><td>Canonical templates plus prefix cache</td><td>Token-weighted hit rate, TTFT, cache bytes</td><td>Affinity imbalance and key correctness</td></tr>
+            <tr><td>One model cannot fit one node</td><td>PP across nodes; TP within fast islands</td><td>Topology, collective/stage timings</td><td>Pipeline bubble and layer imbalance</td></tr>
+            <tr><td>Need more independent QPS</td><td>DP replica groups</td><td>Tokens/s/GPU and queue depth</td><td>Replicated memory and cache locality</td></tr>
+            <tr><td>Long-context memory fails</td><td>GQA/KV quantization, paging, then CP</td><td>KV bytes and attention communication</td><td>Network-bound attention</td></tr>
+            <tr><td>Long prefill stalls active streams</td><td>Chunking/priorities, then disaggregation</td><td>P99 ITL/TTFT and handoff break-even</td><td>KV transfer queues and destination capacity</td></tr>
+          </tbody></table></div>
+          <div class="callout"><strong>Order of operations:</strong> establish a high-precision colocated baseline; profile; apply the least complex change that targets the measured limit; revalidate quality and both latency and throughput; then compose techniques. Quantized speculative drafts, cached prefixes, sharded targets, and disaggregated pools can coexist, but each interaction adds a failure and measurement dimension.</div>
+        </section>
+
+        <section id="formula-sheet" class="content-section" data-search-group="Reference">
+          <div class="section-heading"><div><p class="eyebrow">Quick reference</p><h2>Formula sheet</h2></div><p>Units are part of every equation. Use bytes with bytes/second, and state whether GB is decimal or GiB is binary.</p></div>
+          <ul class="formula-list">
+            <li><strong>Symmetric quantization</strong><br><code>q=clamp(round(x/s),qmin,qmax)</code><br>x: original value; s: real-valued scale; q: code; qmin/qmax: code bounds.</li>
+            <li><strong>Dequantization</strong><br><code>x̂=s·q</code><br>x̂: reconstructed approximation. Error is x̂−x.</li>
+            <li><strong>Asymmetric mapping</strong><br><code>q=round(x/s)+z</code><br>z: zero point. Reconstruction is s(q−z).</li>
+            <li><strong>Linear reconstruction error</strong><br><code>E=X(W−Ŵ)</code><br>X: layer inputs; W: original weights; Ŵ: quantized reconstruction.</li>
+            <li><strong>Smooth scaling identity</strong><br><code>XW=(X/s)(sW)</code><br>s: positive per-channel vector, broadcast along matching dimensions.</li>
+            <li><strong>Speculative acceptance</strong><br><code>a(t)=min(1,p(t)/q(t))</code><br>t: proposal; p: target; q: draft.</li>
+            <li><strong>Residual correction</strong><br><code>r(v)=[p(v)−q(v)]+ / Σu[p(u)−q(u)]+</code><br>[x]+ means max(0,x).</li>
+            <li><strong>KV capacity</strong><br><code>M=2·L·Hkv·D·T·B·e</code><br>keys/values, layers, KV heads, head dimension, tokens, batch, bytes/element.</li>
+            <li><strong>Transfer lower bound</strong><br><code>T=M/BW</code><br>M: bytes; BW: achieved bytes/second. Add queues and fixed overhead.</li>
+            <li><strong>Pipeline utilization</strong><br><code>U≈m/(m+p−1)</code><br>m: microbatches; p: balanced stages.</li>
+            <li><strong>Ring all-reduce volume</strong><br><code>Vrank≈2(n−1)S/n</code><br>n: ranks; S: tensor bytes per rank.</li>
+            <li><strong>World size</strong><br><code>N=DP·PP·TP·EP·CP</code><br>Valid only when configured axes are truly independent rank dimensions.</li>
+            <li><strong>Phase capacity estimate</strong><br><code>Np≥λE[T]/Rp</code>, <code>Nd≥λE[O]/Rd</code><br>λ: requests/s; T/O: input/output tokens; R: worker rates.</li>
+            <li><strong>Throughput speedup</strong><br><code>S=baseline time / optimized time</code><br>State workload, quality, batch, hardware, and percentile.</li>
+          </ul>
+        </section>
+
+        <section id="glossary" class="content-section" data-search-group="Reference">
+          <div class="section-heading"><div><p class="eyebrow">Vocabulary</p><h2>Glossary</h2></div><p>Compact definitions for the language used across all six days.</p></div>
+          <dl class="glossary">
+            <div><dt>Accumulation dtype</dt><dd>The format used to sum products, often wider than operand storage.</dd></div>
+            <div><dt>Activation</dt><dd>An intermediate tensor produced by a layer for a particular input.</dd></div>
+            <div><dt>All-gather</dt><dd>A collective that concatenates shards and gives the complete result to every rank.</dd></div>
+            <div><dt>All-reduce</dt><dd>A collective that reduces values, commonly by sum, and returns the result to all ranks.</dd></div>
+            <div><dt>All-to-all</dt><dd>A collective in which every rank sends distinct data to every other rank.</dd></div>
+            <div><dt>Arithmetic intensity</dt><dd>Useful arithmetic operations performed per byte moved from a memory level.</dd></div>
+            <div><dt>AWQ</dt><dd>Activation-aware weight quantization that protects output-important channels through scaling.</dd></div>
+            <div><dt>BF16</dt><dd>A 16-bit float with eight exponent and seven stored fraction bits.</dd></div>
+            <div><dt>Block scale</dt><dd>A scale shared by a small block of low-precision values.</dd></div>
+            <div><dt>Bubble</dt><dd>Idle pipeline capacity while stages wait during fill, drain, or imbalance.</dd></div>
+            <div><dt>Cache affinity</dt><dd>A routing preference for the worker that holds reusable state.</dd></div>
+            <div><dt>Calibration</dt><dd>Collecting representative activation statistics after training for quantization decisions.</dd></div>
+            <div><dt>Collective</dt><dd>A coordinated communication operation over a group of ranks.</dd></div>
+            <div><dt>Context parallelism</dt><dd>Partitioning sequence positions and exchanging attention state across ranks.</dd></div>
+            <div><dt>Data parallelism</dt><dd>Replicating a model or shard group to serve independent work.</dd></div>
+            <div><dt>Decode</dt><dd>The sequential phase that adds one new token position per active sequence step.</dd></div>
+            <div><dt>Disaggregation</dt><dd>Serving prefill and decode on distinct worker pools.</dd></div>
+            <div><dt>Draft model</dt><dd>A cheap proposer used to create speculative candidates.</dd></div>
+            <div><dt>Dynamic range</dt><dd>The span between smallest and largest useful representable magnitudes.</dd></div>
+            <div><dt>EAGLE</dt><dd>A family of speculative methods that drafts using target-informed feature representations.</dd></div>
+            <div><dt>Effective bandwidth</dt><dd>Measured payload transfer rate after topology and protocol overhead.</dd></div>
+            <div><dt>Expert parallelism</dt><dd>Distributing MoE experts and routing tokens to their owning ranks.</dd></div>
+            <div><dt>FP8</dt><dd>An eight-bit floating family such as E4M3 or E5M2.</dd></div>
+            <div><dt>Goodput</dt><dd>Useful completed work that satisfies specified service objectives.</dd></div>
+            <div><dt>GPTQ</dt><dd>A PTQ method that uses approximate curvature to compensate sequential weight rounding.</dd></div>
+            <div><dt>Granularity</dt><dd>The scope that shares quantization parameters: tensor, channel, group, or block.</dd></div>
+            <div><dt>Group size</dt><dd>Number of adjacent values sharing quantization metadata.</dd></div>
+            <div><dt>HBM</dt><dd>High-bandwidth device memory used for model weights, activations, and KV.</dd></div>
+            <div><dt>Hessian</dt><dd>A matrix of second derivatives describing local curvature and perturbation interaction.</dd></div>
+            <div><dt>INT4</dt><dd>A four-bit integer code, commonly used for grouped weight-only quantization.</dd></div>
+            <div><dt>INT8</dt><dd>An eight-bit integer code used for weights and, with care, activations.</dd></div>
+            <div><dt>Inter-token latency (ITL)</dt><dd>Time between successively streamed output tokens.</dd></div>
+            <div><dt>KV cache</dt><dd>Stored attention keys and values that avoid recomputing prior positions.</dd></div>
+            <div><dt>Medusa</dt><dd>A speculative approach using additional future-token heads and tree verification.</dd></div>
+            <div><dt>Microbatch</dt><dd>A unit scheduled through pipeline stages to keep multiple stages occupied.</dd></div>
+            <div><dt>Microscaling</dt><dd>Very fine-grained block scaling used by formats such as NVFP4.</dd></div>
+            <div><dt>MoE</dt><dd>Mixture-of-Experts model that routes each token to a subset of expert networks.</dd></div>
+            <div><dt>MTP</dt><dd>Multi-token prediction objectives or heads that predict multiple future positions.</dd></div>
+            <div><dt>Nibble</dt><dd>Four bits; two nibbles pack into one byte.</dd></div>
+            <div><dt>NVFP4</dt><dd>A four-bit floating representation paired with fine-grained shared scales on supported hardware.</dd></div>
+            <div><dt>Pipeline parallelism</dt><dd>Assigning consecutive layer blocks to sequential device stages.</dd></div>
+            <div><dt>Post-training quantization</dt><dd>Reducing precision after model training, usually using calibration rather than full retraining.</dd></div>
+            <div><dt>Precision</dt><dd>How finely a numerical representation distinguishes nearby values.</dd></div>
+            <div><dt>Prefill</dt><dd>Parallel prompt processing that creates initial KV and first-token logits.</dd></div>
+            <div><dt>Prefix cache</dt><dd>Reusable KV state indexed by an exact initial token sequence and execution identity.</dd></div>
+            <div><dt>Quantization</dt><dd>Mapping values into a smaller representable set with reconstruction metadata.</dd></div>
+            <div><dt>Rank</dt><dd>One process/device identity in a distributed communication group.</dd></div>
+            <div><dt>Reduce-scatter</dt><dd>A collective that reduces contributions and leaves each rank with one output shard.</dd></div>
+            <div><dt>Re-prefill</dt><dd>Recomputing KV from tokens rather than loading transferred or retained state.</dd></div>
+            <div><dt>Residual distribution</dt><dd>The normalized positive mass p−q sampled after speculative rejection.</dd></div>
+            <div><dt>Saturation</dt><dd>Clipping values that fall outside representable code bounds.</dd></div>
+            <div><dt>Scale</dt><dd>A multiplier relating a low-bit code to an approximate real value.</dd></div>
+            <div><dt>SmoothQuant</dt><dd>A PTQ transform that moves activation-range difficulty into static weights.</dd></div>
+            <div><dt>Speculative decoding</dt><dd>Proposing cheap future tokens and verifying them in parallel with an authoritative target.</dd></div>
+            <div><dt>Target model</dt><dd>The authoritative probability distribution that speculative sampling preserves.</dd></div>
+            <div><dt>Tensor parallelism</dt><dd>Splitting matrix or attention dimensions within model layers across ranks.</dd></div>
+            <div><dt>Time to first token (TTFT)</dt><dd>Latency from request arrival to the first streamed output token.</dd></div>
+            <div><dt>Weight-only quantization</dt><dd>Low-bit stored weights paired with floating-point activations.</dd></div>
+            <div><dt>World size</dt><dd>Total number of participating distributed ranks.</dd></div>
+            <div><dt>Zero point</dt><dd>The integer code mapped to real zero in asymmetric quantization.</dd></div>
+          </dl>
+        </section>
+
+        <section id="capstone" class="content-section" data-search-group="Capstone">
+          <div class="section-heading"><div><p class="eyebrow">Cumulative system-design exercise</p><h2>Design “Atlas,” a long-context assistant</h2></div><p>Combine all six days without assuming every optimization belongs in the first release.</p></div>
+          <div class="worked">
+            <h3>Scenario</h3>
+            <p>Atlas serves a 70B dense model. Traffic averages 12 requests/s and bursts to 30. Sixty percent of requests use one of twenty 8K-token system/tool prefixes, followed by 2K user tokens and 300 output tokens. The remaining traffic has 1K input and 800 output tokens. The SLO is P95 TTFT under 800 ms and P95 ITL under 45 ms. You have two eight-GPU nodes with 80 GiB per GPU, a fast fabric within each node, and an achieved 50 GB/s link between nodes. Product evaluation allows at most 0.5 percentage-point regression on tool-call validity and no material safety regression.</p>
+            <h3>Deliverables</h3>
+            <ol class="exercise-list">
+              <li><strong>Baseline and measurement:</strong> define BF16 colocated baselines for both traffic classes. State batch policy, prompt/output distribution, TTFT, ITL, tokens/s/GPU, quality suite, and profiler evidence needed before changes.</li>
+              <li><strong>Representation:</strong> compare FP8, INT8, AWQ/GPTQ INT4, and mixed precision. Include effective bytes with scales, multiply and accumulation dtypes, supported kernels, model fit, expected decode bandwidth, and calibration corpus.</li>
+              <li><strong>Speculation:</strong> choose between n-gram, draft-target, Medusa/EAGLE/MTP, or none for each traffic class. Specify K, an adaptive disable rule, target-distribution exactness tests, and throughput guardrails.</li>
+              <li><strong>Prefix reuse:</strong> design canonical prompt ordering, cache key, radix/block lookup, byte budget, eviction/refcount policy, and cache-aware routing score. Estimate KV bytes for the shared 8K prefixes.</li>
+              <li><strong>Parallel plan:</strong> propose TP/PP/DP/EP/CP degrees and physical rank placement. Explain model fit, intra- and inter-node collectives, expected single-request latency, aggregate throughput, and whether enough concurrency exists for PP.</li>
+              <li><strong>Disaggregation:</strong> calculate 10K-token KV handoff size and transfer lower bound. Compare saved interference with handoff and queueing. Decide whether to disaggregate, colocate, or use a hybrid threshold by prompt length.</li>
+              <li><strong>Failure and rollout:</strong> define fallbacks for cache misses, low draft acceptance, link congestion, decode allocation failure, rank failure, quality regression, and stale cache identity. Propose canary stages and rollback thresholds.</li>
+            </ol>
+          </div>
+          <h3>A strong answer should reveal tradeoffs, not one magic configuration</h3>
+          <p>Begin with constraints. Quantization may let a replica fit in fewer GPUs, enabling more DP groups, but quality and kernel evidence decide the format. Shared 8K prefixes make cache-aware routing attractive, yet routing must not overload one replica. N-gram speculation may help tool schemas or copied context while long novel answers may require another draft or no speculation. TP belongs on the fast intra-node fabric; cross-node TP over 50 GB/s needs strong evidence. Disaggregation must price a large KV handoff and may be reserved for the longest prompts rather than applied universally.</p>
+          <p>Finally, state how you will know the design worked. Success is not “GPU utilization increased.” It is quality within contract, P95/P99 TTFT and ITL within SLO, stable goodput at burst load, lower cost per accepted output token, and predictable behavior under failures. If one technique improves an isolated benchmark while harming those outcomes, remove it.</p>
+        </section>
+
+        <footer class="site-footer">
+          <p><strong>Phase 3 complete.</strong> Continue to the <a href="../curriculum.html">26-day curriculum</a> or return to the <a href="../index.html">systems guide</a>. Examples in this chapter are educational calculations; benchmark your own model, kernels, hardware, prompts, and quality requirements.</p>
+        </footer>
+      </main>
+    </div>
+    <button class="back-to-top" type="button" aria-label="Back to top">↑</button>
+  </body>
+</html>

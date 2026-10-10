@@ -148,6 +148,21 @@ Each day includes goals, theory, a checkpoint question, and a link to the
 closest executable module in this repository. The material is independently
 written as a study synthesis; it does not reproduce book prose.
 
+The short curriculum cards link to four full beginner textbook volumes:
+
+- **Days 1-5:** tensors, logits, sampling, tokenization, embeddings, attention,
+  RoPE, GQA, and KV caching.
+- **Days 6-12:** roofline analysis, CUDA kernels, model formats, vLLM, SGLang,
+  TensorRT-LLM, and serving control planes.
+- **Days 13-18:** numerical formats, quantization, speculation, prefix caching,
+  parallelism, and disaggregated serving.
+- **Days 19-26:** GPU hardware, MIG, containers, autoscaling, queueing,
+  multi-cloud capacity, deployment, observability, and cost.
+
+Together, the four volumes contain approximately **48,000 words**, more than
+130 glossary terms, worked examples, equations, diagrams, answered review
+questions, exercises, decision guides, failure scenarios, and capstones.
+
 ## Validation
 
 ```powershell

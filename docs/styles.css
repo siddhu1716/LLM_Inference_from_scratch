@@ -50,6 +50,12 @@ html {
   scroll-padding-top: 5rem;
 }
 
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   color: var(--ink);
@@ -1233,6 +1239,43 @@ h1 {
   font-size: 0.78rem;
 }
 
+.notes-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+  padding: 0.42rem 0.72rem;
+  border: 1px solid color-mix(in srgb, var(--brand) 35%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+  font-size: 0.85rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.notes-link::after {
+  content: "→";
+}
+
+.volume-link {
+  display: inline-flex;
+  margin-top: 0.7rem;
+  font-weight: 800;
+}
+
+main table {
+  display: block;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-x: auto;
+}
+
+.lesson pre,
+.chapter pre,
+.day-section pre {
+  max-width: 100%;
+}
+
 .theory-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1293,5 +1336,19 @@ h1 {
 
   .phase-banner {
     flex-direction: column;
+  }
+
+  main table {
+    table-layout: fixed !important;
+  }
+
+  main th,
+  main td {
+    overflow-wrap: anywhere;
+  }
+
+  main .bit-strip {
+    width: 100% !important;
+    max-width: 100% !important;
   }
 }

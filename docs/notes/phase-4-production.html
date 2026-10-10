@@ -1,0 +1,1319 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="A beginner-friendly production inference textbook for Days 19-26: GPU architecture, hardware selection, MIG, containers, autoscaling, routing, multi-cloud capacity, and zero-downtime deployment."
+    >
+    <meta
+      name="keywords"
+      content="LLM inference, GPU architecture, HBM, MIG, NVIDIA containers, autoscaling, batching, queueing, Little's Law, multi-cloud, canary deployment, SLO, TTFT, ITL, goodput"
+    >
+    <meta name="author" content="LLM Inference from Scratch">
+    <meta name="theme-color" content="#3156d3">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Days 19-26: Production Inference Textbook">
+    <meta
+      property="og:description"
+      content="Build a practical mental model for the hardware and operations behind a production LLM fleet."
+    >
+    <title>Days 19-26: Production Inference | LLM Inference from Scratch</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%233156d3'/><text x='32' y='40' text-anchor='middle' font-size='24' font-family='sans-serif' font-weight='700' fill='white'>LLM</text></svg>">
+    <link rel="stylesheet" href="../styles.css?v=6">
+    <script src="../app.js" defer></script>
+    <style>
+      .textbook-hero { margin-bottom: 1.5rem; }
+      .chapter-kicker { color: var(--accent); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+      .lesson { margin-top: 3rem; padding-top: 1rem; border-top: 4px solid color-mix(in srgb, var(--brand) 35%, var(--line)); }
+      .lesson > header { margin-bottom: 1.5rem; }
+      .lesson h2 { margin-bottom: .45rem; font-size: clamp(2rem, 4vw, 3.1rem); line-height: 1.08; }
+      .lesson h3 { margin-top: 2rem; }
+      .lesson h4 { margin-bottom: .35rem; }
+      .lead { max-width: 70ch; color: var(--ink-soft); font-size: 1.12rem; }
+      .learning-objectives, .callout, .worked-example, .warning-box, .decision-box, .bridge-box {
+        margin: 1.25rem 0; padding: 1.15rem 1.25rem; border: 1px solid var(--line);
+        border-radius: var(--radius-small); background: var(--surface);
+      }
+      .learning-objectives { border-left: .35rem solid var(--brand); }
+      .callout { border-left: .35rem solid var(--teal); background: color-mix(in srgb, var(--surface) 92%, var(--teal)); }
+      .worked-example { border-left: .35rem solid var(--success); }
+      .warning-box { border-left: .35rem solid var(--warning); background: color-mix(in srgb, var(--surface) 94%, var(--warning)); }
+      .decision-box { border-left: .35rem solid var(--accent); }
+      .bridge-box { border-left: .35rem solid var(--brand); background: var(--surface-2); }
+      .term-table, .formula-table, .metric-table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+      .term-table th, .term-table td, .formula-table th, .formula-table td, .metric-table th, .metric-table td {
+        padding: .7rem; border: 1px solid var(--line); text-align: left; vertical-align: top;
+      }
+      .term-table th, .formula-table th, .metric-table th { background: var(--surface-2); }
+      .equation { overflow-x: auto; padding: .85rem 1rem; border: 1px solid var(--line); border-radius: .6rem; background: var(--surface-2); font-family: var(--font-mono); font-weight: 700; }
+      .diagram {
+        display: grid; gap: .6rem; margin: 1.25rem 0; padding: 1rem; border: 1px solid var(--line);
+        border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-small);
+      }
+      .diagram.horizontal { grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); align-items: stretch; }
+      .diagram-node { position: relative; padding: .85rem; border: 2px solid var(--brand); border-radius: .7rem; background: var(--surface-2); text-align: center; }
+      .diagram-node strong { display: block; }
+      .diagram-node small { color: var(--ink-soft); }
+      .diagram.horizontal .diagram-node:not(:last-child)::after {
+        position: absolute; z-index: 2; right: -.58rem; top: 50%; color: var(--accent); content: "→"; transform: translate(50%, -50%); font-size: 1.35rem; font-weight: 900;
+      }
+      .stack-diagram .diagram-node { border-color: var(--teal); }
+      .stack-diagram .diagram-node:nth-child(2) { margin-inline: 5%; }
+      .stack-diagram .diagram-node:nth-child(3) { margin-inline: 10%; }
+      .stack-diagram .diagram-node:nth-child(4) { margin-inline: 15%; }
+      .two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+      .compact-list li { margin-bottom: .55rem; }
+      .qa-set { display: grid; gap: .65rem; margin: 1rem 0; }
+      .qa-item { border: 1px solid var(--line); border-radius: .65rem; background: var(--surface); }
+      .qa-item summary { padding: .8rem 1rem; cursor: pointer; font-weight: 750; }
+      .qa-item p { padding: 0 1rem 1rem; margin: 0; }
+      .exercise-list > li { margin-bottom: .85rem; }
+      .glossary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .75rem; }
+      .glossary-grid div { padding: .8rem; border: 1px solid var(--line); border-radius: .6rem; background: var(--surface); }
+      .glossary-grid dt { font-weight: 800; }
+      .glossary-grid dd { margin: .25rem 0 0; color: var(--ink-soft); }
+      .checklist li { margin: .45rem 0; }
+      .checklist li::marker { color: var(--success); }
+      .mini-note { color: var(--ink-soft); font-size: .9rem; }
+      @media (max-width: 48rem) {
+        .two-col { grid-template-columns: 1fr; }
+        .diagram.horizontal { grid-template-columns: 1fr; }
+        .diagram.horizontal .diagram-node:not(:last-child)::after { right: 50%; top: calc(100% + .28rem); transform: translate(50%, -50%) rotate(90deg); }
+      }
+      @media print {
+        .topbar, .sidebar, .back-to-top { display: none !important; }
+        .layout { display: block; max-width: none; }
+        .lesson { break-before: page; }
+        details { display: block; }
+        details > * { display: block; }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="../index.html" aria-label="Return to the systems guide">
+          <span class="brand-mark" aria-hidden="true">LLM</span>
+          <span class="brand-text">Inference from Scratch</span>
+        </a>
+        <div class="search-wrap">
+          <label for="site-search" aria-hidden="true">⌕</label>
+          <input id="site-search" type="search" placeholder="Search production topics" autocomplete="off" aria-controls="search-results" aria-label="Search this textbook">
+          <kbd class="search-key" aria-hidden="true">Ctrl K</kbd>
+          <ul id="search-results" class="search-results" aria-label="Search results" hidden></ul>
+        </div>
+        <div class="top-actions">
+          <button class="icon-button theme-button" type="button" data-theme-toggle aria-label="Change color theme"><span data-theme-icon aria-hidden="true">◐</span></button>
+          <button class="icon-button menu-button" type="button" data-menu-toggle aria-label="Open section navigation" aria-controls="section-navigation" aria-expanded="false"><span aria-hidden="true">☰</span></button>
+        </div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside id="section-navigation" class="sidebar" aria-label="Production textbook navigation">
+        <p class="sidebar-title">Phase 4 · Production</p>
+        <nav>
+          <ul class="nav-list">
+            <li><a href="#overview" aria-current="true">How to use this book</a></li>
+            <li><a href="#day-19">Day 19 · GPU anatomy</a></li>
+            <li><a href="#day-20">Day 20 · GPU generations</a></li>
+            <li><a href="#day-21">Day 21 · MIG &amp; capacity</a></li>
+            <li><a href="#day-22">Day 22 · Containers &amp; NIM</a></li>
+            <li><a href="#day-23">Day 23 · Autoscaling</a></li>
+            <li><a href="#day-24">Day 24 · Routing &amp; queues</a></li>
+            <li><a href="#day-25">Day 25 · Multi-cloud</a></li>
+            <li><a href="#day-26">Day 26 · Safe deployment</a></li>
+            <li><a href="#formula-sheet">Formula sheet</a></li>
+            <li><a href="#incidents">Incident scenarios</a></li>
+            <li><a href="#deployment-checklist">Deployment checklist</a></li>
+            <li><a href="#glossary">Glossary</a></li>
+            <li><a href="#capstone">Capstone exercise</a></li>
+            <li><a href="phase-3-optimization.html">Previous: Phase 3 ↗</a></li>
+            <li><a href="../curriculum.html">26-day curriculum ↗</a></li>
+          </ul>
+        </nav>
+        <div class="sidebar-note">
+          <strong>Reading rule</strong><br>
+          Numbers in examples are intentionally illustrative. Validate hardware, price, quota, and runtime details against the exact provider and software version you deploy.
+        </div>
+      </aside>
+
+      <main id="main-content">
+        <section id="overview" class="hero textbook-hero" data-search-group="Overview" data-search-item>
+          <p class="eyebrow">Days 19-26 · Production systems</p>
+          <h1>From one GPU to a dependable inference fleet.</h1>
+          <p class="hero-copy">
+            A model that produces a token on a laptop is a demonstration. A service that produces useful tokens during bursts, upgrades, hardware shortages, and regional failures is a production system. These eight lessons build that system from the silicon upward.
+          </p>
+          <div class="hero-actions">
+            <a class="button" href="#day-19">Begin with the GPU</a>
+            <a class="button button-secondary" href="#formula-sheet">Open the formula sheet</a>
+          </div>
+        </section>
+
+        <div class="metric-strip" aria-label="Textbook summary">
+          <div class="metric"><strong>8</strong><span>full lessons</span></div>
+          <div class="metric"><strong>40+</strong><span>answered questions</span></div>
+          <div class="metric"><strong>55+</strong><span>glossary terms</span></div>
+          <div class="metric"><strong>0</strong><span>GPU-required exercises</span></div>
+        </div>
+
+        <section class="content-section" data-search-group="Overview" data-search-item id="mental-model">
+          <div class="section-heading">
+            <div><p class="eyebrow">The thread through all eight days</p><h2>Capacity is a chain, not a single number</h2></div>
+            <p>A request succeeds only when every link—memory, execution, packaging, admission, routing, supply, and rollout—has enough room.</p>
+          </div>
+          <div class="diagram horizontal" role="img" aria-label="Production inference chain from hardware through deployment">
+            <div class="diagram-node"><strong>Silicon</strong><small>compute and memory</small></div>
+            <div class="diagram-node"><strong>Slice</strong><small>placement and isolation</small></div>
+            <div class="diagram-node"><strong>Package</strong><small>container and model</small></div>
+            <div class="diagram-node"><strong>Scale</strong><small>replicas and batches</small></div>
+            <div class="diagram-node"><strong>Route</strong><small>queues and locality</small></div>
+            <div class="diagram-node"><strong>Operate</strong><small>regions and releases</small></div>
+          </div>
+          <p>
+            Keep two distinctions in mind. <strong>Utilization</strong> is the fraction of a resource doing useful work during an interval: for example, a GPU busy 60 seconds in a 100-second window has 60% busy-time utilization. <strong>Saturation</strong> means demand has reached the resource's effective service limit, so additional work waits or is rejected. A system can show modest average utilization and still be saturated for short bursts, on one memory channel, or on one queue. Conversely, high utilization can be healthy when queues remain short and objectives are met. Never diagnose saturation from one utilization gauge.
+          </p>
+          <p>
+            Latency percentiles describe a distribution. <strong>p50</strong> is the median: half of observations are faster. <strong>p95</strong> leaves five percent slower, and <strong>p99</strong> leaves one percent slower. If p50 is 400 ms and p99 is 8 s, “average latency” hides a painful tail. In streaming generation, measure <strong>TTFT</strong> (time from arrival until the first token) separately from <strong>ITL</strong> (time between successive output tokens). <strong>Goodput</strong> counts work that is both correct and within the promised objective; raw throughput counts late, retried, or unusable work too.
+          </p>
+        </section>
+
+        <article id="day-19" class="lesson" data-search-group="Day 19" data-search-item data-keywords="SM warp register shared memory L2 HBM occupancy roofline">
+          <header>
+            <p class="chapter-kicker">Day 19 · Hardware foundations</p>
+            <h2>GPU architecture: a factory for parallel math</h2>
+            <p class="lead">Learn why the fastest kernel is usually the one that moves fewer bytes, how warps turn threads into execution, and why “peak FLOPS” is a ceiling rather than a prediction.</p>
+          </header>
+
+          <div class="learning-objectives">
+            <strong>By the end, you can:</strong> trace data from HBM to a register; explain SMs, warps, occupancy, coalescing, and divergence; estimate a memory-bandwidth lower bound; and choose the next metric when a GPU appears “underutilized.”
+          </div>
+
+          <h3>A beginner analogy: the restaurant tower</h3>
+          <p>
+            Imagine a tower containing many identical restaurant kitchens. The whole tower is the GPU; each kitchen is a <strong>streaming multiprocessor</strong>, or SM. A kitchen has several workstations for ordinary chopping and specialized machines for rapidly preparing trays of the same dish. Those machines resemble CUDA cores and Tensor Cores. Orders arrive as large groups of tiny tasks called threads. The head chef does not schedule each task independently: workers move in synchronized teams, like a <strong>warp</strong> of commonly 32 threads.
+          </p>
+          <p>
+            Ingredients may sit in a cook's hand (registers), on the kitchen counter (shared memory), in a shared pantry downstairs (L2 cache), or in a vast warehouse outside the tower (HBM). The warehouse is large and fast compared with ordinary computer memory, yet the trip is expensive compared with reaching a counter. Great GPU programs reuse ingredients near the cooks. Poor programs repeatedly send someone to the warehouse. This analogy also explains branch divergence: if half a team prepares soup while half prepares bread, the synchronized team may execute one path and then the other, leaving workers idle.
+          </p>
+
+          <h3>Terminology</h3>
+          <table class="term-table">
+            <thead><tr><th>Term</th><th>Practical meaning</th></tr></thead>
+            <tbody>
+              <tr><td>SM</td><td>A hardware cluster that schedules warps and owns execution units, registers, and on-chip shared memory.</td></tr>
+              <tr><td>Warp</td><td>A fixed group of threads issued together. Threads are logically separate but execute instructions in lockstep-like fashion.</td></tr>
+              <tr><td>Register</td><td>The smallest and fastest per-thread storage. Too many registers per thread can reduce resident warps.</td></tr>
+              <tr><td>Shared memory</td><td>Small programmer-managed on-chip memory shared by threads in one block. It supports deliberate data reuse.</td></tr>
+              <tr><td>L2 cache</td><td>A larger on-chip cache shared across SMs. Hardware manages it and it can reduce trips to HBM.</td></tr>
+              <tr><td>HBM</td><td>High Bandwidth Memory holding weights, KV cache, and large tensors. It offers capacity but is far away relative to on-chip storage.</td></tr>
+              <tr><td>Occupancy</td><td>Resident active warps divided by the architecture's maximum resident warps. It helps hide stalls but is not itself performance.</td></tr>
+              <tr><td>Coalescing</td><td>Neighboring threads access neighboring addresses, allowing memory requests to combine efficiently.</td></tr>
+            </tbody>
+          </table>
+
+          <h3>The data lifecycle, step by step</h3>
+          <div class="diagram horizontal" role="img" aria-label="GPU data lifecycle from HBM to calculation and back">
+            <div class="diagram-node"><strong>1. HBM</strong><small>weights and tensors</small></div>
+            <div class="diagram-node"><strong>2. L2</strong><small>shared cache lines</small></div>
+            <div class="diagram-node"><strong>3. SM tile</strong><small>shared-memory reuse</small></div>
+            <div class="diagram-node"><strong>4. Registers</strong><small>thread operands</small></div>
+            <div class="diagram-node"><strong>5. Units</strong><small>matrix/scalar work</small></div>
+            <div class="diagram-node"><strong>6. Store</strong><small>result or next tile</small></div>
+          </div>
+          <ol class="compact-list">
+            <li>The host launches a kernel with a grid of thread blocks. Hardware assigns each block to one SM; a block does not migrate midway.</li>
+            <li>The SM divides its block into warps. Warp schedulers choose a ready warp each issue opportunity, often switching when another warp waits on memory.</li>
+            <li>Loads request cache lines. A hit in L2 avoids HBM; a miss travels to HBM. Coalesced addresses need fewer transactions than scattered addresses.</li>
+            <li>Threads stage a reusable tile in shared memory and synchronize. Computation then consumes values from shared memory and registers many times.</li>
+            <li>Tensor Cores accelerate supported matrix operations, while other units handle indexing, activation functions, and general arithmetic.</li>
+            <li>Results remain in registers when a fused next operation can consume them; otherwise they are written outward. A write to HBM may later become another kernel's read.</li>
+          </ol>
+
+          <div class="worked-example">
+            <h3>Worked example: the bandwidth floor</h3>
+            <p>
+              Consider an illustrative 7-billion-parameter model stored with 2 bytes per parameter. Its weights occupy roughly <strong>14 GB</strong>. Suppose one decode step must stream those weights once and the device sustains, not merely advertises, 2.8 TB/s for this access pattern. Ignore KV traffic and overhead for a lower bound.
+            </p>
+            <p class="equation">time ≥ bytes moved ÷ sustained bandwidth = 14 GB ÷ 2,800 GB/s = 0.005 s = 5 ms</p>
+            <p>
+              The ideal upper bound is therefore about 1 ÷ 0.005 = <strong>200 decode steps/s</strong> for the entire batch. If the batch has 20 sequences and each step produces one token per sequence, the ideal aggregate is 4,000 tokens/s, before overhead. Batch size improves weight reuse across sequences; it does not make the 14 GB disappear. A measured 9 ms step implies an effective 14/0.009 ≈ 1,556 GB/s, suggesting incomplete bandwidth use or additional bytes. Symbols: time is seconds per step, bytes moved includes required reads/writes, and sustained bandwidth is measured for the real workload.
+            </p>
+          </div>
+
+          <h3>Equations and operational metrics</h3>
+          <p class="equation">arithmetic intensity I = operations ÷ bytes moved; bandwidth roof = I × sustained bandwidth</p>
+          <p>
+            Compare the bandwidth roof with the compute roof. The smaller is the first-order limit. Low-intensity decode is commonly memory-bound; large prefill matrix multiplications can be compute-bound. Watch SM active time, Tensor Core activity, HBM throughput, L2 hit rate, achieved occupancy, register spills, warp stall reasons, kernel duration, and power/thermal throttling. <strong>Utilization</strong> answers “was something scheduled?” or “was this unit active?” depending on the metric definition. <strong>Saturation</strong> is evidenced by full service capacity plus queue growth, latency growth, or admission rejection. Always read the vendor/tool definition.
+          </p>
+
+          <div class="two-col">
+            <div class="warning-box">
+              <h3>Failure modes and common mistakes</h3>
+              <ul>
+                <li>Treating peak TFLOPS as expected application throughput.</li>
+                <li>Increasing occupancy while causing register spills to local memory.</li>
+                <li>Using uncoalesced access that multiplies memory transactions.</li>
+                <li>Adding branches inside hot warps and creating divergence.</li>
+                <li>Optimizing arithmetic while profiles show memory stalls.</li>
+                <li>Comparing GPU utilization between tools with different sampling semantics.</li>
+              </ul>
+            </div>
+            <div class="decision-box">
+              <h3>Decision guide</h3>
+              <p><strong>HBM near ceiling, compute low:</strong> reduce bytes, quantize, fuse, cache, or batch. <strong>Compute near ceiling:</strong> use supported lower precision, improve tiling, or add compute. <strong>Both low:</strong> inspect tiny kernels, launch gaps, synchronization, CPU feeding, and dependencies. <strong>Tail spikes only:</strong> inspect contention, clock changes, page faults, and co-tenants rather than averages.</p>
+            </div>
+          </div>
+
+          <h3>Review questions and answers</h3>
+          <div class="qa-set">
+            <details class="qa-item"><summary>1. Why can shared memory help even though HBM is called “high bandwidth”?</summary><p>“High” is relative to normal external memory. Shared memory is physically on the SM and can serve reused tiles with much lower latency and far higher local bandwidth. The win appears when one HBM load supports many calculations.</p></details>
+            <details class="qa-item"><summary>2. Is 100% occupancy always the goal?</summary><p>No. Enough resident warps can hide latency, but chasing maximum occupancy may require smaller tiles or fewer registers and make each warp less efficient. Optimize measured kernel time and useful throughput, not the occupancy gauge alone.</p></details>
+            <details class="qa-item"><summary>3. What is warp divergence?</summary><p>Threads in one warp choose different control paths. Hardware must execute the relevant paths under masks, so some lanes do no useful work during each path. Different warps may take different paths without the same within-warp penalty.</p></details>
+            <details class="qa-item"><summary>4. Why is decode often memory-bound?</summary><p>Each step performs a relatively small amount of work for each byte of model weight fetched, particularly at a small batch. That low arithmetic intensity reaches the bandwidth roof before the compute roof.</p></details>
+            <details class="qa-item"><summary>5. What proves saturation better than GPU utilization?</summary><p>A resource operating near its measured service ceiling while pending work, latency, or rejection grows. Queue depth and service rate connect demand to capacity; a single averaged utilization percentage does not.</p></details>
+          </div>
+
+          <h3>Hands-on exercises without a GPU</h3>
+          <ol class="exercise-list">
+            <li>Use a spreadsheet to vary model bytes, sustained bandwidth, and batch size in the worked example. Plot tokens/s and mark which assumptions are optimistic.</li>
+            <li>Write a short JavaScript or spreadsheet simulation in which 32 lanes take two branches with different probabilities. Count active-lane instruction slots to visualize divergence.</li>
+            <li>Draw four memory tiers on paper and place model weights, attention tiles, accumulators, and KV pages in the most plausible tier.</li>
+          </ol>
+          <div class="bridge-box"><strong>Bridge to Day 20:</strong> architecture gives us the nouns. Next we learn how product generations change those resources—and how to compare devices without turning marketing maxima into promises.</div>
+        </article>
+
+        <article id="day-20" class="lesson" data-search-group="Day 20" data-search-item data-keywords="Hopper Ada Blackwell generation FP8 FP4 benchmark responsible comparison">
+          <header>
+            <p class="chapter-kicker">Day 20 · Hardware selection</p>
+            <h2>GPU generations: compare workloads, not headlines</h2>
+            <p class="lead">Hopper, Ada, and Blackwell belong to different product goals. A responsible comparison pins the exact SKU, form factor, precision, software, power envelope, and workload before drawing conclusions.</p>
+          </header>
+
+          <div class="learning-objectives">
+            <strong>By the end, you can:</strong> describe the inference-relevant direction of recent architectures; distinguish datacenter and client products; build a benchmark scorecard; and reject comparisons that mix unsupported precision, theoretical peaks, or unverifiable specifications.
+          </div>
+
+          <h3>A beginner analogy: choosing a delivery fleet</h3>
+          <p>
+            Comparing “a Hopper” with “an Ada” or “a Blackwell” is like comparing a freight locomotive, a delivery van, and a newer family of vehicles using only top speed. The locomotive may carry far more cargo and couple to other locomotives; the van may be easier to buy and fit in a garage; the new family may include both giant datacenter systems and smaller products. The correct question is not “Which generation wins?” It is “Which exact product completes my route, cargo, reliability, and budget objective?”
+          </p>
+          <p>
+            Hopper datacenter products made FP8-oriented transformer execution and high-speed scale-up central design points. Ada products are widely encountered in workstation or consumer settings and can be excellent for development and models that fit local memory, but generally target a different deployment envelope. Blackwell products extend low-precision and large-system options, yet capability, memory, interconnect, availability, price, and supported software differ by SKU and date. Specifications change with product variants and software releases. This chapter intentionally avoids promising a fixed performance multiplier or repeating unverified figures: consult the current official datasheet and reproduce a workload benchmark.
+          </p>
+
+          <h3>Terminology</h3>
+          <table class="term-table">
+            <thead><tr><th>Term</th><th>Meaning in a fair comparison</th></tr></thead>
+            <tbody>
+              <tr><td>Architecture</td><td>A design generation; it is not a complete product specification.</td></tr>
+              <tr><td>SKU/form factor</td><td>The exact board or module. Memory, power, clocks, interconnect, and cooling can differ within one generation.</td></tr>
+              <tr><td>Precision</td><td>Numeric format such as FP16, BF16, FP8, or a 4-bit format. Support and accuracy procedures matter as much as nominal bits.</td></tr>
+              <tr><td>Transformer Engine</td><td>Hardware/software machinery that manages supported lower-precision transformer operations and scaling.</td></tr>
+              <tr><td>Scale-up fabric</td><td>Fast links within a node or tightly coupled system; useful for frequent collectives.</td></tr>
+              <tr><td>Scale-out network</td><td>Links among nodes or racks, typically with different latency and bandwidth from scale-up links.</td></tr>
+              <tr><td>Theoretical peak</td><td>A calculated maximum under specific operations, sparsity rules, clocks, and precision—not an application result.</td></tr>
+              <tr><td>Benchmark envelope</td><td>The complete model, shapes, batch, context, software, power, quality, and latency constraints of a measurement.</td></tr>
+            </tbody>
+          </table>
+
+          <h3>A responsible comparison lifecycle</h3>
+          <div class="diagram horizontal" role="img" aria-label="Lifecycle for comparing GPU products responsibly">
+            <div class="diagram-node"><strong>1. Define</strong><small>model and SLO</small></div>
+            <div class="diagram-node"><strong>2. Verify</strong><small>exact SKU specs</small></div>
+            <div class="diagram-node"><strong>3. Qualify</strong><small>quality and software</small></div>
+            <div class="diagram-node"><strong>4. Benchmark</strong><small>same envelope</small></div>
+            <div class="diagram-node"><strong>5. Cost</strong><small>good tokens/$</small></div>
+            <div class="diagram-node"><strong>6. Stress</strong><small>tails and failures</small></div>
+          </div>
+          <ol class="compact-list">
+            <li>Freeze the model version, sequence-length distribution, output lengths, quality tolerance, TTFT/ITL objectives, and availability target.</li>
+            <li>Record exact orderable products, memory size, form factor, interconnect topology, host requirements, driver/runtime matrix, and provider quota. Date every source.</li>
+            <li>Confirm the engine actually has optimized kernels for the desired precision and shape. Run quality evaluation; lower precision is not “free speed.”</li>
+            <li>Warm both systems, replay identical requests, and report p50/p95/p99 TTFT and ITL plus goodput. Keep batching policy and power settings visible.</li>
+            <li>Include acquisition rate, host/network/storage, replicas needed for redundancy, idle capacity, engineering effort, and rejected work.</li>
+            <li>Test long contexts, mixed prompts, cache misses, thermal steady state, failures, and a full hour rather than one favorable minute.</li>
+          </ol>
+
+          <div class="worked-example">
+            <h3>Worked example: goodput beats peak throughput</h3>
+            <p>
+              Team North tests exact device A and device B with one model and the same quality score. A completes 1,800 output tokens/s, but only 72% of tokens belong to requests meeting TTFT ≤ 1.0 s and ITL ≤ 60 ms. B completes 1,500 tokens/s, and 94% meet both limits. Device-hour rates are illustrative: A costs $4.20/h and B costs $4.80/h.
+            </p>
+            <p class="equation">goodput = raw throughput × success-within-SLO fraction</p>
+            <p>
+              A goodput = 1,800 × 0.72 = 1,296 tokens/s. B goodput = 1,500 × 0.94 = 1,410 tokens/s. A costs $4.20 ÷ (1,296 × 3,600) × 1,000,000 ≈ <strong>$0.90 per million good tokens</strong>. B costs about <strong>$0.95</strong>. A remains slightly cheaper here, while B delivers more useful tokens per second and may need fewer replicas to satisfy a demand peak. The “winner” depends on the capacity and SLO constraint, not a generation label. Symbols: success-within-SLO fraction is between 0 and 1; cost includes a device-hour rate only in this simplified example.
+            </p>
+          </div>
+
+          <h3>Operational metrics, evidence, and generation-aware reasoning</h3>
+          <p>
+            Track goodput per device, per watt, and per dollar; p50/p95/p99 TTFT; p50/p95/p99 ITL; input and output tokens/s; first-pass quality; memory headroom; scale-up collective time; power; thermal clocks; error rate; cold-start duration; and engine compilation time. Hopper may be attractive where mature FP8 paths and tightly coupled datacenter scaling matter. Ada can be sensible for small, local, lower-concurrency deployments where purchase accessibility dominates. Blackwell may be compelling where its supported low-precision paths, memory system, or system topology match the workload. Those are decision hypotheses, not universal rankings.
+          </p>
+          <div class="warning-box">
+            <h3>Failure modes and common mistakes</h3>
+            <ul>
+              <li>Comparing one architecture name to another without exact SKUs.</li>
+              <li>Quoting sparse or low-precision peak numbers when the model uses a different mode.</li>
+              <li>Assuming a numeric format preserves quality without calibration and evaluation.</li>
+              <li>Ignoring interconnect topology for tensor-parallel models.</li>
+              <li>Using averages while one candidate violates p99 TTFT.</li>
+              <li>Copying price, availability, or prerelease specifications without source dates.</li>
+              <li>Benchmarking different engine versions, context distributions, or batching policies.</li>
+            </ul>
+          </div>
+          <div class="decision-box">
+            <h3>Decision guide</h3>
+            <p><strong>Development and fits locally:</strong> prioritize accessibility, adequate memory, and software support. <strong>Latency-critical scale-up:</strong> prioritize mature kernels, memory headroom, topology, and tail benchmarks. <strong>Throughput service:</strong> compare goodput per dollar at the required quality. <strong>New generation:</strong> add supply risk, qualification work, and fallback capacity. <strong>Unknown future spec:</strong> model a range and mark it as an assumption; do not present it as fact.</p>
+          </div>
+
+          <h3>Review questions and answers</h3>
+          <div class="qa-set">
+            <details class="qa-item"><summary>1. Why is an architecture name insufficient for capacity planning?</summary><p>A generation contains multiple products with different memory, clocks, form factors, power, and links. Cloud instances add host and topology differences. Planning needs an exact deployable unit.</p></details>
+            <details class="qa-item"><summary>2. What must accompany a peak FLOPS number?</summary><p>Precision, operation shape, sparsity assumption, clock/power condition, and whether it is theoretical or measured. Then show application goodput under a defined workload.</p></details>
+            <details class="qa-item"><summary>3. How do you compare FP8 with a 4-bit path?</summary><p>First qualify both against the same model-quality suite. Then benchmark with supported kernels and identical service objectives. Bit width alone neither proves speed nor acceptable accuracy.</p></details>
+            <details class="qa-item"><summary>4. Why might a slower device be the fleet choice?</summary><p>It might be available sooner, cheaper after utilization, easier to operate, sufficiently memory-rich, or more stable in the chosen software. Fleet economics include supply and tails, not only single-device speed.</p></details>
+            <details class="qa-item"><summary>5. What makes a comparison reproducible?</summary><p>Publishing exact hardware, software versions, model/checkpoint, precision, quality method, request distribution, batching, warm-up, measurement interval, power state, and percentile results.</p></details>
+          </div>
+
+          <h3>Hands-on exercises without a GPU</h3>
+          <ol class="exercise-list">
+            <li>Create a scorecard with quality, TTFT p99, ITL p99, goodput, memory headroom, hourly cost, availability, and engineering risk. Score three hypothetical SKUs.</li>
+            <li>Find two official current datasheets and list every condition attached to their headline numbers. Do not copy the numbers into your scorecard until the units and modes match.</li>
+            <li>Recalculate the worked example while varying the SLO pass fraction. Find when device B becomes cheaper per good token.</li>
+          </ol>
+          <div class="bridge-box"><strong>Bridge to Day 21:</strong> once an exact product is chosen, decide how many are needed, how the model spans them, and whether one physical GPU should be partitioned among workloads.</div>
+        </article>
+
+        <article id="day-21" class="lesson" data-search-group="Day 21" data-search-item data-keywords="MIG capacity planning VRAM headroom tensor parallel NVLink isolation">
+          <header>
+            <p class="chapter-kicker">Day 21 · Placement and isolation</p>
+            <h2>MIG and capacity planning: make fit, speed, and resilience agree</h2>
+            <p class="lead">Memory fit is the admission ticket, not the finish line. A sound plan reserves KV space, respects interconnect boundaries, protects failure domains, and leaves enough headroom for real traffic.</p>
+          </header>
+
+          <div class="learning-objectives">
+            <strong>By the end, you can:</strong> estimate model and KV memory; distinguish partitioning from parallelism; explain MIG's isolation value; compute replica demand; and build a capacity plan with N+1 headroom.
+          </div>
+
+          <h3>A beginner analogy: an apartment building</h3>
+          <p>
+            A physical GPU resembles an apartment building. Giving one tenant the whole building offers every room and hallway. MIG—Multi-Instance GPU—creates supported, hardware-isolated apartments with assigned rooms and utilities. One tenant cannot wander through another tenant's memory. That is different from placing several roommates in one open loft using software process limits: the loft may be efficient, but contention and isolation are less predictable.
+          </p>
+          <p>
+            Tensor parallelism is not apartment partitioning. It is one very large tenant spreading a job across several buildings and exchanging partial results repeatedly. Fast private walkways make that cooperation practical; slow city roads add delay at every layer. Replication is different again: several independent restaurants serve separate customers. Capacity planning chooses among partition, parallelize, and replicate, sometimes combining all three.
+          </p>
+
+          <h3>Terminology</h3>
+          <table class="term-table">
+            <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td>MIG</td><td>A supported hardware partition mode that divides eligible GPUs into isolated instances with assigned compute and memory resources.</td></tr>
+              <tr><td>Profile</td><td>A vendor-defined partition shape. Available profiles depend on the exact GPU and configuration; verify current documentation.</td></tr>
+              <tr><td>VRAM/HBM headroom</td><td>Memory intentionally left for KV cache, temporary workspaces, fragmentation, and bursts.</td></tr>
+              <tr><td>Tensor parallelism (TP)</td><td>One model operation is split across devices, requiring frequent communication.</td></tr>
+              <tr><td>Pipeline parallelism</td><td>Different model stages reside on different devices; activations pass between stages.</td></tr>
+              <tr><td>Replica</td><td>An independent serving copy that can process separate requests and improve availability.</td></tr>
+              <tr><td>Failure domain</td><td>A set of resources likely to fail together, such as one host, power domain, zone, or region.</td></tr>
+              <tr><td>N+1</td><td>Enough capacity for normal demand plus one defined unit failure.</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Capacity-planning lifecycle</h3>
+          <div class="diagram horizontal" role="img" aria-label="Capacity planning lifecycle">
+            <div class="diagram-node"><strong>1. Measure</strong><small>traffic and lengths</small></div>
+            <div class="diagram-node"><strong>2. Fit</strong><small>weights + KV + work</small></div>
+            <div class="diagram-node"><strong>3. Topology</strong><small>place parallel ranks</small></div>
+            <div class="diagram-node"><strong>4. Partition</strong><small>whole GPU or MIG</small></div>
+            <div class="diagram-node"><strong>5. Replicate</strong><small>SLO and failures</small></div>
+            <div class="diagram-node"><strong>6. Validate</strong><small>load and failover</small></div>
+          </div>
+          <ol class="compact-list">
+            <li>Build distributions, not a single average: arrivals by minute, input/output length, model mix, tenant, and percentile latency objectives.</li>
+            <li>Estimate weight bytes as parameters × bytes per parameter plus quantization metadata. Add runtime workspace and a fragmentation reserve.</li>
+            <li>Estimate KV bytes from layers, KV heads, head dimension, two tensors (K and V), bytes per element, and active cached tokens. Confirm against the real engine because layouts vary.</li>
+            <li>If the model cannot meet fit or latency on one device, choose parallelism inside the fastest available fabric boundary. Benchmark collective time.</li>
+            <li>Use MIG when supported profiles fit independent smaller workloads and isolation/packing outweighs the loss of flexible pooling. Do not assume every GPU or mode supports every profile.</li>
+            <li>Replicate across failure domains, reserve maintenance and N+1 room, then test loss of a device or host at peak-safe demand.</li>
+          </ol>
+
+          <div class="worked-example">
+            <h3>Worked example: memory and service capacity</h3>
+            <p>
+              An illustrative slice offers 40 GiB. A 13B model at 2 bytes/parameter needs about 26 GB for raw weights. Budget 3 GiB for engine workspaces and 3 GiB as a safety/fragmentation reserve, leaving about 8 GiB for KV. Suppose the engine's measured KV footprint is 0.5 MiB per cached token across the full model. Then the slice holds approximately 8 × 1,024 MiB ÷ 0.5 MiB = <strong>16,384 cached tokens</strong>.
+            </p>
+            <p>
+              With a planning context of 2,048 cached tokens/request, memory allows 8 active requests. Load testing shows the SLO-safe target is only 6 concurrent requests and each request spends 3 seconds in service. By Little's Law, one slice safely supports about 6 ÷ 3 = 2 requests/s at that latency envelope. Forecast peak is 7 requests/s, so the service needs ceiling(7 ÷ 2) = 4 slices for traffic. N+1 adds one slice, yielding <strong>5 slices</strong>. Fit said eight requests; measured tail performance reduced the operational target to six. That difference is headroom, not waste.
+            </p>
+            <p class="equation">KV bytes = active cached tokens × measured bytes/token; replicas = ceil(peak arrival rate ÷ safe rate/replica) + failure reserve</p>
+          </div>
+
+          <h3>Operational metrics and equations</h3>
+          <p>
+            Symbols: <em>P</em> is parameter count, <em>b</em> is storage bytes/parameter, <em>L</em> layers, <em>Hkv</em> KV heads, <em>d</em> head dimension, and <em>T</em> cached tokens. A planning approximation is <code>weight bytes ≈ P × b</code> and <code>KV bytes ≈ 2 × L × Hkv × d × b × T</code>; “2” represents key and value. Engine paging, alignment, quantization, and parallel sharding can change reality. Monitor allocated/reserved/free HBM, KV occupancy, allocation failures, fragmentation, per-slice SM activity, throttling, queue depth, OOM restarts, collective latency, link throughput, and per-tenant p99. Capacity is SLO-safe goodput, not a count of partitions.
+          </p>
+
+          <div class="two-col">
+            <div class="warning-box">
+              <h3>Failure modes and common mistakes</h3>
+              <ul>
+                <li>Fitting weights exactly and leaving no KV or workspace room.</li>
+                <li>Assuming memory isolation guarantees identical latency under every shared-host condition.</li>
+                <li>Stretching tensor parallelism across a slow link without measuring collectives.</li>
+                <li>Putting all replicas on one host, creating one failure domain.</li>
+                <li>Planning from maximum context for every request—or from average context for all requests—without distribution-aware admission.</li>
+                <li>Hard-coding MIG profiles from another GPU model.</li>
+              </ul>
+            </div>
+            <div class="decision-box">
+              <h3>Decision guide</h3>
+              <p><strong>One model nearly fills the GPU:</strong> keep the whole device. <strong>Several small, independent tenants need isolation:</strong> evaluate MIG. <strong>One model spans devices:</strong> keep TP inside the fastest fabric where possible. <strong>Throughput scales independently:</strong> add replicas. <strong>Traffic is uncertain:</strong> preserve flexible whole-GPU pools unless measured packing savings justify fixed partitions.</p>
+            </div>
+          </div>
+
+          <h3>Review questions and answers</h3>
+          <div class="qa-set">
+            <details class="qa-item"><summary>1. How does MIG differ from tensor parallelism?</summary><p>MIG divides one physical GPU into isolated instances for independent workloads. Tensor parallelism combines multiple devices or partitions to execute one model operation and requires communication.</p></details>
+            <details class="qa-item"><summary>2. Why is “the model fits” insufficient?</summary><p>Serving also needs KV cache, activations/workspaces, allocator reserve, and enough performance headroom to meet tails. An exact weight fit may fail on the first real request.</p></details>
+            <details class="qa-item"><summary>3. What is N+1 capacity?</summary><p>The fleet can carry planned demand after losing one specified capacity unit. The unit must be explicit—a slice, GPU, host, or zone—because each produces a different requirement.</p></details>
+            <details class="qa-item"><summary>4. When can more tensor-parallel GPUs hurt?</summary><p>When reduced compute time is smaller than added collective and synchronization time, particularly across slower links or for small batches.</p></details>
+            <details class="qa-item"><summary>5. Why use measured KV bytes per token?</summary><p>The formula is useful for intuition, but engines add page size, alignment, metadata, sharding, and data-type details. Measurement catches implementation reality.</p></details>
+          </div>
+
+          <h3>Hands-on exercises without a GPU</h3>
+          <ol class="exercise-list">
+            <li>Build a spreadsheet with model size, workspace, reserve, bytes/token, and context distribution. Compute concurrency under p50, p95, and maximum contexts.</li>
+            <li>Draw three placements for six replicas across three hosts. Remove each host in turn and calculate surviving capacity.</li>
+            <li>Model TP communication as fixed latency plus bytes/bandwidth. Find the tensor size at which two hypothetical interconnects differ materially.</li>
+          </ol>
+          <div class="bridge-box"><strong>Bridge to Day 22:</strong> a placement plan says where the engine runs. Containers make the same engine, dependencies, health behavior, and configuration arrive repeatably on those resources.</div>
+        </article>
+
+        <article id="day-22" class="lesson" data-search-group="Day 22" data-search-item data-keywords="Docker image container NVIDIA runtime NIM readiness liveness health CUDA driver">
+          <header>
+            <p class="chapter-kicker">Day 22 · Reproducible serving</p>
+            <h2>Containers, the NVIDIA runtime, and NIM concepts</h2>
+            <p class="lead">A container packages user-space software; it does not contain a magical GPU. Production readiness depends on the host driver, runtime plumbing, model loading, probes, immutable versions, and clean termination.</p>
+          </header>
+
+          <div class="learning-objectives">
+            <strong>By the end, you can:</strong> distinguish image from container; trace GPU access; explain NIM as a productized inference microservice concept; design startup, liveness, and readiness probes; and identify unsafe image and secret practices.
+          </div>
+
+          <h3>A beginner analogy: a sealed kitchen kit</h3>
+          <p>
+            A container image is a sealed kitchen kit containing recipes, utensils, and labeled ingredient versions. A container is one kitchen opened from that kit. The building still supplies gas and electricity—the host kernel and GPU driver. The NVIDIA container tooling is the certified connector that makes selected GPU devices and driver libraries visible inside the kitchen. Packing a stove manual inside the box does not create a gas line; similarly, bundling a CUDA user-space runtime does not replace the compatible host driver.
+          </p>
+          <p>
+            NVIDIA NIM can be understood as an opinionated, supported inference microservice package: an API contract, optimized runtime/engine choices for supported combinations, health endpoints, and operational integration. Its exact model catalog, licensing, profiles, and features evolve, so treat current vendor documentation as the authority. NIM can shorten time-to-service for a supported path; a custom image preserves control over kernels, scheduling, APIs, and unusual models.
+          </p>
+
+          <h3>Terminology</h3>
+          <table class="term-table">
+            <thead><tr><th>Term</th><th>Operational meaning</th></tr></thead>
+            <tbody>
+              <tr><td>Image</td><td>Immutable layered filesystem plus metadata used to create containers.</td></tr>
+              <tr><td>Container</td><td>An isolated process tree running from an image with configured mounts, network, limits, and devices.</td></tr>
+              <tr><td>Registry/digest</td><td>A distribution service and a content-addressed immutable identifier. Pinning a digest avoids a moving tag.</td></tr>
+              <tr><td>Host driver</td><td>Kernel-level software controlling the GPU. Containers usually rely on it rather than shipping a replacement.</td></tr>
+              <tr><td>NVIDIA Container Toolkit</td><td>Host-side integration that injects requested GPU devices and compatible driver components into a container.</td></tr>
+              <tr><td>Startup probe</td><td>Allows a slow-loading process time to initialize before liveness failures count.</td></tr>
+              <tr><td>Liveness</td><td>“Should this process be restarted?” It detects a deadlocked or irrecoverable process.</td></tr>
+              <tr><td>Readiness</td><td>“Should this instance receive new traffic now?” It can be alive but not ready while loading, draining, or overloaded.</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Container-to-ready lifecycle</h3>
+          <div class="diagram horizontal" role="img" aria-label="Inference container lifecycle">
+            <div class="diagram-node"><strong>1. Pull</strong><small>verify digest/signature</small></div>
+            <div class="diagram-node"><strong>2. Create</strong><small>mounts, limits, GPU</small></div>
+            <div class="diagram-node"><strong>3. Start</strong><small>process and config</small></div>
+            <div class="diagram-node"><strong>4. Load</strong><small>weights and engine</small></div>
+            <div class="diagram-node"><strong>5. Warm</strong><small>compile and test</small></div>
+            <div class="diagram-node"><strong>6. Ready</strong><small>join endpoints</small></div>
+          </div>
+          <ol class="compact-list">
+            <li>A build creates reproducible layers from a pinned base and locked dependencies. Security scanning and a software bill of materials run before promotion.</li>
+            <li>The node pulls by digest. The orchestrator sets a read-only root where possible, a non-root user, secrets, model volume/cache, memory/CPU limits, and an explicit GPU request.</li>
+            <li>The container runtime creates namespaces and cgroups; NVIDIA runtime hooks expose only allocated devices and suitable driver libraries.</li>
+            <li>The server validates configuration, loads tokenizer and weights, reserves KV pages, creates or selects an engine, and may compile kernels. Liveness can be true while readiness stays false.</li>
+            <li>A startup probe protects this long initialization. A warm-up request exercises representative paths. Readiness turns true only after dependencies and admission capacity are usable.</li>
+            <li>During shutdown, readiness turns false first, endpoint removal propagates, active streams drain, state/metrics flush, and the process exits before the grace deadline.</li>
+          </ol>
+
+          <div class="callout">
+            <h3>Readiness versus liveness, precisely</h3>
+            <p>
+              A model server at PID 1 can answer a tiny local health request while still loading 100 GB of weights. It is <em>live</em> but not <em>ready</em>. Restarting it because readiness is false would reset loading forever. Conversely, a server can be ready for hours and then deadlock: liveness should fail and trigger replacement. Overload usually makes readiness false only if the instance intentionally sheds new traffic; do not make liveness depend on a remote database or temporary queue spike, or a shared dependency outage will restart the whole fleet.
+            </p>
+          </div>
+
+          <div class="worked-example">
+            <h3>Worked example: cold pull and readiness budget</h3>
+            <p>
+              An image has 11 GiB of layers. A fresh node pulls at an effective 220 MiB/s: 11 × 1,024 ÷ 220 ≈ 51 seconds. It unpacks in 18 seconds. A 28 GiB model downloads from a local cache at 700 MiB/s, about 41 seconds, then engine initialization and warm-up take 35 seconds. Total estimated startup is 51 + 18 + 41 + 35 = <strong>145 seconds</strong>.
+            </p>
+            <p>
+              Configure a startup window comfortably above observed p99, perhaps 240 seconds in this illustrative environment, rather than making liveness kill the process at 30 seconds. Readiness remains false until warm-up succeeds. With four layers unchanged and only a 20 MiB application layer updated, warm-node deployment transfer becomes roughly 20/220 ≈ 0.09 seconds plus metadata instead of another 51-second full pull. Symbols: size and throughput must use matching units; effective throughput includes network, registry, disk, decompression, and concurrency.
+            </p>
+            <p class="equation">cold-start time ≈ provision + pull + unpack + model fetch + engine build/load + warm-up</p>
+          </div>
+
+          <h3>Operational metrics and operating signals</h3>
+          <p>
+            Measure image pull and unpack time, model download/cache hit, engine build/load time, start-to-live, start-to-ready, readiness transitions, probe latency/failures, container restarts, OOM kills, GPU discovery errors, driver/runtime version labels, resident memory, HBM allocation, warm-up result, and termination drain duration. Record image digest and model digest on every request trace. That makes “which artifact served this token?” answerable.
+          </p>
+          <div class="two-col">
+            <div class="warning-box">
+              <h3>Failure modes and common mistakes</h3>
+              <ul>
+                <li>Using an unpinned <code>latest</code> tag or broad dependency ranges.</li>
+                <li>Baking credentials into image layers or build arguments.</li>
+                <li>Assuming container CUDA user space works with any host driver.</li>
+                <li>Marking ready when the HTTP socket opens but before weights load.</li>
+                <li>Using the same remote-dependent endpoint for liveness and readiness.</li>
+                <li>Embedding frequently changed giant weights in the application image without evaluating cache tradeoffs.</li>
+                <li>Running as root with every GPU exposed.</li>
+              </ul>
+            </div>
+            <div class="decision-box">
+              <h3>Decision guide: NIM or custom?</h3>
+              <p><strong>Prefer an evaluated NIM path</strong> when the exact supported model/GPU combination, API, quality, licensing, and operational contract fit and deployment speed matters. <strong>Prefer custom</strong> for novel models, kernels, schedulers, APIs, portability, or deep observability needs. In both cases, pin artifacts, qualify performance, scan supply chain, and own readiness/draining behavior.</p>
+            </div>
+          </div>
+
+          <h3>Review questions and answers</h3>
+          <div class="qa-set">
+            <details class="qa-item"><summary>1. Does a container include the GPU driver?</summary><p>Normally it includes compatible user-space CUDA libraries while using the host kernel driver. Runtime integration exposes driver libraries and allocated device nodes. Compatibility must be checked.</p></details>
+            <details class="qa-item"><summary>2. Why can liveness be true while readiness is false?</summary><p>The process may be healthy but temporarily unable to serve—loading weights, warming kernels, draining, or intentionally out of rotation. Restarting a live initializer would be harmful.</p></details>
+            <details class="qa-item"><summary>3. Why pin an image digest?</summary><p>A tag can point to different bytes later. A digest identifies exact content, enabling reproducibility, audit, controlled rollback, and artifact-to-request tracing.</p></details>
+            <details class="qa-item"><summary>4. What does the NVIDIA runtime layer do?</summary><p>It arranges explicit GPU device access and needed driver-side libraries for the container. It does not make an incompatible host or unsupported application automatically valid.</p></details>
+            <details class="qa-item"><summary>5. When is a startup probe important?</summary><p>When legitimate initialization is longer than the normal liveness interval. It prevents repeated restarts during model loading or engine construction while still bounding a truly stuck startup.</p></details>
+          </div>
+
+          <h3>Hands-on exercises without a GPU</h3>
+          <ol class="exercise-list">
+            <li>Write a minimal Dockerfile for a tiny CPU HTTP server using a pinned base digest, non-root user, lock file, and separate health endpoints. Inspect its layers conceptually.</li>
+            <li>Design truth tables for startup, liveness, and readiness during boot, normal serving, overload, dependency outage, draining, and deadlock.</li>
+            <li>Threat-model a registry compromise: list signature verification, digest pinning, least privilege, scanning, and rollback controls.</li>
+          </ol>
+          <div class="bridge-box"><strong>Bridge to Day 23:</strong> reproducible, health-aware replicas are the unit the autoscaler creates and removes. Their startup timeline and drain behavior now become scaling constraints.</div>
+        </article>
+
+        <article id="day-23" class="lesson" data-search-group="Day 23" data-search-item data-keywords="autoscaling concurrency continuous batching cold start warm pool utilization saturation TTFT ITL goodput">
+          <header>
+            <p class="chapter-kicker">Day 23 · Elastic capacity</p>
+            <h2>Autoscaling, concurrency, batching, and cold starts</h2>
+            <p class="lead">LLM replicas are stateful for the life of a request, expensive to warm, and limited by KV memory. Scale on demand signals early enough to act—not on a late utilization alarm alone.</p>
+          </header>
+
+          <div class="learning-objectives">
+            <strong>By the end, you can:</strong> distinguish concurrency, batch size, throughput, utilization, and saturation; size a replica target from demand and latency; explain continuous batching; design warm pools; and read TTFT, ITL, percentile, and goodput metrics.
+          </div>
+
+          <h3>A beginner analogy: buses at a station</h3>
+          <p>
+            Requests are passengers. A replica is a bus that takes time to drive from the depot, inspect, and enter service—a cold start. Concurrency is the number of passengers currently assigned to a bus. A batch is the group the driver advances during one stop; with continuous batching, passengers leave at different stops and waiting passengers fill freed seats. Throughput is passengers moved per minute. Utilization says how much the bus is working; saturation appears when arrivals exceed useful seat service and the station queue grows.
+          </p>
+          <p>
+            Sending every bus at maximum occupancy may maximize raw passenger movement while making an urgent rider wait too long. LLM operators similarly trade batch efficiency against TTFT and ITL. A service objective turns that trade into goodput: tokens only count as operationally useful if their requests succeed and meet the latency/quality contract.
+          </p>
+
+          <h3>Terminology</h3>
+          <table class="term-table">
+            <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td>Concurrency</td><td>Requests simultaneously admitted or active on a replica. It consumes KV and scheduler capacity.</td></tr>
+              <tr><td>Batch size</td><td>Sequences or tokens executed together in one engine iteration; it may change every iteration.</td></tr>
+              <tr><td>Continuous batching</td><td>Finished sequences leave and queued sequences enter between decode iterations, reducing empty slots.</td></tr>
+              <tr><td>TTFT</td><td>Time to first token: arrival through queueing, prefill, and first sampled/streamed output.</td></tr>
+              <tr><td>ITL</td><td>Inter-token latency: elapsed time between adjacent output tokens, reflecting decode cadence and stalls.</td></tr>
+              <tr><td>Goodput</td><td>Successful work completed within defined latency and quality constraints per unit time.</td></tr>
+              <tr><td>Cold start</td><td>Time for absent capacity to become ready, including provisioning, image, model, engine, and warm-up.</td></tr>
+              <tr><td>Warm pool</td><td>Pre-provisioned or partly initialized capacity kept ready to shorten scale-up.</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Request and autoscaling lifecycle</h3>
+          <div class="diagram horizontal" role="img" aria-label="Autoscaling feedback lifecycle">
+            <div class="diagram-node"><strong>1. Observe</strong><small>arrivals and queue</small></div>
+            <div class="diagram-node"><strong>2. Forecast</strong><small>demand at ready time</small></div>
+            <div class="diagram-node"><strong>3. Decide</strong><small>desired replicas</small></div>
+            <div class="diagram-node"><strong>4. Warm</strong><small>provision to ready</small></div>
+            <div class="diagram-node"><strong>5. Batch</strong><small>admit and execute</small></div>
+            <div class="diagram-node"><strong>6. Drain</strong><small>safe scale-down</small></div>
+          </div>
+          <ol class="compact-list">
+            <li>Record arrival rate, queued tokens, active tokens, prompt/output distributions, and SLO pass rate over a window. Separate model and tenant classes.</li>
+            <li>Forecast demand at <em>now + cold-start time</em>. Queue depth is a leading symptom; GPU utilization often rises only after demand has already queued.</li>
+            <li>Compute desired replicas from SLO-safe goodput or concurrency per replica, then apply minimum, maximum, step, cooldown, quota, and availability constraints.</li>
+            <li>Provision capacity. Pull artifacts, load the model, warm representative shapes, and publish readiness. Until ready, it contributes zero service capacity.</li>
+            <li>Admission limits protect KV memory. Continuous batching refills freed slots; token budgets prevent one long prefill from monopolizing an iteration.</li>
+            <li>Scale-down first marks a replica unready, stops new assignments, drains streams, then releases it. Stabilization windows prevent repeated up/down flapping.</li>
+          </ol>
+
+          <div class="callout">
+            <h3>TTFT, ITL, percentiles, and goodput</h3>
+            <p>
+              TTFT answers “How long did the user stare at an empty screen?” It includes queue time and prompt prefill. ITL answers “Once text began, how smooth was it?” Compute ITL between each pair of emitted tokens, then aggregate carefully: a per-token distribution weights long outputs more than a per-request summary. p50 is typical, p95 exposes a broad tail, and p99 exposes the slowest one percent. Report enough samples and a window; a p99 from fifty requests is unstable. Goodput requires a declared gate, for example: requests that return successfully with TTFT ≤ 1.5 s and p95 per-request ITL ≤ 80 ms. A token from a timed-out request is throughput but not goodput.
+            </p>
+          </div>
+
+          <div class="worked-example">
+            <h3>Worked example: replicas and a warm pool</h3>
+            <p>
+              A load test shows one ready replica supports 8 concurrent requests while meeting both TTFT and ITL goals. Mean in-service time is 4 seconds. Its SLO-safe request rate is approximately 8/4 = 2 requests/s. Forecast demand 6 minutes ahead—the p95 cold start—is 13 requests/s. Base replicas = ceiling(13/2) = 7. Add one replica for a host-safe reserve: 8 desired ready replicas.
+            </p>
+            <p>
+              The current fleet has 6 ready replicas, so the shortfall is 2. Reactive scale-up started only when demand arrived would expose six minutes of queue growth. A two-instance warm pool that has image and weights cached but is not yet serving can become ready in 50 seconds. If forecast error is ±20%, test 10.4 to 15.6 requests/s: the upper case needs ceiling(15.6/2)+1 = 9 replicas, so either keep a third warm slot or admit/reject by priority during surprise demand.
+            </p>
+            <p class="equation">safe rate/replica ≈ safe concurrency ÷ mean service time; desired replicas = ceil(forecast rate ÷ safe rate) + reserve</p>
+          </div>
+
+          <h3>Operational metrics</h3>
+          <table class="metric-table">
+            <thead><tr><th>Layer</th><th>Watch</th><th>Interpretation</th></tr></thead>
+            <tbody>
+              <tr><td>Demand</td><td>arrival requests/s, input tokens/s, queued tokens, oldest wait</td><td>Leading signals. Tokens reveal request-size changes hidden by request count.</td></tr>
+              <tr><td>Service</td><td>TTFT and ITL p50/p95/p99, goodput, rejection, errors</td><td>User outcome. Separate queue, prefill, and decode contributions.</td></tr>
+              <tr><td>Engine</td><td>active sequences, batch tokens, KV occupancy, prefill/decode mix</td><td>Shows why resource gauges move and whether admission is near its bound.</td></tr>
+              <tr><td>Fleet</td><td>ready/desired/pending replicas, start-to-ready, drain time</td><td>Shows scaling lag and unavailable nominal capacity.</td></tr>
+              <tr><td>Resources</td><td>SM activity, HBM bandwidth, memory, CPU/network</td><td>Locates the bottleneck; high or low GPU use alone is not a policy.</td></tr>
+            </tbody>
+          </table>
+
+          <div class="two-col">
+            <div class="warning-box">
+              <h3>Failure modes and common mistakes</h3>
+              <ul>
+                <li>Scaling only on average GPU utilization, a lagging and ambiguous signal.</li>
+                <li>Setting concurrency from memory fit without p99 load testing.</li>
+                <li>Counting pending replicas as capacity before readiness.</li>
+                <li>Scaling down a replica with live SSE streams.</li>
+                <li>Using request count when prompt lengths vary by orders of magnitude.</li>
+                <li>Optimizing throughput while TTFT or ITL goodput falls.</li>
+                <li>Allowing cooldown and cold start to create repeated overshoot.</li>
+              </ul>
+            </div>
+            <div class="decision-box">
+              <h3>Decision guide</h3>
+              <p><strong>Predictable daily peaks:</strong> scheduled/predictive pre-warming. <strong>Unpredictable bursts shorter than cold start:</strong> minimum headroom, admission control, and warm pools. <strong>Rare asynchronous jobs:</strong> queue and scale-to-zero may fit. <strong>Interactive service:</strong> preserve a ready floor. <strong>Memory-full but compute-light:</strong> lower context/concurrency or improve KV management; adding batch work can worsen OOM.</p>
+            </div>
+          </div>
+
+          <h3>Review questions and answers</h3>
+          <div class="qa-set">
+            <details class="qa-item"><summary>1. How do utilization and saturation differ?</summary><p>Utilization is a measured fraction of resource activity over time. Saturation means effective service capacity is exhausted so extra demand waits, sheds, or harms latency. Queue growth is strong saturation evidence.</p></details>
+            <details class="qa-item"><summary>2. Why separate TTFT from ITL?</summary><p>Queueing and prefill dominate the wait before output, while decode scheduling and per-step work shape token cadence. A service can have a fast first token and choppy continuation, or the reverse.</p></details>
+            <details class="qa-item"><summary>3. What does continuous batching improve?</summary><p>It reuses execution slots immediately when sequences finish rather than waiting for an entire static batch. This improves occupancy and goodput under varied output lengths.</p></details>
+            <details class="qa-item"><summary>4. Why are warm pools expensive?</summary><p>They reserve some combination of nodes, memory, downloaded weights, or loaded GPUs before work arrives. That shortens readiness delay but pays idle resource cost.</p></details>
+            <details class="qa-item"><summary>5. Why scale on tokens as well as requests?</summary><p>One long prompt or output can cost hundreds of short requests. Token-aware demand better predicts prefill work, decode duration, KV consumption, and queue delay.</p></details>
+          </div>
+
+          <h3>Hands-on exercises without a GPU</h3>
+          <ol class="exercise-list">
+            <li>Simulate one day in a spreadsheet with minute-level demand, six-minute cold starts, and a cooldown. Compare reactive, scheduled, and warm-pool policies.</li>
+            <li>Create 1,000 synthetic latency values with a few severe outliers. Calculate mean, p50, p95, and p99; explain which alert catches the incident.</li>
+            <li>Model a continuous batch of eight slots with varied output lengths. Refill completed slots and compare occupied slot-steps with static batching.</li>
+          </ol>
+          <div class="bridge-box"><strong>Bridge to Day 24:</strong> the autoscaler decides how many replicas exist. The router and queue decide which work reaches each replica and in what order—often determining the tail more than another replica would.</div>
+        </article>
+
+        <article id="day-24" class="lesson" data-search-group="Day 24" data-search-item data-keywords="routing load balancing queueing Little Law tail latency cache affinity SSE">
+          <header>
+            <p class="chapter-kicker">Day 24 · Work distribution</p>
+            <h2>Routing, load balancing, and queueing</h2>
+            <p class="lead">Connections are not equal work. Route by health, cost, locality, and deadlines; use queues as measured shock absorbers, never as invisible storage for unlimited demand.</p>
+          </header>
+
+          <div class="learning-objectives">
+            <strong>By the end, you can:</strong> apply Little's Law; explain why tails explode near saturation; compare routing policies; use prefix/cache affinity safely; and describe sticky handling and graceful draining for Server-Sent Events.
+          </div>
+
+          <h3>A beginner analogy: supermarket lines with reusable shopping lists</h3>
+          <p>
+            A naive greeter sends each shopper to the next cashier. But one cart holds two items and the next holds two hundred. A workload-aware greeter counts estimated items, current carts, and cashier speed. Now imagine repeat shoppers whose long shopping lists are already prepared at one desk. Sending them back to that desk saves setup time: this is cache affinity. Yet if that cashier's line becomes enormous, locality is no longer worth the wait. Affinity should be a preference with an overload escape hatch, not a prison.
+          </p>
+          <p>
+            The front door load balancer chooses reachable, healthy regions or services. A model-aware router selects among eligible replicas using queue/token load, model version, adapter availability, and prefix-cache hints. A queue orders work that cannot start immediately. After an SSE streaming response begins, the selected connection remains with that replica; moving half a byte stream to another server is not ordinary retry.
+          </p>
+
+          <h3>Terminology</h3>
+          <table class="term-table">
+            <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td>Load balancer</td><td>Distributes traffic among healthy endpoints, often using network and service-level signals.</td></tr>
+              <tr><td>Router</td><td>Makes application-aware placement using model, tenant, tokens, caches, adapters, or deadlines.</td></tr>
+              <tr><td>Queue</td><td>Ordered waiting work. It absorbs short mismatch but adds latency and memory cost.</td></tr>
+              <tr><td>Little's Law</td><td>For a stable system, average in-system work L equals arrival rate λ times average time W.</td></tr>
+              <tr><td>Tail latency</td><td>Slow-end percentiles such as p95 or p99, shaped by bursts, variance, retries, and head-of-line blocking.</td></tr>
+              <tr><td>Cache affinity</td><td>Preferring a replica holding reusable prefix/KV or adapter state.</td></tr>
+              <tr><td>Head-of-line blocking</td><td>A long or stalled item delays shorter work behind it.</td></tr>
+              <tr><td>SSE</td><td>Server-Sent Events: a long-lived HTTP response carrying framed events from server to client.</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Routing lifecycle</h3>
+          <div class="diagram horizontal" role="img" aria-label="Routing and queue lifecycle">
+            <div class="diagram-node"><strong>1. Edge</strong><small>auth and region</small></div>
+            <div class="diagram-node"><strong>2. Eligible</strong><small>ready model/version</small></div>
+            <div class="diagram-node"><strong>3. Score</strong><small>load + locality</small></div>
+            <div class="diagram-node"><strong>4. Admit</strong><small>deadline and quota</small></div>
+            <div class="diagram-node"><strong>5. Execute</strong><small>prefill and decode</small></div>
+            <div class="diagram-node"><strong>6. Stream</strong><small>close and account</small></div>
+          </div>
+          <ol class="compact-list">
+            <li>The edge authenticates, enforces coarse limits, and picks an allowed healthy region considering residency and failover policy.</li>
+            <li>The service filters replicas by readiness, model/checkpoint, precision, adapter, protocol, tenant permissions, and drain state.</li>
+            <li>A score combines estimated queued tokens, active decode work, prompt length, prefix-cache hit value, and replica speed. Stale telemetry requires conservative fallbacks.</li>
+            <li>Admission checks deadline, KV room, quota, and maximum queue age. Work enters a bounded priority/fairness queue or receives an explicit overload response.</li>
+            <li>The scheduler batches prefill and decode. Traces record queue, prefill, first token, per-token cadence, and cache result.</li>
+            <li>For SSE, headers begin a long-lived response. Proxies must avoid buffering, preserve idle timeouts, and pass disconnect cancellation. A draining replica serves existing streams but receives no new ones.</li>
+          </ol>
+
+          <div class="callout">
+            <h3>Little's Law and tail latency</h3>
+            <p class="equation">L = λW, therefore W = L/λ</p>
+            <p>
+              <em>L</em> is average requests in the system, <em>λ</em> is average completed/arrival requests per second in stable equilibrium, and <em>W</em> is average seconds in the system. If λ = 12 requests/s and W = 2.5 s, average in-flight work L = 30 requests. Little's Law does not promise a percentile, assume Poisson traffic, or tell you how many replicas are sufficient by itself. It is an accounting identity under stability. If arrivals exceed departures for long enough, no stable average exists; the queue grows.
+            </p>
+            <p>
+              Near saturation, a small service-time fluctuation finds no spare capacity, so it becomes waiting time for everything behind it. Variability compounds: long prompts, retries, synchronized clients, cache misses, and mixed hardware produce p99 far above p50. Keeping utilization below a tested threshold is not waste; it buys the slack that absorbs variance.
+            </p>
+          </div>
+
+          <div class="worked-example">
+            <h3>Worked example: affinity with an overload escape</h3>
+            <p>
+              Four replicas each safely process 500 queued-token-equivalents per second. A request has a 600-token shared prefix and expects 120 generated tokens. Replica A holds the prefix; its queue is 900 token-equivalents. Replica B misses the prefix but has only 150 queued. Estimate A's wait as 900/500 = 1.8 seconds, followed by almost no prefix recompute. Estimate B's wait as 150/500 = 0.3 seconds plus a measured 0.45-second prefill, totaling 0.75 seconds before decode eligibility. Choose B even though A has affinity.
+            </p>
+            <p>
+              A simple score is <code>estimated queue delay + miss penalty</code>. For A: 1.8 + 0 = 1.8 s. For B: 0.3 + 0.45 = 0.75 s. Add uncertainty margins and a maximum-affinity queue threshold. After routing, suppose the service observes λ = 10 requests/s and average total W = 3 s; Little's Law predicts 30 average in flight. If dashboards show 70, investigate a changing workload, retry amplification, unstable measurement window, or growing queue.
+            </p>
+          </div>
+
+          <h3>Operational metrics and failure modes</h3>
+          <p>
+            Watch queue depth in requests <em>and tokens</em>, oldest age, abandon/deadline drops, arrival/departure rates, estimated versus actual service cost, router decision latency, imbalance coefficient, cache hit rate and saved prefill time, fallback rate, retries, per-route p50/p95/p99 TTFT/ITL, stream disconnects, active SSE connections, and drain age. High cache hit rate can be harmful if it creates one hot replica; pair locality with load.
+          </p>
+          <div class="two-col">
+            <div class="warning-box">
+              <h3>Common mistakes</h3>
+              <ul>
+                <li>Round-robin across highly variable token workloads.</li>
+                <li>Unbounded queues that convert overload into timeouts and memory pressure.</li>
+                <li>Retrying timed-out requests immediately and amplifying load.</li>
+                <li>Strict cache stickiness with no overload fallback.</li>
+                <li>Mixing premium and batch work without quotas or aging.</li>
+                <li>Proxy-buffering SSE, making tokens appear in large delayed chunks.</li>
+                <li>Removing a pod before endpoint propagation, then killing active streams.</li>
+              </ul>
+            </div>
+            <div class="decision-box">
+              <h3>Decision guide</h3>
+              <p><strong>Uniform short work:</strong> least-connections may suffice. <strong>Variable lengths:</strong> least estimated tokens/work. <strong>Shared prefixes:</strong> bounded cache affinity. <strong>Adapters:</strong> prefer loaded adapter, with capacity fallback. <strong>Multiple tiers:</strong> bounded priority plus fairness and deadlines. <strong>Severe overload:</strong> reject early, degrade max output/context, or queue only asynchronous work.</p>
+            </div>
+          </div>
+
+          <h3>Review questions and answers</h3>
+          <div class="qa-set">
+            <details class="qa-item"><summary>1. What does Little's Law tell an operator?</summary><p>It links average in-system concurrency, throughput/arrival rate, and average total time. It is useful for sanity checks and capacity intuition, but does not directly predict p99 or remain stable under unbounded growth.</p></details>
+            <details class="qa-item"><summary>2. Why does p99 rise sharply near saturation?</summary><p>There is little spare service capacity to absorb normal variance. A long request or burst creates waiting that propagates; retries and synchronization can amplify it.</p></details>
+            <details class="qa-item"><summary>3. When should cache affinity be ignored?</summary><p>When estimated waiting on the hit replica exceeds recomputation plus waiting elsewhere, when telemetry is stale, or when health, version, residency, or quota makes that replica ineligible.</p></details>
+            <details class="qa-item"><summary>4. Why are SSE streams special during routing?</summary><p>They are long-lived ordered HTTP responses. Once started, the connection is bound to the serving instance; failover generally requires reconnect/retry semantics rather than transparent midstream movement.</p></details>
+            <details class="qa-item"><summary>5. What is a safe queue?</summary><p>Bounded by size and age, observable, deadline-aware, fair by policy, and paired with explicit rejection. It absorbs brief bursts but never pretends finite capacity is infinite.</p></details>
+          </div>
+
+          <h3>Hands-on exercises without a GPU</h3>
+          <ol class="exercise-list">
+            <li>Simulate 100 requests with random prompt lengths across four workers. Compare round-robin, least-connections, and least-queued-tokens imbalance.</li>
+            <li>Use a spreadsheet to plot an M/M/1 illustrative wait curve <code>W = 1/(μ-λ)</code> as λ approaches service rate μ. State why real LLM service is not truly M/M/1.</li>
+            <li>Run a local SSE demo with any tiny web server and <code>curl -N</code>. Add a buffering proxy setting conceptually and explain the effect on visible ITL.</li>
+          </ol>
+          <div class="bridge-box"><strong>Bridge to Day 25:</strong> routing across replicas becomes routing across providers and regions. The same eligibility, score, queue, and failover ideas apply, now constrained by supply contracts, data residency, and WAN latency.</div>
+        </article>
+
+        <article id="day-25" class="lesson" data-search-group="Day 25" data-search-item data-keywords="multi-cloud reserved on-demand spot failover compliance residency active-active">
+          <header>
+            <p class="chapter-kicker">Day 25 · Capacity across clouds</p>
+            <h2>Multi-cloud capacity, procurement, failover, and compliance</h2>
+            <p class="lead">Multi-cloud is not a discount switch. It is an option portfolio and a failure-boundary design that adds operational complexity in exchange for supply, geographic reach, and resilience.</p>
+          </header>
+
+          <div class="learning-objectives">
+            <strong>By the end, you can:</strong> combine reserved, on-demand, and spot capacity; separate global control from regional data paths; calculate failover headroom; account for egress and heterogeneity; and make compliance an eligibility rule rather than a routing afterthought.
+          </div>
+
+          <h3>A beginner analogy: groceries from several suppliers</h3>
+          <p>
+            A restaurant buys staple rice through a discounted annual contract, fresh surprises from an on-demand wholesaler, and bargain surplus that can disappear with notice. These resemble reserved, on-demand, and spot capacity. Depending on one supplier risks shortages; using five suppliers without common recipes, quality checks, and inventory tracking creates chaos. The restaurant keeps a tested menu and local stock while headquarters negotiates contracts. Likewise, regional workload planes should keep serving if the global control plane is temporarily unavailable.
+          </p>
+          <p>
+            Multi-cloud is justified when it addresses a quantified constraint: one provider lacks supply, users need lower regional latency, an outage target requires independent failure domains, or law/contract restricts data location. It is not automatically more available. A shared identity provider, DNS operator, model registry, control plane, or networking dependency can remain a hidden single point of failure.
+          </p>
+
+          <h3>Terminology</h3>
+          <table class="term-table">
+            <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td>Reserved/committed capacity</td><td>Capacity or spend committed for a term, usually cheaper but less flexible.</td></tr>
+              <tr><td>On-demand</td><td>Flexible capacity acquired near use time at a higher unit price and still subject to quota/supply.</td></tr>
+              <tr><td>Spot/preemptible</td><td>Discounted interruptible capacity suitable only when eviction is handled.</td></tr>
+              <tr><td>Control plane</td><td>Desired-state orchestration, policy, deployment, and global capacity decisions.</td></tr>
+              <tr><td>Workload/data plane</td><td>The regional request path that should continue serving through control-plane interruption.</td></tr>
+              <tr><td>Active-active</td><td>Multiple sites serve production simultaneously and retain failover room.</td></tr>
+              <tr><td>Active-passive</td><td>A primary serves while a standby is maintained at a defined warmth and recovery time.</td></tr>
+              <tr><td>Data residency</td><td>Rules about where data may be stored or processed; these constrain eligible routes.</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Multi-cloud request and capacity lifecycle</h3>
+          <div class="diagram horizontal" role="img" aria-label="Multi-cloud capacity lifecycle">
+            <div class="diagram-node"><strong>1. Forecast</strong><small>region/model demand</small></div>
+            <div class="diagram-node"><strong>2. Procure</strong><small>base, buffer, interruptible</small></div>
+            <div class="diagram-node"><strong>3. Deploy</strong><small>qualified artifacts</small></div>
+            <div class="diagram-node"><strong>4. Route</strong><small>policy + health + latency</small></div>
+            <div class="diagram-node"><strong>5. Fail</strong><small>bounded redistribution</small></div>
+            <div class="diagram-node"><strong>6. Rebalance</strong><small>cost and recovery</small></div>
+          </div>
+          <ol class="compact-list">
+            <li>Forecast per region, model, tenant, and hour. Convert demand into SLO-safe goodput units for each qualified hardware/runtime combination.</li>
+            <li>Cover stable baseline with commitments only after uncertainty analysis. Keep on-demand quota and provider diversity for forecast error. Use spot for checkpointable, retry-safe, or redundant work.</li>
+            <li>Promote the same tested model/API contract while allowing provider-specific engine builds. Record artifact, hardware, and quality equivalence.</li>
+            <li>Global routing filters by residency, contractual permissions, model availability, capacity, health, and user latency. Regional routers handle replica details.</li>
+            <li>During failure, stop sending new traffic, preserve idempotency/retry budgets, shed lower priority, and ensure surviving sites have both compute and network capacity.</li>
+            <li>After recovery, ramp traffic gradually. Avoid sending the entire backlog at once; investigate cost, data transfer, cache coldness, and SLO impact.</li>
+          </ol>
+
+          <div class="worked-example">
+            <h3>Worked example: portfolio and regional failover</h3>
+            <p>
+              A service needs 20 capacity units on average and 32 at a normal peak. It commits 16 reserved units, keeps quota for 12 on-demand units, and permits up to 8 spot units for low-priority asynchronous jobs. Reserved costs an illustrative $2.40/unit-hour, on-demand $4.00, and spot $1.30. At a 28-unit interactive peak, use 16 reserved + 12 on-demand, costing 16×2.40 + 12×4.00 = <strong>$86.40/hour</strong>. Spot does not back the interactive SLO because it can disappear.
+            </p>
+            <p>
+              Two active regions each serve 14 units of demand and have 20 units installed. If one region fails, the survivor cannot carry all 28; it has 6 spare units and a 22-unit ceiling if an emergency burst pool adds 2. The plan must shed or reroute 6 units elsewhere. A third provider has 8 qualified on-demand units and 5-minute readiness, covering the gap only after five minutes. Therefore the immediate policy reserves 6 units of low-priority shed capacity or maintains warmer third-site capacity. “Multi-cloud” did not remove arithmetic.
+            </p>
+            <p class="equation">failover headroom = surviving ready capacity − surviving normal load; uncovered demand = failed load − failover headroom</p>
+          </div>
+
+          <h3>Compliance and operational metrics</h3>
+          <p>
+            Compliance is not a checkbox attached after routing. Translate obligations into machine-enforced eligibility: allowed regions/providers, encryption keys, log redaction, retention, tenant isolation, operator access, audit records, and subprocessors. Do not route restricted prompts to a cheaper region and promise to delete later. During failover, the allowed set may be smaller than the healthy set; availability objectives must reflect that.
+          </p>
+          <p>
+            Monitor ready capacity by hardware-equivalent unit, committed coverage, on-demand quota, spot eviction and notice, time-to-ready, regional SLO goodput, WAN/DNS health, egress bytes and cost, cache warmth, forecast error, failover test age, replication lag, residency-policy denials, and capacity stranded by incompatibility. Normalize hardware by measured goodput, not GPU count.
+          </p>
+
+          <div class="two-col">
+            <div class="warning-box">
+              <h3>Failure modes and common mistakes</h3>
+              <ul>
+                <li>Assuming quota guarantees physical GPU availability.</li>
+                <li>Using spot for non-retry-safe live streams without spare capacity.</li>
+                <li>Counting heterogeneous GPUs as equal units.</li>
+                <li>Making the global control plane part of every request.</li>
+                <li>Discovering egress charges or bandwidth limits during an outage.</li>
+                <li>Failing over restricted data to a noncompliant region.</li>
+                <li>Never rehearsing DNS, certificate, identity, registry, and model-store failure together.</li>
+              </ul>
+            </div>
+            <div class="decision-box">
+              <h3>Decision guide</h3>
+              <p><strong>Steady known base:</strong> commitments after downside analysis. <strong>Uncertain interactive demand:</strong> on-demand quota and warm readiness. <strong>Interruptible offline work:</strong> spot with checkpointing. <strong>Strict RTO:</strong> active-active or hot standby. <strong>Loose RTO and high idle cost:</strong> warm/cold passive. <strong>Residency constraints:</strong> plan independent compliant headroom, not global aggregate capacity.</p>
+            </div>
+          </div>
+
+          <h3>Review questions and answers</h3>
+          <div class="qa-set">
+            <details class="qa-item"><summary>1. Why mix reserved, on-demand, and spot?</summary><p>They price different risks. Commitments cheaply cover a stable base, on-demand absorbs forecast error and failover, and interruptible supply lowers suitable batch cost. One mechanism rarely fits all work.</p></details>
+            <details class="qa-item"><summary>2. Why must workload planes survive control-plane loss?</summary><p>Existing regional traffic should not fail because global orchestration is unreachable. Cached desired state, local routing, and bounded autonomy keep the request path available.</p></details>
+            <details class="qa-item"><summary>3. What is wrong with counting GPUs across providers?</summary><p>Devices, software paths, memory, topology, and measured SLO goodput differ. Normalize to a tested capacity unit for a specific workload.</p></details>
+            <details class="qa-item"><summary>4. How does compliance affect failover?</summary><p>It restricts which healthy destinations are legally and contractually eligible. Capacity planning must maintain sufficient compliant alternatives or explicitly accept a lower availability objective.</p></details>
+            <details class="qa-item"><summary>5. What hidden dependency can defeat multi-cloud?</summary><p>Any shared critical service: DNS, identity, certificate authority, artifact registry, control database, telemetry gate, or model store. Map and test them as failure domains.</p></details>
+          </div>
+
+          <h3>Hands-on exercises without a GPU</h3>
+          <ol class="exercise-list">
+            <li>Create a 30-day hourly demand curve and solve a simple portfolio of committed, on-demand, and spot units. Add commitment waste and interruption scenarios.</li>
+            <li>Draw a dependency graph for two clouds. Circle every service shared by both and propose a degraded local operating mode.</li>
+            <li>Write routing eligibility rules for EU-resident health data, ordinary EU traffic, and public batch jobs. Test them under each region's failure.</li>
+          </ol>
+          <div class="bridge-box"><strong>Bridge to Day 26:</strong> once capacity exists across failure domains, software and model changes must enter that fleet without breaking streams, quality, latency, or cost. Deployment is controlled risk transfer.</div>
+        </article>
+
+        <article id="day-26" class="lesson" data-search-group="Day 26" data-search-item data-keywords="zero downtime canary blue green rolling draining rollback observability cost SSE graceful shutdown">
+          <header>
+            <p class="chapter-kicker">Day 26 · Safe change</p>
+            <h2>Zero-downtime deployment, draining, rollback, and cost</h2>
+            <p class="lead">“Zero downtime” does not mean zero risk. It means capacity stays available, new traffic reaches only qualified replicas, in-flight work completes or follows an explicit recovery contract, and regression signals can stop and reverse the change.</p>
+          </header>
+
+          <div class="learning-objectives">
+            <strong>By the end, you can:</strong> compare rolling, blue-green, and canary releases; design readiness gates and graceful shutdown; handle SSE streams; choose rollback metrics; and calculate cost per million good tokens including deployment headroom.
+          </div>
+
+          <h3>A beginner analogy: replacing a bridge while traffic flows</h3>
+          <p>
+            Blue-green builds a second bridge, tests it, then redirects every car; rollback restores the old bridge, but two bridges cost more. A rolling update closes and rebuilds one lane at a time; it uses less extra material but temporarily reduces capacity and mixes old and new lanes. A canary first directs a small, representative traffic sample over the new structure, watches sensors, then increases the share. The canary discovers defects under real load while limiting exposure.
+          </p>
+          <p>
+            For inference, structural safety includes semantic quality. A new checkpoint may return HTTP 200 quickly but produce worse answers, broken tool JSON, changed refusal behavior, or tokenization drift. Release gates therefore combine system metrics, model-quality samples, compatibility, and cost. “No 5xx errors” is necessary and dramatically insufficient.
+          </p>
+
+          <h3>Terminology</h3>
+          <table class="term-table">
+            <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td>Rolling update</td><td>Replace replicas incrementally, controlling unavailable and surge counts.</td></tr>
+              <tr><td>Blue-green</td><td>Maintain old and new fleets, validate green, then switch traffic; quick rollback costs overlap capacity.</td></tr>
+              <tr><td>Canary</td><td>Expose the new version to increasing traffic steps with hold periods and automated gates.</td></tr>
+              <tr><td>Drain</td><td>Stop admitting new requests while allowing in-flight requests and streams to finish within a deadline.</td></tr>
+              <tr><td>Graceful shutdown</td><td>Coordinated unready → endpoint removal → drain → flush → exit sequence before forced termination.</td></tr>
+              <tr><td>Rollback</td><td>Restore a known-safe artifact/config and traffic policy; it must be rehearsed, not theoretical.</td></tr>
+              <tr><td>Error budget</td><td>Allowed unreliability implied by an SLO over a window; rollout risk consumes it.</td></tr>
+              <tr><td>Cost per good token</td><td>Total service cost divided by successful tokens meeting quality and latency requirements.</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Deployment lifecycle</h3>
+          <div class="diagram horizontal" role="img" aria-label="Zero-downtime deployment lifecycle">
+            <div class="diagram-node"><strong>1. Qualify</strong><small>artifact and quality</small></div>
+            <div class="diagram-node"><strong>2. Stage</strong><small>load and warm</small></div>
+            <div class="diagram-node"><strong>3. Expose</strong><small>shadow/canary</small></div>
+            <div class="diagram-node"><strong>4. Gate</strong><small>tails, errors, quality</small></div>
+            <div class="diagram-node"><strong>5. Promote</strong><small>step traffic</small></div>
+            <div class="diagram-node"><strong>6. Drain</strong><small>old version safely</small></div>
+          </div>
+          <ol class="compact-list">
+            <li>Build an immutable image/model pair. Run offline correctness, safety, tool-use, schema, performance, startup, compatibility, and security checks.</li>
+            <li>Create new replicas without removing old capacity. Wait for startup probe, model load, representative warm-up, and readiness. Verify model/digest labels.</li>
+            <li>Shadow only when privacy and cost permit; do not return shadow output. Canary by stable request/tenant hashing so one user is not unpredictably split across versions.</li>
+            <li>At each traffic step, hold long enough for meaningful sample volume. Compare against concurrent control, not yesterday's unrelated traffic. Gate error, TTFT/ITL tails, goodput, quality, saturation, and cost.</li>
+            <li>Promote only while every gate remains valid and error-budget policy permits. Freeze concurrent risky changes so attribution remains possible.</li>
+            <li>Mark old replicas unready, wait for endpoint propagation, drain ordinary requests and SSE streams, flush telemetry, then terminate. Retain rollback artifacts until the observation window closes.</li>
+          </ol>
+
+          <div class="callout">
+            <h3>Graceful shutdown and SSE streams, clearly</h3>
+            <p>
+              On termination intent, the server first flips readiness to false. The orchestrator/load balancer stops selecting it, but propagation is not instantaneous, so the server should also reject new requests with a retryable status while draining. Existing non-streaming calls continue. Existing SSE responses keep their TCP/HTTP connection and must continue emitting complete <code>data:</code> events, heartbeats if used, and a final completion marker when normal.
+            </p>
+            <p>
+              Track active requests and connections. When the count reaches zero, exit cleanly. At a configured deadline, choose an explicit policy: finish only requests likely to complete, send a structured terminal error when the protocol allows, or close and rely on client retry/resume semantics. Never assume a different replica can transparently continue an arbitrary model stream: it lacks sampling RNG state and KV state unless the architecture explicitly externalizes them. Set the grace period above measured p99 stream duration plus endpoint-propagation and flush buffers, while enforcing maximum generation and cancellation so one abandoned connection cannot block forever.
+            </p>
+          </div>
+
+          <div class="worked-example">
+            <h3>Worked example: canary gates, headroom, and cost</h3>
+            <p>
+              A fleet has 10 replicas. Normal peak uses 70% of SLO-safe capacity. A rolling update with one unavailable replica leaves 9 replicas: equivalent load becomes 70% × 10/9 ≈ 77.8%, still below a tested 82% safe threshold. Losing a second replica would produce 87.5%, so set maximum unavailable to one and maintain surge or pause on readiness failure.
+            </p>
+            <p>
+              The canary receives 5% of 20,000 requests: 1,000 samples. Control error rate is 0.4%, canary 0.6% (six errors), control p99 TTFT 1.2 s, canary 1.7 s, and the gate is error ≤ 0.8% and p99 TTFT ≤ 1.5 s. Error passes; TTFT fails, so rollback traffic to zero and retain canary telemetry. Do not average the two gates.
+            </p>
+            <p>
+              Each replica costs an illustrative $4/hour and produces 1,200 raw tokens/s; 85% are good tokens. Ten replicas cost $40/hour and deliver 10,200 good tokens/s. Cost = 40 ÷ (10,200 × 3,600) × 1,000,000 ≈ <strong>$1.09 per million good tokens</strong>. A 20-minute blue-green overlap adds 10 × $4 × 1/3 = $13.33 per deployment. Include that deployment overhead in monthly cost rather than claiming only steady state.
+            </p>
+            <p class="equation">$/1M good tokens = total $/hour ÷ good tokens/second ÷ 3,600 × 1,000,000</p>
+          </div>
+
+          <h3>Operational metrics, observability, and rollback gates</h3>
+          <p>
+            Label metrics and traces by image, model digest, engine build, precision, deployment, region, and canary cohort. Observe readiness/startup, request and token rate, queue, HBM/KV, TTFT/ITL p50/p95/p99, stream completion, disconnects, output length, schema/tool validity, safety/quality sample score, error codes, retries, goodput, and dollars per good token. Compare canary and control under the same time and request strata. A global metric can hide a regression isolated to long prompts or one adapter.
+          </p>
+          <p>
+            Rollback triggers should be predeclared and automated for fast, reliable signals, with human review for ambiguous quality. Rollback must restore image, model, tokenizer, configuration, routing, and compatible state. A database or prompt-schema migration can make binary rollback unsafe; use backward-compatible expand/migrate/contract phases. After rollback, continue observing because queues, caches, and clients may recover slowly.
+          </p>
+
+          <div class="two-col">
+            <div class="warning-box">
+              <h3>Failure modes and common mistakes</h3>
+              <ul>
+                <li>Replacing old capacity before new replicas are genuinely ready.</li>
+                <li>Canarying too few requests or only easy traffic.</li>
+                <li>Gating averages while p99 or one cohort regresses.</li>
+                <li>Killing after SIGTERM without readiness change and drain.</li>
+                <li>Forgetting proxy endpoint propagation and SSE timeout behavior.</li>
+                <li>Rolling back code but not model, tokenizer, or configuration.</li>
+                <li>Ignoring surge/overlap cost and temporary cache coldness.</li>
+              </ul>
+            </div>
+            <div class="decision-box">
+              <h3>Decision guide</h3>
+              <p><strong>High-risk model/engine change:</strong> canary, often with blue-green capacity. <strong>Low-risk patch and many replicas:</strong> careful rolling update. <strong>Need near-instant switch/rollback:</strong> blue-green. <strong>Insufficient overlap capacity:</strong> reduce traffic, create temporary capacity, or accept a slower roll—never hide overload behind a “zero downtime” label. <strong>Irreversible state change:</strong> design compatibility before release.</p>
+            </div>
+          </div>
+
+          <h3>Review questions and answers</h3>
+          <div class="qa-set">
+            <details class="qa-item"><summary>1. What does zero downtime require beyond a healthy process?</summary><p>Qualified new capacity, correct readiness, preserved service capacity, controlled traffic shift, complete or explicitly recoverable in-flight work, rollback, and observability of system plus model quality.</p></details>
+            <details class="qa-item"><summary>2. Why does graceful shutdown begin with readiness?</summary><p>New assignments must stop before waiting for active work. Otherwise arrivals replace completions and the replica never drains. Endpoint propagation and local admission both matter.</p></details>
+            <details class="qa-item"><summary>3. Can an SSE stream move to another replica mid-generation?</summary><p>Not ordinarily. The replica owns connection, KV cache, sampler and RNG state. A reconnect can retry or resume only if the application explicitly designs and externalizes enough state.</p></details>
+            <details class="qa-item"><summary>4. Why compare canary with a concurrent control?</summary><p>Traffic mix, load, and dependencies change over time. A simultaneous control distinguishes release effects from a global spike or external incident.</p></details>
+            <details class="qa-item"><summary>5. Why calculate cost per good token?</summary><p>Raw tokens can be late, erroneous, retried, or low quality. Good-token cost aligns infrastructure spending with useful service and exposes “fast” configurations that violate the contract.</p></details>
+          </div>
+
+          <h3>Hands-on exercises without a GPU</h3>
+          <ol class="exercise-list">
+            <li>Simulate canary steps 1%, 5%, 20%, 50%, 100% in a spreadsheet. Generate error and TTFT distributions; implement hold and rollback rules.</li>
+            <li>Build a tiny local streaming server and add shutdown handling: mark unready, reject new work, count active streams, wait with a deadline, then exit.</li>
+            <li>Calculate steady, rolling-surge, and blue-green monthly cost for several deployment frequencies. Include cache-warm penalties and failed canaries.</li>
+          </ol>
+          <div class="bridge-box"><strong>Course bridge:</strong> Days 19-26 form one loop: hardware limits shape capacity; capacity becomes containers and replicas; routing turns replicas into a service; multi-cloud turns service into a resilient fleet; safe deployment changes that fleet without violating its contract.</div>
+        </article>
+
+        <section id="formula-sheet" class="content-section" data-search-group="Reference" data-search-item data-keywords="formula SLO capacity equations">
+          <div class="section-heading">
+            <div><p class="eyebrow">Reference</p><h2>SLO and capacity formula sheet</h2></div>
+            <p>Use these as first-order models, then replace assumptions with measured workload data.</p>
+          </div>
+          <table class="formula-table">
+            <thead><tr><th>Question</th><th>Formula</th><th>Symbols and caution</th></tr></thead>
+            <tbody>
+              <tr><td>Weight storage</td><td><code>Mw ≈ P × b</code></td><td><em>P</em> parameters, <em>b</em> bytes/parameter. Add scales, metadata, workspace, replicas, and allocator reserve.</td></tr>
+              <tr><td>KV cache</td><td><code>Mkv ≈ 2LHkvdbT</code></td><td><em>L</em> layers, <em>Hkv</em> KV heads, <em>d</em> head dimension, <em>b</em> bytes, <em>T</em> cached tokens. Confirm engine layout.</td></tr>
+              <tr><td>Bandwidth time floor</td><td><code>t ≥ bytes / sustained BW</code></td><td>Use sustained application bandwidth, include reads and writes, and keep units consistent.</td></tr>
+              <tr><td>Arithmetic intensity</td><td><code>I = operations / bytes</code></td><td>Compare <code>I × bandwidth roof</code> with compute roof; the lower bound dominates first order.</td></tr>
+              <tr><td>Little's Law</td><td><code>L = λW</code></td><td>Stable long-run averages: concurrency <em>L</em>, arrival/completion rate <em>λ</em>, total time <em>W</em>.</td></tr>
+              <tr><td>Queue/service utilization</td><td><code>ρ = λ / (cμ)</code></td><td><em>c</em> parallel servers, each mean service rate <em>μ</em>. Real LLM arrivals/service are not simple exponential models.</td></tr>
+              <tr><td>Replica estimate</td><td><code>N = ceil(peak demand / safe goodput per replica) + reserve</code></td><td>Safe goodput is load-tested under the required mix and tails; reserve names a failure domain.</td></tr>
+              <tr><td>Headroom</td><td><code>H = 1 − planned load / safe capacity</code></td><td>Report which bottleneck and window define capacity. Average headroom does not protect a local hot spot.</td></tr>
+              <tr><td>Percentile</td><td><code>px = value with x% observations at or below</code></td><td>State sample count, interval, aggregation unit, and interpolation method.</td></tr>
+              <tr><td>Goodput</td><td><code>G = successful SLO-compliant work / time</code></td><td>Declare latency, quality, correctness, and completion gates.</td></tr>
+              <tr><td>Error-budget fraction</td><td><code>1 − SLO target</code></td><td>A 99.9% success SLO permits 0.1% unsuccessful events over its defined window and population.</td></tr>
+              <tr><td>Availability capacity</td><td><code>surviving capacity − surviving load</code></td><td>Evaluate each declared failure, topology, and compliant route—not only aggregate fleet totals.</td></tr>
+              <tr><td>Cost per million good tokens</td><td><code>$/h ÷ G(tokens/s) ÷ 3600 × 10⁶</code></td><td>Include host, network, storage, idle reserve, support, and rollout overhead for full cost.</td></tr>
+              <tr><td>Cold-start budget</td><td><code>Tready = Σ stage times</code></td><td>Provision + pull + unpack + download + engine + warm-up; use percentile, not best case.</td></tr>
+            </tbody>
+          </table>
+          <div class="callout">
+            <strong>SLO example:</strong> “Over a rolling 28-day window, 99% of eligible interactive requests complete successfully; 95% have TTFT ≤ 1.2 s; 99% of emitted token gaps are ≤ 100 ms; results are segmented by model and region.” This is measurable. “The API should feel fast” is not.
+          </div>
+        </section>
+
+        <section id="incidents" class="content-section" data-search-group="Operations" data-search-item data-keywords="incident scenario troubleshooting runbook">
+          <div class="section-heading">
+            <div><p class="eyebrow">Practice under pressure</p><h2>Incident scenarios</h2></div>
+            <p>Start with user impact, preserve evidence, reduce blast radius, and test one hypothesis at a time.</p>
+          </div>
+          <div class="card-grid">
+            <article class="card">
+              <h3>Incident A: p99 TTFT rises, GPU average looks low</h3>
+              <p><strong>Clues:</strong> p50 unchanged, one replica has a deep token queue, cache-affinity routing is strict. <strong>Response:</strong> cap affinity, rebalance by estimated work, inspect telemetry freshness, and compare per-replica queue age. <strong>Lesson:</strong> fleet-average utilization concealed a hot spot and saturation.</p>
+            </article>
+            <article class="card">
+              <h3>Incident B: deployment causes broken streams</h3>
+              <p><strong>Clues:</strong> ordinary requests succeed, SSE disconnects align with pod termination at 30 seconds. <strong>Response:</strong> pause rollout, restore old replicas, lengthen grace based on p99 stream duration, mark unready before drain, and verify proxy endpoint propagation. <strong>Lesson:</strong> HTTP health did not represent connection lifecycle.</p>
+            </article>
+            <article class="card">
+              <h3>Incident C: autoscaler adds replicas but queue grows</h3>
+              <p><strong>Clues:</strong> desired count increases, pending replicas take eight minutes to become ready, traffic burst lasts four. <strong>Response:</strong> shed low priority, apply output limits, use warm capacity, and forecast at cold-start horizon. <strong>Lesson:</strong> nominal replicas are not ready capacity.</p>
+            </article>
+            <article class="card">
+              <h3>Incident D: one cloud region fails</h3>
+              <p><strong>Clues:</strong> healthy alternate region is not residency-eligible for half the tenants. <strong>Response:</strong> apply tenant-specific routes, preserve compliant traffic, communicate degraded SLO, and activate qualified capacity. <strong>Lesson:</strong> healthy and eligible are different sets.</p>
+            </article>
+            <article class="card">
+              <h3>Incident E: new GPU appears slower</h3>
+              <p><strong>Clues:</strong> benchmark used a fallback kernel, different engine version, and power cap. <strong>Response:</strong> freeze the envelope, verify supported precision and shape, inspect kernel selection, warm thoroughly, and report clocks. <strong>Lesson:</strong> generation names do not execute workloads—complete systems do.</p>
+            </article>
+            <article class="card">
+              <h3>Incident F: container restart loop</h3>
+              <p><strong>Clues:</strong> liveness begins at 20 seconds; model needs 150 seconds to load. <strong>Response:</strong> add a startup probe, separate liveness/readiness, and measure start-to-ready p99. <strong>Lesson:</strong> health probes are control inputs, not decorative endpoints.</p>
+            </article>
+          </div>
+          <h3>Universal first ten minutes</h3>
+          <ol class="compact-list">
+            <li>Declare severity, affected models/regions/cohorts, start time, and user-visible symptom.</li>
+            <li>Freeze risky deploys and configuration changes; preserve logs, traces, metric labels, and artifact digests.</li>
+            <li>Reduce blast radius: rollback, shift traffic within eligibility, shed low priority, or cap expensive request shapes.</li>
+            <li>Check demand versus departures, queue age, ready capacity, saturation by bottleneck, and p50/p95/p99 TTFT/ITL.</li>
+            <li>Communicate current facts, uncertainty, mitigation, and next update time. Do not wait for root cause before protecting users.</li>
+          </ol>
+        </section>
+
+        <section id="deployment-checklist" class="content-section" data-search-group="Operations" data-search-item data-keywords="deployment checklist production readiness">
+          <div class="section-heading">
+            <div><p class="eyebrow">Ship deliberately</p><h2>Production deployment checklist</h2></div>
+            <p>A checklist is useful only when every box points to evidence, an owner, and a rollback condition.</p>
+          </div>
+          <div class="two-col">
+            <div>
+              <h3>Artifact and runtime</h3>
+              <ul class="checklist">
+                <li>Image and model are immutable, signed/verified, scanned, and pinned by digest.</li>
+                <li>Driver, CUDA user space, engine, kernels, and exact GPU SKU are qualified together.</li>
+                <li>Tokenizer, chat template, adapter, precision, and configuration versions are recorded.</li>
+                <li>Secrets arrive at runtime with least privilege; no secret exists in an image layer.</li>
+                <li>Non-root, read-only filesystem, device restriction, network policy, and resource limits are tested.</li>
+              </ul>
+              <h3>Capacity and traffic</h3>
+              <ul class="checklist">
+                <li>Weights, KV, workspace, fragmentation, and surge fit with measured headroom.</li>
+                <li>Safe concurrency and goodput come from representative load including long prompts.</li>
+                <li>N+1 or declared failure capacity is ready across appropriate domains.</li>
+                <li>Queues are bounded by size/age; quotas, deadlines, retry budgets, and shedding are configured.</li>
+                <li>Prefix/adapter affinity has load-aware fallback; SSE proxy buffering is disabled.</li>
+              </ul>
+            </div>
+            <div>
+              <h3>Health and rollout</h3>
+              <ul class="checklist">
+                <li>Startup, liveness, and readiness answer distinct questions and have tested timing.</li>
+                <li>Canary/control cohorts are stable and representative; gates include quality and tails.</li>
+                <li>Maximum unavailable/surge preserves capacity at peak-safe load.</li>
+                <li>Rollback restores image, model, tokenizer, config, routes, and compatible state.</li>
+                <li>Readiness-off, endpoint propagation, ordinary drain, SSE drain, flush, and forced deadline are rehearsed.</li>
+              </ul>
+              <h3>Observability and governance</h3>
+              <ul class="checklist">
+                <li>Dashboards show queue, ready capacity, TTFT/ITL percentiles, goodput, KV, errors, and cost by version.</li>
+                <li>Alerts map to user-impacting SLOs and contain runbook links.</li>
+                <li>Residency, retention, access, encryption, audit, and failover eligibility are enforced.</li>
+                <li>On-demand quota and interruption playbooks are tested; hidden shared dependencies are documented.</li>
+                <li>Owners, incident channel, decision log, and post-release observation window are named.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section id="glossary" class="content-section" data-search-group="Reference" data-search-item>
+          <div class="section-heading">
+            <div><p class="eyebrow">Vocabulary</p><h2>Production inference glossary</h2></div>
+            <p>Short definitions for more than fifty terms used throughout this phase.</p>
+          </div>
+          <dl class="glossary-grid">
+            <div><dt>Active-active</dt><dd>Multiple sites simultaneously serve live traffic.</dd></div>
+            <div><dt>Active-passive</dt><dd>A primary serves while a standby waits at a defined warmth.</dd></div>
+            <div><dt>Admission control</dt><dd>Accept, queue, degrade, or reject work before unsafe overload.</dd></div>
+            <div><dt>Arithmetic intensity</dt><dd>Operations performed per byte moved.</dd></div>
+            <div><dt>Autoscaling window</dt><dd>Observation interval used to make a scaling decision.</dd></div>
+            <div><dt>Batch</dt><dd>Work executed together in one engine iteration.</dd></div>
+            <div><dt>Blue-green</dt><dd>Parallel old/new fleets with a controlled traffic switch.</dd></div>
+            <div><dt>Cache affinity</dt><dd>Preference for a replica holding reusable state.</dd></div>
+            <div><dt>Canary</dt><dd>Small, increasing exposure to a new version with gates.</dd></div>
+            <div><dt>Cold start</dt><dd>Elapsed time from absent capacity to ready service.</dd></div>
+            <div><dt>Coalescing</dt><dd>Combining neighboring thread memory accesses efficiently.</dd></div>
+            <div><dt>Concurrency</dt><dd>Requests admitted or active at the same time.</dd></div>
+            <div><dt>Container</dt><dd>An isolated running process created from an image.</dd></div>
+            <div><dt>Continuous batching</dt><dd>Refilling batch slots between decode iterations.</dd></div>
+            <div><dt>Control plane</dt><dd>Systems managing desired state, policy, and orchestration.</dd></div>
+            <div><dt>CUDA</dt><dd>NVIDIA's programming and runtime platform for GPU computation.</dd></div>
+            <div><dt>Data residency</dt><dd>Constraint on geographic storage or processing of data.</dd></div>
+            <div><dt>Deadline</dt><dd>Time after which work no longer has service value.</dd></div>
+            <div><dt>Decode</dt><dd>Autoregressive phase generating successive output tokens.</dd></div>
+            <div><dt>Digest</dt><dd>Content-derived immutable identifier for an artifact.</dd></div>
+            <div><dt>Drain</dt><dd>Stop new work and wait for in-flight work to finish.</dd></div>
+            <div><dt>Error budget</dt><dd>Unreliability permitted by an SLO over a window.</dd></div>
+            <div><dt>Failure domain</dt><dd>Resources likely to fail together.</dd></div>
+            <div><dt>Goodput</dt><dd>Successful SLO-compliant useful work per unit time.</dd></div>
+            <div><dt>Graceful shutdown</dt><dd>Unready, drain, flush, and exit before forced termination.</dd></div>
+            <div><dt>HBM</dt><dd>High Bandwidth Memory holding large GPU-resident state.</dd></div>
+            <div><dt>Head-of-line blocking</dt><dd>One long item delays work behind it.</dd></div>
+            <div><dt>Headroom</dt><dd>Safe capacity intentionally above planned demand.</dd></div>
+            <div><dt>Image</dt><dd>Immutable layered package used to start containers.</dd></div>
+            <div><dt>ITL</dt><dd>Inter-token latency between adjacent streamed tokens.</dd></div>
+            <div><dt>KV cache</dt><dd>Stored attention keys/values reused during generation.</dd></div>
+            <div><dt>L2 cache</dt><dd>Shared on-chip cache between SMs and HBM.</dd></div>
+            <div><dt>Little's Law</dt><dd>Stable average concurrency equals rate times time.</dd></div>
+            <div><dt>Liveness</dt><dd>Health answer to “should this process restart?”</dd></div>
+            <div><dt>Load balancer</dt><dd>Distributes traffic among healthy eligible endpoints.</dd></div>
+            <div><dt>MIG</dt><dd>Multi-Instance GPU hardware partitioning on supported devices.</dd></div>
+            <div><dt>N+1</dt><dd>Capacity for demand after one named unit fails.</dd></div>
+            <div><dt>NIM</dt><dd>NVIDIA's productized inference microservice/container concept.</dd></div>
+            <div><dt>On-demand</dt><dd>Flexible capacity acquired without a long commitment.</dd></div>
+            <div><dt>Occupancy</dt><dd>Resident warps relative to an SM's supported maximum.</dd></div>
+            <div><dt>p50</dt><dd>Median: half of observations are at or below it.</dd></div>
+            <div><dt>p95</dt><dd>Value at or below which 95% of observations fall.</dd></div>
+            <div><dt>p99</dt><dd>Value at or below which 99% of observations fall.</dd></div>
+            <div><dt>Pipeline parallelism</dt><dd>Model stages placed on different devices.</dd></div>
+            <div><dt>Prefill</dt><dd>Prompt-processing phase that initializes KV state.</dd></div>
+            <div><dt>Queue</dt><dd>Work waiting for service under an ordering policy.</dd></div>
+            <div><dt>Readiness</dt><dd>Health answer to “should this receive new traffic?”</dd></div>
+            <div><dt>Register</dt><dd>Very fast per-thread storage on an SM.</dd></div>
+            <div><dt>Replica</dt><dd>An independent serving copy of a model service.</dd></div>
+            <div><dt>Reserved capacity</dt><dd>Supply or spend committed for a term.</dd></div>
+            <div><dt>Rollback</dt><dd>Restoration of known-safe artifacts and traffic state.</dd></div>
+            <div><dt>Router</dt><dd>Application-aware component selecting a destination.</dd></div>
+            <div><dt>Saturation</dt><dd>Demand reaches effective capacity and additional work waits or sheds.</dd></div>
+            <div><dt>Scale-out</dt><dd>Adding nodes/replicas across a network.</dd></div>
+            <div><dt>Scale-up fabric</dt><dd>Fast interconnect among tightly coupled devices.</dd></div>
+            <div><dt>Shared memory</dt><dd>Programmer-managed on-chip memory shared within a block.</dd></div>
+            <div><dt>SLO</dt><dd>Measurable reliability/performance objective over a population and window.</dd></div>
+            <div><dt>SM</dt><dd>Streaming multiprocessor that schedules GPU warps.</dd></div>
+            <div><dt>Spot capacity</dt><dd>Discounted resources that may be preempted.</dd></div>
+            <div><dt>SSE</dt><dd>Server-Sent Events over a long-lived HTTP response.</dd></div>
+            <div><dt>Tail latency</dt><dd>Slow-end behavior represented by high percentiles.</dd></div>
+            <div><dt>Tensor Core</dt><dd>Specialized hardware for supported matrix operations.</dd></div>
+            <div><dt>Tensor parallelism</dt><dd>Splitting one tensor operation across devices.</dd></div>
+            <div><dt>Throughput</dt><dd>Total completed work per unit time, regardless of SLO unless qualified.</dd></div>
+            <div><dt>TTFT</dt><dd>Time from request arrival until first output token.</dd></div>
+            <div><dt>Utilization</dt><dd>Fraction of resource capacity/activity used over an interval.</dd></div>
+            <div><dt>VRAM</dt><dd>GPU-attached memory; datacenter accelerators often use HBM.</dd></div>
+            <div><dt>Warm pool</dt><dd>Pre-provisioned capacity kept partly or fully initialized.</dd></div>
+            <div><dt>Warp</dt><dd>Fixed group of GPU threads issued together.</dd></div>
+            <div><dt>Workload plane</dt><dd>Regional systems that carry actual inference requests.</dd></div>
+          </dl>
+        </section>
+
+        <section id="capstone" class="content-section" data-search-group="Capstone" data-search-item data-keywords="capstone architecture exercise production design">
+          <div class="section-heading">
+            <div><p class="eyebrow">Final exercise</p><h2>Capstone: design a production inference service</h2></div>
+            <p>No GPU is required. The deliverable is a reasoned architecture, capacity workbook, failure analysis, and rollout plan.</p>
+          </div>
+          <div class="callout">
+            <h3>Scenario</h3>
+            <p>
+              Build “TutorStream,” a streaming educational assistant serving two model classes: a small interactive model and a larger premium model. Peak demand is 18 requests/s, p95 prompt is 2,000 tokens, p95 output is 500 tokens, and 30% of traffic shares one of twenty system prompts. The product requires TTFT p95 ≤ 1.5 s, ITL p95 ≤ 80 ms, 99.9% monthly request success, EU residency for EU schools, and a maximum 15-minute regional recovery. Traffic has a predictable weekday peak plus occasional 3× five-minute bursts. A new model ships weekly.
+            </p>
+          </div>
+          <h3>Required architecture</h3>
+          <div class="diagram horizontal" role="img" aria-label="Capstone reference architecture">
+            <div class="diagram-node"><strong>Global edge</strong><small>identity, residency, region</small></div>
+            <div class="diagram-node"><strong>Regional router</strong><small>model, token load, cache</small></div>
+            <div class="diagram-node"><strong>Bounded queues</strong><small>tier, deadline, shedding</small></div>
+            <div class="diagram-node"><strong>Model pools</strong><small>ready replicas + warm pool</small></div>
+            <div class="diagram-node"><strong>Telemetry</strong><small>SLO, traces, quality, cost</small></div>
+            <div class="diagram-node"><strong>Release plane</strong><small>canary, drain, rollback</small></div>
+          </div>
+          <h3>Work products</h3>
+          <ol class="exercise-list">
+            <li><strong>Assumption register:</strong> exact model sizes, precision, measured bytes/token, safe goodput/replica, cold-start percentiles, prices, and source dates. Mark unknowns as ranges.</li>
+            <li><strong>Capacity workbook:</strong> weights + KV + workspace; concurrency under p50/p95 lengths; replicas from goodput; N+1 host and regional failover; warm-pool size for the 3× burst.</li>
+            <li><strong>Hardware plan:</strong> whole GPU versus MIG for each pool, any tensor-parallel boundary, and a responsible Hopper/Ada/Blackwell qualification scorecard without unverified claims.</li>
+            <li><strong>Container contract:</strong> artifact digests, GPU runtime compatibility, startup/liveness/readiness truth table, model cache, security controls, and start-to-ready budget.</li>
+            <li><strong>Routing policy:</strong> residency eligibility, premium fairness, estimated-token load, bounded prefix affinity, queue size/age, retry budget, and SSE behavior.</li>
+            <li><strong>Supply portfolio:</strong> reserved baseline, on-demand buffer, optional spot batch work, provider quota, egress assumptions, and a control-plane outage mode.</li>
+            <li><strong>Release plan:</strong> canary cohorts and steps, concurrent control, quality/system/cost gates, maximum unavailable/surge, graceful stream draining, and complete rollback unit.</li>
+            <li><strong>Incident game:</strong> simulate one host loss, EU region loss, registry outage, 8-minute cold start, cache-hot replica overload, and a canary quality regression.</li>
+          </ol>
+          <h3>Self-evaluation rubric</h3>
+          <table class="metric-table">
+            <thead><tr><th>Area</th><th>Strong answer</th><th>Warning sign</th></tr></thead>
+            <tbody>
+              <tr><td>Numbers</td><td>Units, distributions, sensitivity ranges, and measured replacements are explicit.</td><td>One average or peak-marketing number drives the plan.</td></tr>
+              <tr><td>SLO</td><td>TTFT, ITL, success, quality, window, and eligible population are defined.</td><td>Only “low latency” or average response time is stated.</td></tr>
+              <tr><td>Failure</td><td>Each named failure has surviving compliant capacity and a practiced response.</td><td>“Multi-cloud” or “Kubernetes” is treated as automatic resilience.</td></tr>
+              <tr><td>Change</td><td>Canary evidence, drain, SSE behavior, and rollback are executable.</td><td>Deployment stops at “health check passed.”</td></tr>
+              <tr><td>Economics</td><td>Cost per good token includes idle, headroom, and overlap.</td><td>Only hourly GPU sticker price is compared.</td></tr>
+            </tbody>
+          </table>
+          <div class="bridge-box">
+            <strong>Completion test:</strong> hand your design to another beginner. They should be able to trace one request from regional eligibility through queue, prefill, streamed tokens, metrics, drain, and failover—and explain every capacity number without needing hidden assumptions.
+          </div>
+        </section>
+
+        <footer class="content-section">
+          <p class="mini-note">
+            This page provides original educational explanations derived from the project's learning sequence and code concepts. Product capabilities, prices, specifications, support matrices, and regulatory requirements change; verify them with current authoritative sources before a production decision.
+          </p>
+        </footer>
+      </main>
+    </div>
+    <a class="back-to-top" href="#overview" aria-label="Back to top">↑</a>
+  </body>
+</html>

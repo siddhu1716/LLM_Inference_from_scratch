@@ -10,7 +10,7 @@
     <meta name="theme-color" content="#3156d3">
     <title>26-Day Curriculum | LLM Inference from Scratch</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%233156d3'/><text x='32' y='40' text-anchor='middle' font-size='24' font-family='sans-serif' font-weight='700' fill='white'>LLM</text></svg>">
-    <link rel="stylesheet" href="styles.css?v=2">
+    <link rel="stylesheet" href="styles.css?v=6">
     <script src="app.js?v=2" defer></script>
   </head>
   <body>
@@ -103,6 +103,7 @@
             <div>
               <span class="phase-number">Phase 01 · Days 1-5</span>
               <h2>Model mechanics</h2>
+              <a class="volume-link" href="notes/phase-1-mechanics.html">Read the complete Phase 1 textbook →</a>
             </div>
             <p>Build the token-level mental model before discussing serving optimizations.</p>
           </div>
@@ -113,6 +114,7 @@
               <p>Trace tokenize → prefill → sample → one-token decode → stop. Separate model math from engine policy.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> Why does decode process one new query position but read an ever-growing history?</p>
               <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/sync_engine.py">engine/sync_engine.py</a>
+              <br><a class="notes-link" href="notes/phase-1-mechanics.html#day-1">Read detailed Day 1 notes</a>
             </article>
             <article id="day-02" class="day-card" data-search-item data-keywords="parameters layers tokenizer vocabulary">
               <span class="day-label">Day 02</span>
@@ -120,6 +122,7 @@
               <p>Connect configuration, tensors, vocabulary, layers, and parameter shapes. Tokenization is part of the deployed model contract.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> Which configuration values determine attention and MLP weight shapes?</p>
               <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/common/config.py">common/config.py</a>
+              <br><a class="notes-link" href="notes/phase-1-mechanics.html#day-2">Read detailed Day 2 notes</a>
             </article>
             <article id="day-03" class="day-card" data-search-item data-keywords="embedding linear projection logits">
               <span class="day-label">Day 03</span>
@@ -127,6 +130,7 @@
               <p>Follow an integer token through embedding lookup, residual space, normalization, and the vocabulary projection.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> What changes when input and output embedding weights are tied?</p>
               <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/backends/python/embedding.py">backends/python/embedding.py</a>
+              <br><a class="notes-link" href="notes/phase-1-mechanics.html#day-3">Read detailed Day 3 notes</a>
             </article>
             <article id="day-04" class="day-card" data-search-item data-keywords="attention QKV causal softmax rope gqa">
               <span class="day-label">Day 04</span>
@@ -134,6 +138,7 @@
               <p>Derive QKᵀ scaling, causal visibility, softmax weighting, RoPE positions, and grouped-query key/value sharing.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> Why can GQA reduce KV memory without reducing the number of query heads?</p>
               <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/backends/python/attention.py">backends/python/attention.py</a>
+              <br><a class="notes-link" href="notes/phase-1-mechanics.html#day-4">Read detailed Day 4 notes</a>
             </article>
             <article id="day-05" class="day-card" data-search-item data-keywords="kv cache memory latency recomputation">
               <span class="day-label">Day 05</span>
@@ -141,6 +146,7 @@
               <p>Trade extra memory for avoided attention recomputation. Inspect cache growth by layer, token, KV head, and head dimension.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> Why does KV caching improve compute while making capacity planning harder?</p>
               <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/kv_cache_estimator.py">optimizations/kv_cache_estimator.py</a>
+              <br><a class="notes-link" href="notes/phase-1-mechanics.html#day-5">Read detailed Day 5 notes</a>
             </article>
           </div>
         </section>
@@ -150,6 +156,7 @@
             <div>
               <span class="phase-number">Phase 02 · Days 6-12</span>
               <h2>Performance and inference engines</h2>
+              <a class="volume-link" href="notes/phase-2-engines.html">Read the complete Phase 2 textbook →</a>
             </div>
             <p>Explain where time and memory go before selecting an optimization.</p>
           </div>
@@ -159,6 +166,7 @@
               <h3>Ops-to-byte ratio and roofline thinking</h3>
               <p>Classify prefill and decode with arithmetic intensity. Batching can move decode toward better hardware utilization by reusing weights.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> When does adding FLOPs not materially increase latency?</p>
+              <a class="notes-link" href="notes/phase-2-engines.html#day-06">Read detailed Day 6 notes</a>
             </article>
             <article id="day-07" class="day-card" data-search-item data-keywords="cuda kernel fusion flash attention launch overhead">
               <span class="day-label">Day 07</span>
@@ -166,6 +174,7 @@
               <p>Distinguish algorithmic work from memory traffic and launch overhead. Understand why fused kernels keep intermediates close to compute.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> What traffic does online-softmax attention avoid materializing?</p>
               <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/flash_attention.py">optimizations/flash_attention.py</a>
+              <br><a class="notes-link" href="notes/phase-2-engines.html#day-07">Read detailed Day 7 notes</a>
             </article>
             <article id="day-08" class="day-card" data-search-item data-keywords="pytorch safetensors onnx tensorrt model format runtime">
               <span class="day-label">Day 08</span>
@@ -173,6 +182,7 @@
               <p>Separate a weight container from a computation graph and an execution engine. Portability and peak performance are different goals.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> What information is present in SafeTensors but absent from an execution plan?</p>
               <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/weight_loading.py">optimizations/weight_loading.py</a>
+              <br><a class="notes-link" href="notes/phase-2-engines.html#day-08">Read detailed Day 8 notes</a>
             </article>
             <article id="day-09" class="day-card" data-search-item data-keywords="vllm paged attention block allocator fragmentation">
               <span class="day-label">Day 09</span>
@@ -180,6 +190,7 @@
               <p>Map logical token blocks to noncontiguous physical KV blocks. Allocation, copy-on-write, reclamation, and scheduling become coupled.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> Which fragmentation problem does paging reduce, and what metadata does it add?</p>
               <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/paged_kv_cache.py">engine/paged_kv_cache.py</a>
+              <br><a class="notes-link" href="notes/phase-2-engines.html#day-09">Read detailed Day 9 notes</a>
             </article>
             <article id="day-10" class="day-card" data-search-item data-keywords="sglang radix attention prefix trie reuse">
               <span class="day-label">Day 10</span>
@@ -187,12 +198,14 @@
               <p>Use longest-prefix matching over token sequences, preserve shared immutable cache ranges, and evict only cold unreferenced branches.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> Why must cache identity include model and adapter state, not text alone?</p>
               <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/prefix_cache.py">engine/prefix_cache.py</a>
+              <br><a class="notes-link" href="notes/phase-2-engines.html#day-10">Read detailed Day 10 notes</a>
             </article>
             <article id="day-11" class="day-card" data-search-item data-keywords="tensorrt llm plugins engine build">
               <span class="day-label">Day 11</span>
               <h3>TensorRT-LLM</h3>
               <p>Study engine building, graph specialization, plugin kernels, quantized execution, and the portability-versus-specialization tradeoff.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> Why can an ahead-of-time engine outperform eager execution yet be less flexible?</p>
+              <a class="notes-link" href="notes/phase-2-engines.html#day-11">Read detailed Day 11 notes</a>
             </article>
             <article id="day-12" class="day-card" data-search-item data-keywords="nvidia dynamo disaggregated serving routing orchestration">
               <span class="day-label">Day 12</span>
@@ -200,6 +213,7 @@
               <p>Place engines inside a serving fabric with routing, KV transfer, observability, and independent prefill/decode resource pools.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> Which responsibilities belong to the engine, and which belong to the serving control plane?</p>
               <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/disaggregated_routing.py">optimizations/disaggregated_routing.py</a>
+              <br><a class="notes-link" href="notes/phase-2-engines.html#day-12">Read detailed Day 12 notes</a>
             </article>
           </div>
         </section>
@@ -209,6 +223,7 @@
             <div>
               <span class="phase-number">Phase 03 · Days 13-18</span>
               <h2>Optimization and scale-out</h2>
+              <a class="volume-link" href="notes/phase-3-optimization.html">Read the complete Phase 3 textbook →</a>
             </div>
             <p>Reduce bytes, predict more tokens per target pass, and partition work deliberately.</p>
           </div>
@@ -218,6 +233,7 @@
               <h3>Number formats</h3>
               <p>Reason about exponent range, mantissa precision, integer scales, accumulation dtype, memory footprint, and hardware support.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> Why is a smaller dtype not automatically faster on every device?</p>
+              <a class="notes-link" href="notes/phase-3-optimization.html#day-13">Read detailed Day 13 notes</a>
             </article>
             <article id="day-14" class="day-card" data-search-item data-keywords="gptq awq smoothquant quantization calibration outliers">
               <span class="day-label">Day 14</span>
@@ -225,6 +241,7 @@
               <p>Contrast weight-only error minimization, activation-aware channel protection, and migration of activation outliers into weights.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> How do calibration data and group size affect quality and metadata overhead?</p>
               <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/int4_quantization.py">optimizations/int4_quantization.py</a>
+              <br><a class="notes-link" href="notes/phase-3-optimization.html#day-14">Read detailed Day 14 notes</a>
             </article>
             <article id="day-15" class="day-card" data-search-item data-keywords="speculative decoding draft verify rejection eagle">
               <span class="day-label">Day 15</span>
@@ -232,6 +249,7 @@
               <p>Let a cheap proposer draft several tokens, verify them in one target pass, and preserve the target distribution with rejection sampling.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> Which acceptance rate and cost ratios are required for a latency win?</p>
               <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/speculative_decoding.py">optimizations/speculative_decoding.py</a>
+              <br><a class="notes-link" href="notes/phase-3-optimization.html#day-15">Read detailed Day 15 notes</a>
             </article>
             <article id="day-16" class="day-card" data-search-item data-keywords="prefix caching cache aware routing offload recompute">
               <span class="day-label">Day 16</span>
@@ -239,6 +257,7 @@
               <p>Route requests toward reusable KV state. Compare remote transfer, lower-tier offload, recomputation, and eviction under pressure.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> When can a cache-aware router create load imbalance?</p>
               <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/cache_aware_scheduler.py">engine/cache_aware_scheduler.py</a>
+              <br><a class="notes-link" href="notes/phase-3-optimization.html#day-16">Read detailed Day 16 notes</a>
             </article>
             <article id="day-17" class="day-card" data-search-item data-keywords="tensor pipeline data expert parallelism collectives">
               <span class="day-label">Day 17</span>
@@ -246,6 +265,7 @@
               <p>Partition tensor operations, layer stages, replicas, experts, or sequence context. Match communication patterns to the interconnect.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> Why can more GPUs increase latency when collective communication dominates?</p>
               <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/parallel_planning.py">optimizations/parallel_planning.py</a>
+              <br><a class="notes-link" href="notes/phase-3-optimization.html#day-17">Read detailed Day 17 notes</a>
             </article>
             <article id="day-18" class="day-card" data-search-item data-keywords="prefill decode disaggregation kv transfer">
               <span class="day-label">Day 18</span>
@@ -253,6 +273,7 @@
               <p>Isolate compute-heavy prompt work from bandwidth-sensitive decode, then account for KV transfer, queueing, and pool imbalance.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> When does KV transfer erase the benefit of specialized worker pools?</p>
               <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/disaggregated_routing.py">optimizations/disaggregated_routing.py</a>
+              <br><a class="notes-link" href="notes/phase-3-optimization.html#day-18">Read detailed Day 18 notes</a>
             </article>
           </div>
         </section>
@@ -262,6 +283,7 @@
             <div>
               <span class="phase-number">Phase 04 · Days 19-26</span>
               <h2>Production inference engineering</h2>
+              <a class="volume-link" href="notes/phase-4-production.html">Read the complete Phase 4 textbook →</a>
             </div>
             <p>Operate the system under real hardware, traffic, capacity, and deployment constraints.</p>
           </div>
@@ -271,48 +293,56 @@
               <h3>GPU architecture: SMs to HBM</h3>
               <p>Connect warps, SM occupancy, registers, shared memory, L2, and HBM to kernel latency and bandwidth hiding.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> Why can higher occupancy fail to improve a memory-bound kernel?</p>
+              <a class="notes-link" href="notes/phase-4-production.html#day-19">Read detailed Day 19 notes</a>
             </article>
             <article id="day-20" class="day-card" data-search-item data-keywords="hopper blackwell tensor cores fp8 fp4">
               <span class="day-label">Day 20</span>
               <h3>GPU generations</h3>
               <p>Compare features rather than marketing peaks: supported dtypes, tensor-core paths, HBM capacity/bandwidth, interconnect, and software maturity.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> Which workload measurements justify moving from one accelerator generation to another?</p>
+              <a class="notes-link" href="notes/phase-4-production.html#day-20">Read detailed Day 20 notes</a>
             </article>
             <article id="day-21" class="day-card" data-search-item data-keywords="mig multi instance gpu isolation capacity">
               <span class="day-label">Day 21</span>
               <h3>Multi-Instance GPU</h3>
               <p>Use hardware partitioning for isolation and right-sizing, while checking model fit, KV headroom, fragmentation, and traffic variance.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> When is a full shared GPU preferable to several isolated MIG slices?</p>
+              <a class="notes-link" href="notes/phase-4-production.html#day-21">Read detailed Day 21 notes</a>
             </article>
             <article id="day-22" class="day-card" data-search-item data-keywords="docker nim container cuda runtime healthcheck">
               <span class="day-label">Day 22</span>
               <h3>Containers and deployable artifacts</h3>
               <p>Pin drivers/runtime compatibility, engine assets, tokenizer/config, startup probes, model loading, and immutable version identity.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> Why should readiness differ from process liveness during model load?</p>
+              <a class="notes-link" href="notes/phase-4-production.html#day-22">Read detailed Day 22 notes</a>
             </article>
             <article id="day-23" class="day-card" data-search-item data-keywords="autoscaling concurrency cold start warm pool scale zero">
               <span class="day-label">Day 23</span>
               <h3>Autoscaling, concurrency, and cold starts</h3>
               <p>Scale on queue and service signals, not CPU alone. Balance warm-pool cost against model-load delay and burst absorption.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> Which signal predicts SLO failure earlier: GPU utilization or queue delay?</p>
+              <a class="notes-link" href="notes/phase-4-production.html#day-23">Read detailed Day 23 notes</a>
             </article>
             <article id="day-24" class="day-card" data-search-item data-keywords="routing load balancing queueing little law tail latency priority">
               <span class="day-label">Day 24</span>
               <h3>Routing, load balancing, and queueing</h3>
               <p>Use Little's Law, utilization headroom, deadlines, fairness, and cache locality to reason about p99 latency—not only average throughput.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> Why does latency rise nonlinearly as utilization approaches saturation?</p>
+              <a class="notes-link" href="notes/phase-4-production.html#day-24">Read detailed Day 24 notes</a>
             </article>
             <article id="day-25" class="day-card" data-search-item data-keywords="multi cloud capacity reserved spot reliability compliance">
               <span class="day-label">Day 25</span>
               <h3>Multi-cloud capacity</h3>
               <p>Combine reserved, on-demand, and interruptible capacity while preserving model parity, compliance boundaries, and failover behavior.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> Which state must move—or be recomputed—during regional failover?</p>
+              <a class="notes-link" href="notes/phase-4-production.html#day-25">Read detailed Day 25 notes</a>
             </article>
             <article id="day-26" class="day-card" data-search-item data-keywords="zero downtime canary blue green draining rollback cost">
               <span class="day-label">Day 26</span>
               <h3>Zero-downtime deployment and cost</h3>
               <p>Canary model/runtime changes, drain in-flight generations, preserve streaming, define rollback signals, and track cost per useful token.</p>
               <p class="checkpoint"><strong>Checkpoint:</strong> Why must drain timeout exceed a high percentile of generation duration?</p>
+              <a class="notes-link" href="notes/phase-4-production.html#day-26">Read detailed Day 26 notes</a>
             </article>
           </div>
         </section>
