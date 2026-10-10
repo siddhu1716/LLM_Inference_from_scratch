@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="A 26-day inference engineering curriculum from model mechanics through GPU systems, capacity planning, and safe deployment."
+    >
+    <meta name="theme-color" content="#3156d3">
+    <title>26-Day Curriculum | LLM Inference from Scratch</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%233156d3'/><text x='32' y='40' text-anchor='middle' font-size='24' font-family='sans-serif' font-weight='700' fill='white'>LLM</text></svg>">
+    <link rel="stylesheet" href="styles.css?v=2">
+    <script src="app.js?v=2" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="index.html" aria-label="Return to the systems guide">
+          <span class="brand-mark" aria-hidden="true">LLM</span>
+          <span class="brand-text">Inference from Scratch</span>
+        </a>
+        <div class="search-wrap">
+          <label for="site-search" aria-hidden="true">⌕</label>
+          <input
+            id="site-search"
+            type="search"
+            placeholder="Search days and concepts"
+            autocomplete="off"
+            aria-controls="search-results"
+            aria-label="Search the curriculum"
+          >
+          <kbd class="search-key" aria-hidden="true">Ctrl K</kbd>
+          <ul id="search-results" class="search-results" aria-label="Search results" hidden></ul>
+        </div>
+        <div class="top-actions">
+          <button class="icon-button theme-button" type="button" data-theme-toggle aria-label="Change color theme">
+            <span data-theme-icon aria-hidden="true">◐</span>
+          </button>
+          <button
+            class="icon-button menu-button"
+            type="button"
+            data-menu-toggle
+            aria-label="Open section navigation"
+            aria-controls="section-navigation"
+            aria-expanded="false"
+          >
+            <span aria-hidden="true">☰</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside id="section-navigation" class="sidebar" aria-label="Curriculum navigation">
+        <p class="sidebar-title">26-day track</p>
+        <nav>
+          <ul class="nav-list">
+            <li><a href="#curriculum-overview" aria-current="true">Overview</a></li>
+            <li><a href="#phase-one">Days 1-5 · Mechanics</a></li>
+            <li><a href="#phase-two">Days 6-12 · Engines</a></li>
+            <li><a href="#phase-three">Days 13-18 · Optimization</a></li>
+            <li><a href="#phase-four">Days 19-26 · Production</a></li>
+            <li><a href="#core-equations">Core equations</a></li>
+            <li><a href="#production-checklist">Production checklist</a></li>
+            <li><a href="#study-method">Study method</a></li>
+            <li><a href="index.html">Systems guide ↗</a></li>
+          </ul>
+        </nav>
+        <div class="sidebar-note">
+          <strong>Source synthesis</strong><br>
+          This track maps the 100 Days of Inference repository and the
+          <em>Inference Engineering</em> reading journey to original explanations
+          and executable code in this project.
+        </div>
+      </aside>
+
+      <main id="main-content">
+        <section id="curriculum-overview" class="hero curriculum-hero" data-search-group="Curriculum">
+          <p class="eyebrow">From one token to a production fleet</p>
+          <h1>26 days of inference engineering.</h1>
+          <p class="hero-copy">
+            Learn in dependency order: model mechanics first, engine internals next,
+            optimization after correctness, and production operations last. Every day
+            ends with a question you should be able to answer without notes.
+          </p>
+          <div class="hero-actions">
+            <a class="button" href="#phase-one">Begin day 1</a>
+            <a class="button button-secondary" href="index.html">Open the topic guide</a>
+          </div>
+        </section>
+
+        <div class="metric-strip" aria-label="Curriculum summary">
+          <div class="metric"><strong>26</strong><span>guided days</span></div>
+          <div class="metric"><strong>4</strong><span>learning phases</span></div>
+          <div class="metric"><strong>8</strong><span>core equations</span></div>
+          <div class="metric"><strong>1</strong><span>end-to-end mental model</span></div>
+        </div>
+
+        <section id="phase-one" class="content-section" data-search-group="Days 1-5">
+          <div class="phase-banner">
+            <div>
+              <span class="phase-number">Phase 01 · Days 1-5</span>
+              <h2>Model mechanics</h2>
+            </div>
+            <p>Build the token-level mental model before discussing serving optimizations.</p>
+          </div>
+          <div class="curriculum-grid">
+            <article id="day-01" class="day-card" data-search-item data-keywords="autoregressive prefill decode sampling">
+              <span class="day-label">Day 01</span>
+              <h3>Inference mechanics</h3>
+              <p>Trace tokenize → prefill → sample → one-token decode → stop. Separate model math from engine policy.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> Why does decode process one new query position but read an ever-growing history?</p>
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/sync_engine.py">engine/sync_engine.py</a>
+            </article>
+            <article id="day-02" class="day-card" data-search-item data-keywords="parameters layers tokenizer vocabulary">
+              <span class="day-label">Day 02</span>
+              <h3>What lives inside a model?</h3>
+              <p>Connect configuration, tensors, vocabulary, layers, and parameter shapes. Tokenization is part of the deployed model contract.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> Which configuration values determine attention and MLP weight shapes?</p>
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/common/config.py">common/config.py</a>
+            </article>
+            <article id="day-03" class="day-card" data-search-item data-keywords="embedding linear projection logits">
+              <span class="day-label">Day 03</span>
+              <h3>Embeddings and logits</h3>
+              <p>Follow an integer token through embedding lookup, residual space, normalization, and the vocabulary projection.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> What changes when input and output embedding weights are tied?</p>
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/backends/python/embedding.py">backends/python/embedding.py</a>
+            </article>
+            <article id="day-04" class="day-card" data-search-item data-keywords="attention QKV causal softmax rope gqa">
+              <span class="day-label">Day 04</span>
+              <h3>Causal self-attention</h3>
+              <p>Derive QKᵀ scaling, causal visibility, softmax weighting, RoPE positions, and grouped-query key/value sharing.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> Why can GQA reduce KV memory without reducing the number of query heads?</p>
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/backends/python/attention.py">backends/python/attention.py</a>
+            </article>
+            <article id="day-05" class="day-card" data-search-item data-keywords="kv cache memory latency recomputation">
+              <span class="day-label">Day 05</span>
+              <h3>KV caching</h3>
+              <p>Trade extra memory for avoided attention recomputation. Inspect cache growth by layer, token, KV head, and head dimension.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> Why does KV caching improve compute while making capacity planning harder?</p>
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/kv_cache_estimator.py">optimizations/kv_cache_estimator.py</a>
+            </article>
+          </div>
+        </section>
+
+        <section id="phase-two" class="content-section" data-search-group="Days 6-12">
+          <div class="phase-banner">
+            <div>
+              <span class="phase-number">Phase 02 · Days 6-12</span>
+              <h2>Performance and inference engines</h2>
+            </div>
+            <p>Explain where time and memory go before selecting an optimization.</p>
+          </div>
+          <div class="curriculum-grid">
+            <article id="day-06" class="day-card" data-search-item data-keywords="roofline arithmetic intensity bandwidth compute bound">
+              <span class="day-label">Day 06</span>
+              <h3>Ops-to-byte ratio and roofline thinking</h3>
+              <p>Classify prefill and decode with arithmetic intensity. Batching can move decode toward better hardware utilization by reusing weights.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> When does adding FLOPs not materially increase latency?</p>
+            </article>
+            <article id="day-07" class="day-card" data-search-item data-keywords="cuda kernel fusion flash attention launch overhead">
+              <span class="day-label">Day 07</span>
+              <h3>CUDA kernels and fusion</h3>
+              <p>Distinguish algorithmic work from memory traffic and launch overhead. Understand why fused kernels keep intermediates close to compute.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> What traffic does online-softmax attention avoid materializing?</p>
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/flash_attention.py">optimizations/flash_attention.py</a>
+            </article>
+            <article id="day-08" class="day-card" data-search-item data-keywords="pytorch safetensors onnx tensorrt model format runtime">
+              <span class="day-label">Day 08</span>
+              <h3>Model formats and runtimes</h3>
+              <p>Separate a weight container from a computation graph and an execution engine. Portability and peak performance are different goals.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> What information is present in SafeTensors but absent from an execution plan?</p>
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/weight_loading.py">optimizations/weight_loading.py</a>
+            </article>
+            <article id="day-09" class="day-card" data-search-item data-keywords="vllm paged attention block allocator fragmentation">
+              <span class="day-label">Day 09</span>
+              <h3>PagedAttention</h3>
+              <p>Map logical token blocks to noncontiguous physical KV blocks. Allocation, copy-on-write, reclamation, and scheduling become coupled.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> Which fragmentation problem does paging reduce, and what metadata does it add?</p>
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/paged_kv_cache.py">engine/paged_kv_cache.py</a>
+            </article>
+            <article id="day-10" class="day-card" data-search-item data-keywords="sglang radix attention prefix trie reuse">
+              <span class="day-label">Day 10</span>
+              <h3>RadixAttention and prefix reuse</h3>
+              <p>Use longest-prefix matching over token sequences, preserve shared immutable cache ranges, and evict only cold unreferenced branches.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> Why must cache identity include model and adapter state, not text alone?</p>
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/prefix_cache.py">engine/prefix_cache.py</a>
+            </article>
+            <article id="day-11" class="day-card" data-search-item data-keywords="tensorrt llm plugins engine build">
+              <span class="day-label">Day 11</span>
+              <h3>TensorRT-LLM</h3>
+              <p>Study engine building, graph specialization, plugin kernels, quantized execution, and the portability-versus-specialization tradeoff.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> Why can an ahead-of-time engine outperform eager execution yet be less flexible?</p>
+            </article>
+            <article id="day-12" class="day-card" data-search-item data-keywords="nvidia dynamo disaggregated serving routing orchestration">
+              <span class="day-label">Day 12</span>
+              <h3>NVIDIA Dynamo and distributed serving</h3>
+              <p>Place engines inside a serving fabric with routing, KV transfer, observability, and independent prefill/decode resource pools.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> Which responsibilities belong to the engine, and which belong to the serving control plane?</p>
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/disaggregated_routing.py">optimizations/disaggregated_routing.py</a>
+            </article>
+          </div>
+        </section>
+
+        <section id="phase-three" class="content-section" data-search-group="Days 13-18">
+          <div class="phase-banner">
+            <div>
+              <span class="phase-number">Phase 03 · Days 13-18</span>
+              <h2>Optimization and scale-out</h2>
+            </div>
+            <p>Reduce bytes, predict more tokens per target pass, and partition work deliberately.</p>
+          </div>
+          <div class="curriculum-grid">
+            <article id="day-13" class="day-card" data-search-item data-keywords="fp32 bf16 fp16 fp8 int8 int4 number formats">
+              <span class="day-label">Day 13</span>
+              <h3>Number formats</h3>
+              <p>Reason about exponent range, mantissa precision, integer scales, accumulation dtype, memory footprint, and hardware support.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> Why is a smaller dtype not automatically faster on every device?</p>
+            </article>
+            <article id="day-14" class="day-card" data-search-item data-keywords="gptq awq smoothquant quantization calibration outliers">
+              <span class="day-label">Day 14</span>
+              <h3>Quantization methods</h3>
+              <p>Contrast weight-only error minimization, activation-aware channel protection, and migration of activation outliers into weights.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> How do calibration data and group size affect quality and metadata overhead?</p>
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/int4_quantization.py">optimizations/int4_quantization.py</a>
+            </article>
+            <article id="day-15" class="day-card" data-search-item data-keywords="speculative decoding draft verify rejection eagle">
+              <span class="day-label">Day 15</span>
+              <h3>Speculative decoding</h3>
+              <p>Let a cheap proposer draft several tokens, verify them in one target pass, and preserve the target distribution with rejection sampling.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> Which acceptance rate and cost ratios are required for a latency win?</p>
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/speculative_decoding.py">optimizations/speculative_decoding.py</a>
+            </article>
+            <article id="day-16" class="day-card" data-search-item data-keywords="prefix caching cache aware routing offload recompute">
+              <span class="day-label">Day 16</span>
+              <h3>Prefix caching and cache-aware routing</h3>
+              <p>Route requests toward reusable KV state. Compare remote transfer, lower-tier offload, recomputation, and eviction under pressure.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> When can a cache-aware router create load imbalance?</p>
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/cache_aware_scheduler.py">engine/cache_aware_scheduler.py</a>
+            </article>
+            <article id="day-17" class="day-card" data-search-item data-keywords="tensor pipeline data expert parallelism collectives">
+              <span class="day-label">Day 17</span>
+              <h3>Model parallelism</h3>
+              <p>Partition tensor operations, layer stages, replicas, experts, or sequence context. Match communication patterns to the interconnect.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> Why can more GPUs increase latency when collective communication dominates?</p>
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/parallel_planning.py">optimizations/parallel_planning.py</a>
+            </article>
+            <article id="day-18" class="day-card" data-search-item data-keywords="prefill decode disaggregation kv transfer">
+              <span class="day-label">Day 18</span>
+              <h3>Prefill/decode disaggregation</h3>
+              <p>Isolate compute-heavy prompt work from bandwidth-sensitive decode, then account for KV transfer, queueing, and pool imbalance.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> When does KV transfer erase the benefit of specialized worker pools?</p>
+              <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/disaggregated_routing.py">optimizations/disaggregated_routing.py</a>
+            </article>
+          </div>
+        </section>
+
+        <section id="phase-four" class="content-section" data-search-group="Days 19-26">
+          <div class="phase-banner">
+            <div>
+              <span class="phase-number">Phase 04 · Days 19-26</span>
+              <h2>Production inference engineering</h2>
+            </div>
+            <p>Operate the system under real hardware, traffic, capacity, and deployment constraints.</p>
+          </div>
+          <div class="curriculum-grid">
+            <article id="day-19" class="day-card" data-search-item data-keywords="gpu sm warp hbm l2 shared memory occupancy">
+              <span class="day-label">Day 19</span>
+              <h3>GPU architecture: SMs to HBM</h3>
+              <p>Connect warps, SM occupancy, registers, shared memory, L2, and HBM to kernel latency and bandwidth hiding.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> Why can higher occupancy fail to improve a memory-bound kernel?</p>
+            </article>
+            <article id="day-20" class="day-card" data-search-item data-keywords="hopper blackwell tensor cores fp8 fp4">
+              <span class="day-label">Day 20</span>
+              <h3>GPU generations</h3>
+              <p>Compare features rather than marketing peaks: supported dtypes, tensor-core paths, HBM capacity/bandwidth, interconnect, and software maturity.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> Which workload measurements justify moving from one accelerator generation to another?</p>
+            </article>
+            <article id="day-21" class="day-card" data-search-item data-keywords="mig multi instance gpu isolation capacity">
+              <span class="day-label">Day 21</span>
+              <h3>Multi-Instance GPU</h3>
+              <p>Use hardware partitioning for isolation and right-sizing, while checking model fit, KV headroom, fragmentation, and traffic variance.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> When is a full shared GPU preferable to several isolated MIG slices?</p>
+            </article>
+            <article id="day-22" class="day-card" data-search-item data-keywords="docker nim container cuda runtime healthcheck">
+              <span class="day-label">Day 22</span>
+              <h3>Containers and deployable artifacts</h3>
+              <p>Pin drivers/runtime compatibility, engine assets, tokenizer/config, startup probes, model loading, and immutable version identity.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> Why should readiness differ from process liveness during model load?</p>
+            </article>
+            <article id="day-23" class="day-card" data-search-item data-keywords="autoscaling concurrency cold start warm pool scale zero">
+              <span class="day-label">Day 23</span>
+              <h3>Autoscaling, concurrency, and cold starts</h3>
+              <p>Scale on queue and service signals, not CPU alone. Balance warm-pool cost against model-load delay and burst absorption.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> Which signal predicts SLO failure earlier: GPU utilization or queue delay?</p>
+            </article>
+            <article id="day-24" class="day-card" data-search-item data-keywords="routing load balancing queueing little law tail latency priority">
+              <span class="day-label">Day 24</span>
+              <h3>Routing, load balancing, and queueing</h3>
+              <p>Use Little's Law, utilization headroom, deadlines, fairness, and cache locality to reason about p99 latency—not only average throughput.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> Why does latency rise nonlinearly as utilization approaches saturation?</p>
+            </article>
+            <article id="day-25" class="day-card" data-search-item data-keywords="multi cloud capacity reserved spot reliability compliance">
+              <span class="day-label">Day 25</span>
+              <h3>Multi-cloud capacity</h3>
+              <p>Combine reserved, on-demand, and interruptible capacity while preserving model parity, compliance boundaries, and failover behavior.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> Which state must move—or be recomputed—during regional failover?</p>
+            </article>
+            <article id="day-26" class="day-card" data-search-item data-keywords="zero downtime canary blue green draining rollback cost">
+              <span class="day-label">Day 26</span>
+              <h3>Zero-downtime deployment and cost</h3>
+              <p>Canary model/runtime changes, drain in-flight generations, preserve streaming, define rollback signals, and track cost per useful token.</p>
+              <p class="checkpoint"><strong>Checkpoint:</strong> Why must drain timeout exceed a high percentile of generation duration?</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="core-equations" class="content-section" data-search-group="Theory">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Theory sheet</p>
+              <h2>Equations that anchor design decisions</h2>
+            </div>
+            <p>Use them for first-order estimates, then measure the actual engine and hardware.</p>
+          </div>
+          <div class="theory-grid">
+            <article class="equation-card" data-search-item id="eq-kv">
+              <h3>KV cache capacity</h3>
+              <code>bytes ≈ 2 × L × T × Hkv × Dhead × dtype_bytes</code>
+              <p>Multiply by active sequences and add block-table and allocator headroom.</p>
+            </article>
+            <article class="equation-card" data-search-item id="eq-roofline">
+              <h3>Roofline bound</h3>
+              <code>performance ≤ min(peak_FLOPs, bandwidth × arithmetic_intensity)</code>
+              <p>Arithmetic intensity is operations per byte transferred from the limiting memory tier.</p>
+            </article>
+            <article class="equation-card" data-search-item id="eq-little">
+              <h3>Little's Law</h3>
+              <code>concurrency = throughput × mean_latency</code>
+              <p>Use consistent units and a stable observation window; it is not a tail-latency model.</p>
+            </article>
+            <article class="equation-card" data-search-item id="eq-utilization">
+              <h3>Service utilization</h3>
+              <code>ρ = arrival_rate / total_service_rate</code>
+              <p>Queue delay grows rapidly near saturation, so capacity plans require utilization headroom.</p>
+            </article>
+            <article class="equation-card" data-search-item id="eq-batch">
+              <h3>Batch token budget</h3>
+              <code>step_tokens = Σ prefill_chunk_tokens + decode_sequences</code>
+              <p>A token budget controls work more accurately than request count when prompt lengths vary.</p>
+            </article>
+            <article class="equation-card" data-search-item id="eq-speculation">
+              <h3>Speculation viability</h3>
+              <code>speedup requires accepted_tokens / verification_cost &gt; baseline_rate</code>
+              <p>Draft cost, target parallel verification, and acceptance length all matter.</p>
+            </article>
+            <article class="equation-card" data-search-item id="eq-cost">
+              <h3>Cost per useful token</h3>
+              <code>cost = fleet_cost / tokens_meeting_quality_and_SLO</code>
+              <p>Raw token throughput hides retries, rejected speculation, failures, and missed SLOs.</p>
+            </article>
+            <article class="equation-card" data-search-item id="eq-drain">
+              <h3>Deployment drain budget</h3>
+              <code>drain_timeout ≥ request_p99 + network_and_cleanup_margin</code>
+              <p>Streaming generations need enough time to finish or an explicit resumability strategy.</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="production-checklist" class="content-section" data-search-group="Production checklist">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Capstone</p>
+              <h2>Production readiness checklist</h2>
+            </div>
+            <p>A fast kernel is only one component of a dependable inference service.</p>
+          </div>
+          <div class="card-grid three">
+            <article class="card" data-search-item id="check-model">
+              <h3>Model contract</h3>
+              <p>Version weights, tokenizer, chat template, generation defaults, adapters, and quantization metadata together.</p>
+            </article>
+            <article class="card" data-search-item id="check-capacity">
+              <h3>Capacity envelope</h3>
+              <p>Benchmark prompt/output distributions, concurrency, cache occupancy, TTFT, ITL, goodput, and OOM boundaries.</p>
+            </article>
+            <article class="card" data-search-item id="check-routing">
+              <h3>Routing policy</h3>
+              <p>Balance load, cache affinity, deadlines, tenant fairness, model locality, and regional constraints.</p>
+            </article>
+            <article class="card" data-search-item id="check-observe">
+              <h3>Observability</h3>
+              <p>Separate queue, prefill, decode, transfer, streaming, and cleanup time. Record model and engine versions.</p>
+            </article>
+            <article class="card" data-search-item id="check-deploy">
+              <h3>Safe deployment</h3>
+              <p>Warm the model, gate readiness, canary traffic, compare quality and latency, drain requests, and automate rollback.</p>
+            </article>
+            <article class="card" data-search-item id="check-failure">
+              <h3>Failure behavior</h3>
+              <p>Test worker loss, cache loss, OOM, partial streams, regional failure, spot interruption, and dependency timeouts.</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="study-method" class="content-section" data-search-group="Study method">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">How to use this track</p>
+              <h2>Read, predict, run, explain</h2>
+            </div>
+            <p>Passive reading creates vocabulary. Prediction and explanation create engineering judgment.</p>
+          </div>
+          <ol class="study-loop">
+            <li><span><strong>Read the day.</strong> Write the bottleneck, invariant, and tradeoff in one sentence each.</span></li>
+            <li><span><strong>Predict behavior.</strong> Before running code, predict shapes, memory growth, accepted tokens, or queue movement.</span></li>
+            <li><span><strong>Run the closest module.</strong> Change one variable and explain the result using the theory.</span></li>
+            <li><span><strong>Answer the checkpoint.</strong> Do it aloud without terminology-only answers.</span></li>
+            <li><span><strong>Connect two layers.</strong> Example: explain how quantization changes model fit, batching capacity, and fleet cost.</span></li>
+          </ol>
+          <div class="callout">
+            <strong>Source note:</strong> This page is an original synthesis informed
+            by the companion
+            <a href="https://github.com/elizabetht/100-days-of-inference">100 Days of Inference</a>
+            repository and the user's <em>Inference Engineering</em> reading. It
+            intentionally summarizes concepts rather than reproducing source prose.
+          </div>
+        </section>
+      </main>
+    </div>
+    <a class="back-to-top" href="#curriculum-overview" aria-label="Back to top">↑</a>
+  </body>
+</html>

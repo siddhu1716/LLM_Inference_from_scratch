@@ -9,7 +9,8 @@
     >
     <meta name="theme-color" content="#3156d3">
     <title>LLM Inference from Scratch | Systems Guide</title>
-    <link rel="stylesheet" href="styles.css?v=1">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%233156d3'/><text x='32' y='40' text-anchor='middle' font-size='24' font-family='sans-serif' font-weight='700' fill='white'>LLM</text></svg>">
+    <link rel="stylesheet" href="styles.css?v=2">
     <script src="app.js?v=2" defer></script>
   </head>
   <body>
@@ -65,6 +66,7 @@
         <nav>
           <ul class="nav-list">
             <li><a href="#overview" aria-current="true">Overview</a></li>
+            <li><a href="curriculum.html">26-day curriculum ↗</a></li>
             <li><a href="#architecture">Architecture</a></li>
             <li><a href="#token-loop">Prefill &amp; decode</a></li>
             <li><a href="#attention">Attention, RoPE &amp; GQA</a></li>
@@ -86,8 +88,8 @@
         </nav>
         <div class="sidebar-note">
           <strong>Scope marker</strong><br>
-          “Implemented” means code exists in this checkout. “Concept” means the
-          “Simulation” means executable learning-scale code, not a production kernel.
+          “Implemented” means code exists in this checkout. “Simulation” means
+          executable learning-scale code, not a production kernel.
         </div>
       </aside>
 
@@ -102,12 +104,13 @@
           </p>
           <div class="hero-actions">
             <a class="button" href="#architecture">Start with the architecture</a>
+            <a class="button button-secondary" href="curriculum.html">Follow the 26-day track</a>
             <a class="button button-secondary" href="#interview-bank">Practice 90 questions</a>
           </div>
         </section>
 
         <div class="metric-strip" aria-label="Guide summary">
-          <div class="metric"><strong>18</strong><span>connected systems topics</span></div>
+          <div class="metric"><strong>26</strong><span>guided curriculum days</span></div>
           <div class="metric"><strong>2</strong><span>paired learning paths</span></div>
           <div class="metric"><strong>90</strong><span>interview questions</span></div>
           <div class="metric"><strong>0</strong><span>site build dependencies</span></div>
@@ -795,6 +798,12 @@ release(state.kv)</code></pre>
                 <li>Benchmark fixed workloads and preserve differential tests.</li>
               </ol>
             </article>
+          </div>
+          <div class="callout">
+            <strong>Prefer a chronological route?</strong>
+            The <a href="curriculum.html">26-day inference engineering track</a>
+            connects model mechanics to GPU architecture, production capacity,
+            queueing, and zero-downtime deployment.
           </div>
         </section>
 

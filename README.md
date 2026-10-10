@@ -24,6 +24,9 @@ small inputs, explicit state, and tests over production throughput.
   parallelism plans.
 - Practice **90 inference-engine interview questions** in the searchable
   GitHub Pages site.
+- Follow a **26-day curriculum** derived from the companion
+  `100-days-of-inference` repository and the user's *Inference Engineering*
+  reading track.
 
 ## Feature matrix
 
@@ -124,6 +127,27 @@ Each technique has its own file so it is easy to revisit in isolation.
 6. **Serving:** trace schemas through `http_server.py`, SSE, and metrics.
 7. **Review:** use the website's interview filters to explain tradeoffs aloud.
 
+## 26-day inference engineering curriculum
+
+The website now includes a chronological curriculum that complements the
+topic-oriented reference guide:
+
+1. **Days 1-5 — mechanics:** generation, tokenization, embeddings, attention,
+   and KV caching.
+2. **Days 6-12 — performance and runtimes:** arithmetic intensity, CUDA
+   kernels, model formats, PagedAttention, RadixAttention, TensorRT-LLM, and
+   NVIDIA Dynamo.
+3. **Days 13-18 — optimization and scale-out:** number formats, GPTQ/AWQ/
+   SmoothQuant, speculative decoding, prefix caching, parallelism, and
+   prefill/decode disaggregation.
+4. **Days 19-26 — production engineering:** GPU memory hierarchy and
+   generations, MIG, containers, cold starts, autoscaling, queueing, routing,
+   multi-cloud capacity, cost, and zero-downtime deployment.
+
+Each day includes goals, theory, a checkpoint question, and a link to the
+closest executable module in this repository. The material is independently
+written as a study synthesis; it does not reproduce book prose.
+
 ## Validation
 
 ```powershell
@@ -164,6 +188,8 @@ This project takes inspiration from:
   [AWQ](https://arxiv.org/abs/2306.00978), and
   [SmoothQuant](https://arxiv.org/abs/2211.10438)
 - [Megatron-LM](https://arxiv.org/abs/1909.08053)
+- [100 Days of Inference](https://github.com/elizabetht/100-days-of-inference)
+  companion curriculum
 
 The names help connect study code to production vocabulary; they do not claim
 feature or performance parity.
