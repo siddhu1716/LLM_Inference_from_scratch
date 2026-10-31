@@ -22,7 +22,7 @@
     >
     <title>Phase 2: Inference Engines, Days 6-12 | LLM Inference from Scratch</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%233156d3'/><text x='32' y='40' text-anchor='middle' font-size='24' font-family='sans-serif' font-weight='700' fill='white'>P2</text></svg>">
-    <link rel="stylesheet" href="../styles.css?v=6">
+    <link rel="stylesheet" href="../styles.css?v=7">
     <script src="../app.js" defer></script>
     <style>
       .chapter-header {
@@ -211,6 +211,7 @@
             <li><a href="#formula-sheet">Formula sheet</a></li>
             <li><a href="#glossary">Phase glossary</a></li>
             <li><a href="#design-exercise">Design exercise</a></li>
+            <li><a href="#sources-and-credits">Sources &amp; credits</a></li>
             <li><a href="phase-1-mechanics.html">Previous: Phase 1 ↗</a></li>
             <li><a href="phase-3-optimization.html">Next: Phase 3 ↗</a></li>
             <li><a href="../curriculum.html">26-day curriculum ↗</a></li>
@@ -390,6 +391,75 @@ print(roofline_estimate(ops, weight_bytes, 100e12, 1e12))</code></pre>
             <article><h4>Design exercise</h4><p>Draw two rooflines for GPUs with equal compute but different bandwidth. Place batch-1 and batch-32 decode on both. Explain which purchase better serves an interactive workload.</p></article>
           </div>
 
+          <h3 id="day-06-going-deeper">Going deeper: the ridge point as a batch size</h3>
+          <div id="day-06-deep-dive" class="deep-dive" data-search-item data-keywords="ridge point critical batch size decode GEMM arithmetic intensity batch H100 295 FLOP per byte A100 KV reads attention memory-bound weight-only quantization INT4 FP8">
+            <h4>From “ops per byte” to “how many tokens per step”</h4>
+            <p>
+              The toy GPU above had a ridge of 100 operations per byte. Real accelerators sit higher: an H100 SXM is rated at about 989 dense BF16 teraFLOP/s and 3.35 TB/s of HBM bandwidth, a ridge near 295 FLOP per byte, while an A100 80 GB sits near 150. The ridge becomes far more practical once it is read as a batch size. In a decode-time linear layer with BF16 weights, each 2-byte weight takes part in one multiply and one add for every token in the batch, so the weight stream’s intensity is roughly <code>B</code> FLOP per byte for batch <code>B</code>. Setting <code>B</code> equal to the ridge gives a <em>critical batch</em>: on an H100, a few hundred tokens per step are needed before the weight-dominated matrix multiplications stop being limited by bandwidth.
+            </p>
+            <p>
+              Two corrections keep the estimate honest. First, attention does not follow this rule. Every sequence reads its own keys and values, so adding sequences adds bytes in proportion to the work; decode attention’s intensity stays roughly constant — about the number of query heads sharing each KV head — whatever the batch. Long contexts therefore keep decode partly memory-bound even when the weight GEMMs are saturated. Second, the critical batch depends on bytes per weight. Weight-only 4-bit quantization lets each byte serve four times as many FLOPs, so the crossover arrives at about a quarter of the batch; FP8 weights with FP8 tensor-core math raise both the intensity and the hardware peak, leaving the crossover roughly where it was.
+            </p>
+            <p>
+              Few interactive services actually run at the critical batch. Before reaching it, the KV cache may run out of memory, or per-user inter-token latency may exceed its target, because a compute-bound step gets longer as the batch grows. That is the real shape of the trade: below the ridge, extra concurrency is nearly free throughput; above it, extra concurrency mostly stretches every user’s step. Prefill crosses the ridge quickly, since even one 512-token prompt reuses each weight 512 times.
+            </p>
+          </div>
+
+          <figure id="day-06-diagram" class="svg-diagram" data-search-item data-keywords="diagram roofline ridge point batch size decode attention prefill">
+            <svg viewBox="0 0 760 305" role="img" aria-labelledby="p2-d6-title">
+              <title id="p2-d6-title">Log-log roofline with an H100-like ridge at about 295 FLOP per byte: batch-1 decode sits far left, batch-32 decode is higher on the bandwidth slope, a batch of about 300 reaches the ridge, a 2,048-token prefill sits on the compute roof, and decode attention stays near 4 FLOP per byte for any batch</title>
+              <defs>
+                <marker id="p2-d6-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="muted" d="M0,0 L10,5 L0,10 z"/></marker>
+              </defs>
+              <text x="10" y="22">Decode weight GEMMs climb the roof as batch grows; KV reads do not</text>
+              <path class="edge" d="M80 262 H700" marker-end="url(#p2-d6-arrow)"/>
+              <path class="edge" d="M80 262 V36" marker-end="url(#p2-d6-arrow)"/>
+              <text class="muted" x="88" y="44">attainable FLOP/s (log)</text>
+              <path class="edge" d="M90 247.3 L495 70 H690" stroke-width="2.6"/>
+              <path class="edge" d="M100 262 V267 M260 262 V267 M420 262 V267 M580 262 V267"/>
+              <text class="muted" x="100" y="278" text-anchor="middle">1</text>
+              <text class="muted" x="260" y="278" text-anchor="middle">10</text>
+              <text class="muted" x="420" y="278" text-anchor="middle">100</text>
+              <text class="muted" x="580" y="278" text-anchor="middle">1,000</text>
+              <text class="muted" x="390" y="296" text-anchor="middle">arithmetic intensity, FLOP per byte (log scale)</text>
+              <text class="muted" x="495" y="58" text-anchor="middle">ridge ≈ 295 FLOP/byte (H100 BF16)</text>
+              <text x="110" y="130">bandwidth-bound</text>
+              <text x="545" y="140">compute-bound</text>
+              <circle class="node-accent" cx="100" cy="243" r="5"/>
+              <text class="muted" x="112" y="256">B = 1 decode</text>
+              <circle class="node-teal" cx="196" cy="201" r="5"/>
+              <text class="muted" x="206" y="216">decode attention, any B (GQA 4:1)</text>
+              <circle class="node-accent" cx="341" cy="138" r="5"/>
+              <text class="muted" x="351" y="153">B = 32 decode</text>
+              <circle class="node-accent" cx="495" cy="70" r="5"/>
+              <text class="muted" x="505" y="88">B ≈ 300 decode</text>
+              <circle class="node-accent" cx="630" cy="70" r="5"/>
+              <text class="muted" x="640" y="106" text-anchor="middle">2k-token prefill</text>
+            </svg>
+            <figcaption>Original diagram using idealized H100 SXM figures. For BF16 weights, a decode GEMM’s intensity is about its batch size, so it moves right as more tokens share each weight read until it reaches the ridge. Decode attention stays left because every sequence reads its own KV cache.</figcaption>
+          </figure>
+
+          <h4>Reference diagrams</h4>
+          <div class="ref-gallery" id="day-06-references">
+            <div class="ref-link-card">
+              <a href="https://jax-ml.github.io/scaling-book/roofline/">How to Scale Your Model — “All About Rooflines”</a>
+              <small>Roofline plots of attainable FLOP/s against arithmetic intensity, with worked derivations of the critical batch size for matrix multiplications.</small>
+            </div>
+            <div class="ref-link-card">
+              <a href="https://www.baseten.co/blog/llm-transformer-inference-guide/">Baseten — “A guide to LLM inference and performance”</a>
+              <small>Computes a GPU’s ops:byte ratio and compares it with a 7B model’s attention intensity to show why small-batch generation is memory-bound.</small>
+            </div>
+          </div>
+
+          <h4>Further reading</h4>
+          <ul class="reading-list">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 2.4 “Calculating Inference Bottlenecks”</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Defines the ops:byte ratio and arithmetic intensity, then applies them separately to LLM and image-generation workloads to explain which phases are limited by compute and which by bandwidth.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day06">100 Days of Inference — Day 06: Ops:Byte Ratio and the Roofline Model</a></strong><span class="reading-meta">elizabetht · GitHub notebook series · 2026</span><p>Derives the H100’s break-even intensity from its datasheet and uses it to explain why a very fast GPU can still feel slow while generating tokens.</p></li>
+            <li><strong><a href="https://www2.eecs.berkeley.edu/Pubs/TechRpts/2008/EECS-2008-134.html">Roofline: An Insightful Visual Performance Model for Floating-Point Programs and Multicore Architectures</a></strong><span class="reading-meta">Williams, Waterman, Patterson · UC Berkeley technical report (later Communications of the ACM, 2009) · 2008</span><p>The original roofline paper: plots attainable performance against operational intensity and uses the ceilings to decide which optimizations are worth trying.</p></li>
+            <li><strong><a href="https://horace.io/brrr_intro.html">Making Deep Learning Go Brrrr From First Principles</a></strong><span class="reading-meta">Horace He · personal blog · 2022</span><p>Splits deep-learning runtime into compute, memory bandwidth, and overhead, with practical tests for telling which one is limiting you.</p></li>
+            <li><strong><a href="https://jax-ml.github.io/scaling-book/roofline/">How to Scale Your Model: All About Rooflines</a></strong><span class="reading-meta">Austin et al. · Google DeepMind (JAX scaling book) · 2025</span><p>Derives arithmetic intensity for matrix multiplications and communication, with exercises on the batch sizes accelerators need to stay compute-bound.</p></li>
+          </ul>
+
           <div class="bridge"><strong>Bridge to day 7:</strong> Day 6 tells us that bytes are often the limiting resource. Day 7 asks how a GPU program accidentally creates extra byte traffic and launch overhead—and how kernel fusion and tiling remove it.</div>
         </section>
 
@@ -550,6 +620,85 @@ for query_tile in tiles(Q):
             <article><h4>Fusion accounting</h4><p>Draw a chain of RMSNorm → projection → bias → activation. Mark every HBM read/write in an unfused version, then propose legal fusion boundaries and identify why the projection may remain separate.</p></article>
           </div>
 
+          <h3 id="day-07-going-deeper">Going deeper: CUDA Graphs, Triton, and torch.compile</h3>
+          <div id="day-07-deep-dive" class="deep-dive" data-search-item data-keywords="CUDA graphs capture replay launch overhead static shapes batch size buckets padding piecewise full Triton tile block-level kernel language torch.compile TorchDynamo TorchInductor reduce-overhead vLLM enforce eager">
+            <h4>Removing launch gaps and generating fused kernels</h4>
+            <p>
+              Fusion reduces the number of kernels, yet one decode step of a large model still launches hundreds of them, and the CPU must issue each launch. When a kernel runs for only a few microseconds, the GPU can finish before Python and the driver hand it the next one, leaving idle gaps on the timeline. <strong>CUDA Graphs</strong> remove most of that overhead: during a capture run the sequence of launches is recorded once, and afterwards the whole sequence is replayed with a single call that skips the per-kernel CPU work.
+            </p>
+            <p>
+              The catch is that a captured graph is frozen — kernel choices, tensor shapes, and memory addresses are baked in. Engines therefore capture graphs for a list of batch sizes, copy each step’s inputs into fixed buffers, and pad, say, 13 running sequences up to a captured size of 16. Pieces that are hard to freeze, such as attention over variable-length paged caches, can stay outside the graph: vLLM’s piecewise mode captures the regions between attention calls and runs attention eagerly, while its full mode captures everything when the attention backend allows it.
+            </p>
+            <p>
+              <strong>Triton</strong> and <strong>torch.compile</strong> address the kernels themselves. Triton (Tillet, Kung, and Cox, 2019) is a Python-embedded language in which you describe the work for a whole tile of data rather than for one thread, and its compiler handles details such as coalesced loads and shared-memory staging. torch.compile builds on it: TorchDynamo captures Python model code as graphs, and the TorchInductor backend generates fused Triton kernels for chains of pointwise and reduction operations, typically leaving large matrix multiplications to tuned libraries or templates. Its <code>reduce-overhead</code> mode additionally wraps the result in CUDA Graphs.
+            </p>
+            <p>
+              In a serving engine these tools stack: compile the model per shape bucket, capture graphs for common batch sizes, and keep hand-written kernels such as FlashAttention where compilers fall short. The costs are startup time (compilation and capture can take minutes, so engines cache artifacts), memory for captured buffers, and harder debugging — which is why engines keep an eager-mode switch for troubleshooting.
+            </p>
+          </div>
+
+          <figure id="day-07-diagram" class="svg-diagram" data-search-item data-keywords="diagram CUDA graph replay eager launches timeline gaps">
+            <svg viewBox="0 0 760 260" role="img" aria-labelledby="p2-d7-title">
+              <title id="p2-d7-title">Timeline comparison: in eager mode the CPU launches six kernels one by one and the GPU idles between them; with a CUDA graph one replay call launches all six kernels back to back</title>
+              <defs>
+                <marker id="p2-d7-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="muted" d="M0,0 L10,5 L0,10 z"/></marker>
+              </defs>
+              <text x="10" y="24">Same kernels, fewer CPU launches: eager execution versus CUDA graph replay</text>
+              <text x="10" y="52">Eager: the CPU launches every kernel</text>
+              <text class="muted" x="10" y="76">CPU</text>
+              <rect class="node" x="60" y="64" width="30" height="16" rx="3"/><rect class="node" x="140" y="64" width="30" height="16" rx="3"/><rect class="node" x="220" y="64" width="30" height="16" rx="3"/><rect class="node" x="300" y="64" width="30" height="16" rx="3"/><rect class="node" x="380" y="64" width="30" height="16" rx="3"/><rect class="node" x="460" y="64" width="30" height="16" rx="3"/>
+              <path class="edge" d="M75 80 L113 89 M155 80 L193 89 M235 80 L273 89 M315 80 L353 89 M395 80 L433 89 M475 80 L513 89"/>
+              <text class="muted" x="10" y="106">GPU</text>
+              <rect class="node-accent" x="95" y="90" width="40" height="24" rx="3"/><rect class="node-accent" x="175" y="90" width="40" height="24" rx="3"/><rect class="node-accent" x="255" y="90" width="40" height="24" rx="3"/><rect class="node-accent" x="335" y="90" width="40" height="24" rx="3"/><rect class="node-accent" x="415" y="90" width="40" height="24" rx="3"/><rect class="node-accent" x="495" y="90" width="40" height="24" rx="3"/>
+              <text class="muted" x="115" y="106" text-anchor="middle">k1</text><text class="muted" x="195" y="106" text-anchor="middle">k2</text><text class="muted" x="275" y="106" text-anchor="middle">k3</text><text class="muted" x="355" y="106" text-anchor="middle">k4</text><text class="muted" x="435" y="106" text-anchor="middle">k5</text><text class="muted" x="515" y="106" text-anchor="middle">k6</text>
+              <text class="muted" x="550" y="106">gaps: GPU waits for the CPU</text>
+              <text x="10" y="148">CUDA graph: capture once, replay with one launch</text>
+              <text class="muted" x="10" y="172">CPU</text>
+              <rect class="node" x="60" y="160" width="30" height="16" rx="3"/>
+              <text class="muted" x="100" y="173">graph.replay()</text>
+              <path class="edge" d="M75 176 L113 185" marker-end="url(#p2-d7-arrow)"/>
+              <text class="muted" x="10" y="202">GPU</text>
+              <rect class="node-teal" x="95" y="186" width="40" height="24" rx="3"/><rect class="node-teal" x="137" y="186" width="40" height="24" rx="3"/><rect class="node-teal" x="179" y="186" width="40" height="24" rx="3"/><rect class="node-teal" x="221" y="186" width="40" height="24" rx="3"/><rect class="node-teal" x="263" y="186" width="40" height="24" rx="3"/><rect class="node-teal" x="305" y="186" width="40" height="24" rx="3"/>
+              <text class="muted" x="115" y="202" text-anchor="middle">k1</text><text class="muted" x="157" y="202" text-anchor="middle">k2</text><text class="muted" x="199" y="202" text-anchor="middle">k3</text><text class="muted" x="241" y="202" text-anchor="middle">k4</text><text class="muted" x="283" y="202" text-anchor="middle">k5</text><text class="muted" x="325" y="202" text-anchor="middle">k6</text>
+              <text class="muted" x="360" y="202">back to back, no gaps</text>
+              <text class="muted" x="10" y="240">Shapes and buffer addresses are fixed at capture, so engines capture several batch sizes and pad to the nearest</text>
+            </svg>
+            <figcaption>Original diagram (timings illustrative). Replay removes per-kernel CPU launch work; the price is static shapes, fixed buffers, and padding to captured batch sizes.</figcaption>
+          </figure>
+
+          <h4>Reference diagrams</h4>
+          <div class="ref-gallery" id="day-07-references">
+            <figure class="ref-figure">
+              <img loading="lazy" decoding="async" width="985" height="800" src="https://raw.githubusercontent.com/vllm-project/vllm/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/cuda_graphs/current_design.png" alt="vLLM CUDA Graphs design: torch.compile splits the model into submodules separated by attention, each wrapped by a piecewise CUDAGraphWrapper, while a full-mode wrapper surrounds the whole model; a dispatcher selects piecewise, full, or no CUDA graph execution.">
+              <figcaption>
+                <strong>vLLM CUDA Graphs — piecewise, full, and eager modes.</strong>
+                torch.compile splits the model at attention; wrappers capture each piece or the whole model, and a dispatcher picks the mode for each batch.
+                Source: <a href="https://docs.vllm.ai/en/latest/design/cuda_graphs/">vLLM CUDA Graphs design</a> ·
+                <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/cuda_graphs/current_design.png">file @ 7b77ed5</a>.
+                <span class="license">License: Apache-2.0 (vllm-project/vllm)</span>
+              </figcaption>
+            </figure>
+            <figure class="ref-figure">
+              <img loading="lazy" decoding="async" width="1142" height="770" src="https://raw.githubusercontent.com/vllm-project/vllm/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/cuda_graphs/executor_runtime.png" alt="vLLM runtime flow: an input batch is preprocessed, checked for CUDA graph padding and uniform decode, turned into a BatchDescriptor key, and passed to a CUDA graph dispatcher that returns a runtime mode and final key before the model executes.">
+              <figcaption>
+                <strong>vLLM CUDA Graphs — runtime dispatch.</strong>
+                Each batch is padded if needed, summarized by its token count and whether it is a uniform decode batch, and mapped to a runtime mode before the model runs.
+                Source: <a href="https://docs.vllm.ai/en/latest/design/cuda_graphs/">vLLM CUDA Graphs design</a> ·
+                <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/cuda_graphs/executor_runtime.png">file @ 7b77ed5</a>.
+                <span class="license">License: Apache-2.0 (vllm-project/vllm)</span>
+              </figcaption>
+            </figure>
+          </div>
+
+          <h4>Further reading</h4>
+          <ul class="reading-list">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 4.1 “CUDA”</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Covers CUDA kernels for inference, how kernels are selected for a shape and GPU, and why fusion that cuts memory traffic pays off, placing CUDA beneath frameworks, engines, and orchestration.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day07">100 Days of Inference — Day 07: CUDA Kernels and Kernel Fusion</a></strong><span class="reading-meta">elizabetht · GitHub notebook series · 2026</span><p>Measures the HBM round trips between unfused PyTorch operations and shows a fused SwiGLU keeping its intermediates on chip.</p></li>
+            <li><strong><a href="https://www.eecs.harvard.edu/~htk/publication/2019-mapl-tillet-kung-cox.pdf">Triton: An Intermediate Language and Compiler for Tiled Neural Network Computations</a></strong><span class="reading-meta">Tillet, Kung, Cox · MAPL · 2019</span><p>Introduces Triton’s tile-level programming model and compiler passes, showing that kernels written at block granularity can rival vendor libraries.</p></li>
+            <li><strong><a href="https://pytorch.org/blog/accelerating-pytorch-with-cuda-graphs/">Accelerating PyTorch with CUDA Graphs</a></strong><span class="reading-meta">Nguyen et al. · PyTorch blog · 2021</span><p>Explains capture and replay, the static-memory rules graphs impose, and the PyTorch API, with case studies where launch overhead dominated.</p></li>
+            <li><strong><a href="https://docs.vllm.ai/en/latest/design/torch_compile.html">torch.compile integration</a></strong><span class="reading-meta">vLLM project · vLLM design documentation · accessed 2026</span><p>Describes how vLLM compiles models with Dynamo and Inductor, splits graphs at attention for piecewise CUDA Graphs, and caches compiled artifacts to shorten startup.</p></li>
+          </ul>
+
           <div class="bridge"><strong>Bridge to day 8:</strong> Kernels are executable machinery, but a deployed model begins as files and graphs. Day 8 separates weight containers, portable graph formats, compiler inputs, and hardware-specific execution plans.</div>
         </section>
 
@@ -702,6 +851,74 @@ optimized_output = engine.run(input_ids)</code></pre>
             <article><h4>Size calculation</h4><p>For 7 billion parameters, estimate raw weight size in FP32, BF16, INT8, and 4-bit storage. Then list at least three reasons observed process memory differs from the file size.</p></article>
           </div>
 
+          <h3 id="day-08-going-deeper">Going deeper: inside SafeTensors and GGUF</h3>
+          <div id="day-08-deep-dive" class="deep-dive" data-search-item data-keywords="safetensors header JSON data_offsets memory map mmap zero-copy lazy loading slices sharding GGUF llama.cpp ggml metadata key value tensor info alignment block quantization Q4_K Q8_0 page cache page fault">
+            <h4>Two self-describing weight files, and what memory mapping really buys</h4>
+            <p>
+              A SafeTensors file has three parts. The first 8 bytes hold an unsigned little-endian integer <code>N</code>; the next <code>N</code> bytes are a JSON header; everything after that is one flat byte buffer. For every tensor name the header records a dtype, a shape, and a pair of offsets into that buffer, plus an optional free-form metadata entry. Because the format contains no executable code, loading it cannot run arbitrary Python, and because offsets are explicit, a loader can parse only the header and then fetch just the tensors — or slices of tensors — it needs. Tensor-parallel workers rely on this to read only their own shard of each matrix.
+            </p>
+            <p>
+              <strong>Memory mapping</strong> makes that cheap. Rather than reading the whole file into a buffer, the loader asks the operating system to map the file into the process’s address space. Nothing is read until a page is touched; then the OS loads it from disk, or serves it immediately if the file is still in the page cache from an earlier run. For CPU inference this can mean near-zero-copy loading. For GPU serving the bytes must still travel to device memory, so mmap mainly avoids an extra host copy and lets transfers begin early; cold starts remain bounded by storage and PCIe bandwidth, and lazy page faults on a slow network filesystem can hurt.
+            </p>
+            <p>
+              <strong>GGUF</strong> is the single-file format of llama.cpp and the ggml library. After a magic number and version, it stores typed key-value metadata — architecture name, context length, RoPE settings, the full tokenizer vocabulary and merges, and often the chat template — then a table describing each tensor, then the tensor data, aligned for direct mapping. Many GGUF tensors use block-quantized types such as <code>Q8_0</code> or <code>Q4_K</code>, where small groups of weights share a scale, so a GGUF file is often a ready-to-run quantized model with no separate config or tokenizer files.
+            </p>
+            <p>
+              The formats answer different questions. SafeTensors is a neutral tensor container in standard dtypes and the default on the Hugging Face Hub; architecture code and tokenizer live alongside it. GGUF bundles everything a local runtime needs and favors quantized CPU and edge inference. GPU engines such as vLLM can read some GGUF files, but their fastest paths usually expect SafeTensors checkpoints with quantization formats designed for GPU kernels.
+            </p>
+          </div>
+
+          <figure id="day-08-diagram" class="svg-diagram" data-search-item data-keywords="diagram safetensors file layout GGUF file layout header metadata tensor data mmap">
+            <svg viewBox="0 0 760 250" role="img" aria-labelledby="p2-d8-title">
+              <title id="p2-d8-title">File layouts: SafeTensors is an 8-byte header length, a JSON header, and a flat byte buffer; GGUF is a magic number and version, metadata key-values, tensor infos, padding, and tensor data</title>
+              <text x="10" y="24">Two self-describing weight files, both designed to be memory-mapped</text>
+              <text x="10" y="56">SafeTensors</text>
+              <rect class="node" x="10" y="66" width="80" height="46" rx="6"/>
+              <text x="50" y="86" text-anchor="middle">8 bytes</text>
+              <text class="muted" x="50" y="103" text-anchor="middle">= N</text>
+              <rect class="node-accent" x="94" y="66" width="200" height="46" rx="6"/>
+              <text x="194" y="86" text-anchor="middle">JSON header</text>
+              <text class="muted" x="194" y="103" text-anchor="middle">name → dtype, shape, offsets</text>
+              <rect class="node-teal" x="298" y="66" width="452" height="46" rx="6"/>
+              <text x="524" y="86" text-anchor="middle">flat byte buffer</text>
+              <text class="muted" x="524" y="103" text-anchor="middle">tensor A | tensor B | tensor C | …</text>
+              <text x="10" y="146">GGUF</text>
+              <rect class="node" x="10" y="156" width="110" height="46" rx="6"/>
+              <text x="65" y="176" text-anchor="middle">GGUF v3</text>
+              <text class="muted" x="65" y="193" text-anchor="middle">+ counts</text>
+              <rect class="node-accent" x="124" y="156" width="210" height="46" rx="6"/>
+              <text x="229" y="176" text-anchor="middle">metadata key-values</text>
+              <text class="muted" x="229" y="193" text-anchor="middle">arch, RoPE, vocab, template</text>
+              <rect class="node" x="338" y="156" width="150" height="46" rx="6"/>
+              <text x="413" y="176" text-anchor="middle">tensor infos</text>
+              <text class="muted" x="413" y="193" text-anchor="middle">name, type, offset</text>
+              <rect class="node" x="492" y="156" width="40" height="46" rx="6"/>
+              <text class="muted" x="512" y="183" text-anchor="middle">pad</text>
+              <rect class="node-teal" x="536" y="156" width="214" height="46" rx="6"/>
+              <text x="643" y="176" text-anchor="middle">tensor data</text>
+              <text class="muted" x="643" y="193" text-anchor="middle">often block-quantized</text>
+              <text class="muted" x="10" y="236">mmap: pages load on first touch or come from the OS page cache; GPU engines still copy weights into HBM</text>
+            </svg>
+            <figcaption>Original diagram (not to scale). Both formats put a small, parseable description of every tensor before the bulk bytes, so a loader can plan reads before touching the data.</figcaption>
+          </figure>
+
+          <h4>Reference diagrams</h4>
+          <div class="ref-gallery" id="day-08-references">
+            <div class="ref-link-card">
+              <a href="https://huggingface.co/docs/hub/gguf">Hugging Face Hub docs — “GGUF”</a>
+              <small>Annotated picture of a GGUF file (header, metadata key-value pairs, tensor-info table, tensor data) plus a reference table of quantization types.</small>
+            </div>
+          </div>
+
+          <h4>Further reading</h4>
+          <ul class="reading-list">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 4.2 “Deep Learning Frameworks and Libraries”</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Surveys PyTorch and torch.compile, model file formats, ONNX Runtime with TensorRT, and the Transformers and Diffusers libraries, explaining where each sits between raw CUDA and full engines.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day08">100 Days of Inference — Day 08: PyTorch Model Formats, ONNX, and TensorRT</a></strong><span class="reading-meta">elizabetht · GitHub notebook series · 2026</span><p>Climbs from kernels to frameworks and file formats, comparing PyTorch checkpoints, ONNX graphs, and TensorRT engines and when each artifact fits.</p></li>
+            <li><strong><a href="https://huggingface.co/docs/safetensors/index">Safetensors documentation</a></strong><span class="reading-meta">Hugging Face · safetensors documentation · accessed 2026</span><p>Specifies the header-plus-buffer format, explains why it is safe to load and fast to memory-map, and documents lazy slice loading for sharded weights.</p></li>
+            <li><strong><a href="https://github.com/ggml-org/ggml/blob/master/docs/gguf.md">GGUF specification</a></strong><span class="reading-meta">ggml-org · ggml repository docs · 2023–present</span><p>The authoritative layout: header fields, metadata value types, standard keys for architectures and tokenizers, alignment rules, and tensor-info records.</p></li>
+            <li><strong><a href="https://huggingface.co/docs/hub/gguf">GGUF on the Hugging Face Hub</a></strong><span class="reading-meta">Hugging Face · Hub documentation · accessed 2026</span><p>Shows how GGUF files are browsed and inspected on the Hub, with a visual breakdown of the format and a table of quantization types.</p></li>
+          </ul>
+
           <div class="bridge"><strong>Bridge to day 9:</strong> A runtime can now execute the model, but many users must share finite GPU memory. Day 9 treats KV cache as paged memory and replaces fixed batches with a continuously changing schedule.</div>
         </section>
 
@@ -727,7 +944,7 @@ optimized_output = engine.run(input_ids)</code></pre>
 
           <h3>Start with batching and the KV cache</h3>
           <p>
-            Batching combines work from several requests into one model execution so weights and GPU launches are shared. A static batch is formed once and remains together until completion. If one sequence ends after ten tokens while another needs two hundred, the finished slot may remain wasted or the whole batch may wait. Continuous batching, also called iteration-level batching, reconsideres membership between decode iterations. Finished or paused requests leave; waiting requests enter. The shape still must suit available kernels, but the logical population changes continuously.
+            Batching combines work from several requests into one model execution so weights and GPU launches are shared. A static batch is formed once and remains together until completion. If one sequence ends after ten tokens while another needs two hundred, the finished slot may remain wasted or the whole batch may wait. Continuous batching, also called iteration-level batching, reconsiders membership between decode iterations. Finished or paused requests leave; waiting requests enter. The shape still must suit available kernels, but the logical population changes continuously.
           </p>
           <p>
             Each transformer layer saves keys and values for every processed token so later decode steps do not recompute them. This KV cache grows with context length and active sequence count. Because generated length is unknown at admission, reserving a maximum contiguous region wastes memory. Allocating variable-size extensions can leave holes and complicate relocation. PagedAttention separates a sequence’s logical token order from physical storage locations.
@@ -849,6 +1066,95 @@ def scheduler_iteration(waiting, active, token_budget, free_blocks):
           <div class="exercise-grid">
             <article><h4>Manual allocation</h4><p>Use block size four and ten physical blocks. Allocate requests of 6, 3, and 9 tokens; draw each table, compute internal waste, free the middle request, and allocate a new 7-token request.</p></article>
             <article><h4>Scheduler policy</h4><p>Given a 12-token step budget, compare scheduling one 10-token prefill plus two decodes against twelve decodes. Discuss throughput, TTFT, ITL, and fairness rather than choosing one universally.</p></article>
+          </div>
+
+          <h3 id="day-09-going-deeper">Going deeper: the vLLM V1 scheduler</h3>
+          <div id="day-09-deep-dive" class="deep-dive" data-search-item data-keywords="vLLM V1 scheduler token budget max_num_batched_tokens max_num_seqs chunked prefill num_computed_tokens preemption recompute KV blocks waiting running priority prefix caching free queue">
+            <h4>Token budgets, chunked prefill, and preemption</h4>
+            <p>
+              vLLM’s V1 engine, the default since early 2025, organizes scheduling around one idea: a request is a list of tokens, some of which already have KV entries. Each step, the scheduler grants requests a number of new tokens to compute, limited by a per-step token budget (<code>max_num_batched_tokens</code>) and a cap on running sequences. A decoding request asks for one token; a request still in its prompt may ask for many. The scheduler keeps no separate prefill phase — only the gap between the tokens a request has and the tokens whose KV has been computed.
+            </p>
+            <p>
+              <strong>Chunked prefill</strong> falls out naturally. Running requests are served first, so ongoing decodes each get their one token; the remaining budget goes to prompt work, and a prompt that does not fit is split across steps. With a 2,048-token budget and 40 active decoders, a 6,000-token prompt advances about 2,000 tokens per step and finishes its prefill in three steps while the decoders keep streaming. Every step stays short, which protects inter-token latency, and compute-heavy prompt chunks share batches with bandwidth-heavy decodes. The cost is that the long prompt’s own first token arrives later than if its prefill had run alone.
+            </p>
+            <p>
+              <strong>Preemption</strong> handles memory pressure. Before a step runs, the scheduler asks the KV cache manager for the new blocks each scheduled request needs. If the pool cannot supply them, it preempts a running request — the most recently admitted one under first-come-first-served, or the lowest-priority one under priority scheduling — frees its blocks, and returns it to the waiting queue. V1 resumes preempted requests by recomputation rather than by swapping KV to CPU memory. With prefix caching on, freed blocks keep their hashes in the free queue until reused, so a request readmitted soon often finds much of its prefix still cached.
+            </p>
+            <p>
+              These knobs encode Day 6’s latency–throughput trade. A larger token budget raises throughput and speeds prefill but lengthens each step; a smaller one smooths inter-token latency. Frequent preemption is a capacity signal: the admitted load needs more KV than the pool holds, so reduce concurrency or maximum context, quantize the cache, or add memory.
+            </p>
+          </div>
+
+          <figure id="day-09-diagram" class="svg-diagram" data-search-item data-keywords="diagram vLLM scheduler step token budget decodes prompt chunk KV block pool preemption">
+            <svg viewBox="0 0 760 260" role="img" aria-labelledby="p2-d9-title">
+              <title id="p2-d9-title">One vLLM V1 scheduling step: a 2,048-token budget is filled first by 40 single-token decodes and then by a 2,008-token chunk of a waiting 6,000-token prompt; blocks are allocated from the KV pool, and if none are free the newest running request is preempted back to the waiting queue</title>
+              <defs>
+                <marker id="p2-d9-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="muted" d="M0,0 L10,5 L0,10 z"/></marker>
+              </defs>
+              <text x="10" y="24">One V1 scheduling step with a 2,048-token budget (not to scale)</text>
+              <rect class="node-teal" x="10" y="44" width="130" height="36" rx="6"/>
+              <text x="75" y="67" text-anchor="middle">40 decodes × 1</text>
+              <rect class="node-accent" x="140" y="44" width="610" height="36" rx="6"/>
+              <text x="445" y="67" text-anchor="middle">chunk of a waiting prompt: 2,008 of 6,000 tokens</text>
+              <rect class="node" x="10" y="120" width="220" height="80" rx="8"/>
+              <text x="120" y="146" text-anchor="middle">running</text>
+              <text class="muted" x="120" y="166" text-anchor="middle">decodes first, 1 token each</text>
+              <text class="muted" x="120" y="184" text-anchor="middle">then unfinished prompts</text>
+              <rect class="node" x="270" y="120" width="200" height="80" rx="8"/>
+              <text x="370" y="146" text-anchor="middle">waiting</text>
+              <text class="muted" x="370" y="166" text-anchor="middle">admitted while budget</text>
+              <text class="muted" x="370" y="184" text-anchor="middle">and KV blocks allow</text>
+              <rect class="node" x="510" y="120" width="240" height="80" rx="8"/>
+              <text x="630" y="146" text-anchor="middle">KV block pool</text>
+              <text class="muted" x="630" y="166" text-anchor="middle">no free block: preempt newest</text>
+              <text class="muted" x="630" y="184" text-anchor="middle">free its blocks, recompute later</text>
+              <path class="edge" d="M75 118 V82" marker-end="url(#p2-d9-arrow)"/>
+              <path class="edge" d="M370 118 V82" marker-end="url(#p2-d9-arrow)"/>
+              <path class="edge" d="M630 82 V118" marker-end="url(#p2-d9-arrow)"/>
+              <text class="muted" x="640" y="104">allocate blocks</text>
+              <path class="edge" d="M630 200 V228 H370 V202" marker-end="url(#p2-d9-arrow)"/>
+              <text class="muted" x="500" y="246" text-anchor="middle">preempted request rejoins the waiting queue</text>
+            </svg>
+            <figcaption>Original diagram; segment widths are not to scale. Running requests are scheduled first, leftover budget goes to a chunk of a waiting prompt, and when the KV pool runs dry the newest running request is preempted and later recomputed.</figcaption>
+          </figure>
+
+          <h4>Reference diagrams</h4>
+          <div class="ref-gallery" id="day-09-references">
+            <figure class="ref-figure">
+              <img loading="lazy" decoding="async" width="1874" height="1178" src="https://raw.githubusercontent.com/vllm-project/vllm/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/arch_overview/llm_engine.excalidraw.png" alt="Hand-drawn vLLM diagram: the LLM class and the OpenAI-compatible API server (through AsyncLLMEngine) both use LLMEngine, which branches into input processing, scheduling, model execution, and output processing.">
+              <figcaption>
+                <strong>vLLM LLMEngine and its four jobs.</strong>
+                Offline use and the OpenAI-compatible server both drive one engine that handles input processing, scheduling, model execution, and output processing (class names as drawn in the docs).
+                Source: <a href="https://docs.vllm.ai/en/latest/design/arch_overview/">vLLM architecture overview</a> ·
+                <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/arch_overview/llm_engine.excalidraw.png">file @ 7b77ed5</a>.
+                <span class="license">License: Apache-2.0 (vllm-project/vllm)</span>
+              </figcaption>
+            </figure>
+            <figure class="ref-figure">
+              <img loading="lazy" decoding="async" width="651" height="182" src="https://raw.githubusercontent.com/vllm-project/vllm/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/prefix_caching/free.png" alt="vLLM free block queue after request 1 finishes: its blocks 2, 3, 4, and 8 are appended to a doubly linked free list in reverse order, block 8 first.">
+              <figcaption>
+                <strong>vLLM prefix caching — returning a request’s blocks.</strong>
+                When a request ends (or is preempted), its blocks join the tail of the free queue in reverse order, so the block holding the longest, least shareable prefix is evicted first.
+                Source: <a href="https://docs.vllm.ai/en/latest/design/prefix_caching/">vLLM prefix caching design</a> ·
+                <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/prefix_caching/free.png">file @ 7b77ed5</a>.
+                <span class="license">License: Apache-2.0 (vllm-project/vllm)</span>
+              </figcaption>
+            </figure>
+          </div>
+
+          <h4>Further reading</h4>
+          <ul class="reading-list">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 4.3.1 “vLLM”</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Places vLLM among the major engines, explains when its generality and broad model support make it the right default, and notes its expansion beyond text models.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day09">100 Days of Inference — Day 09: vLLM, PagedAttention and Continuous Batching</a></strong><span class="reading-meta">elizabetht · GitHub notebook series · 2026</span><p>Shows why contiguous KV reservation and static batching waste memory and GPU time, then how paging and continuous batching remove each problem.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2309.06180">Efficient Memory Management for Large Language Model Serving with PagedAttention</a></strong><span class="reading-meta">Kwon et al. · SOSP · 2023</span><p>The vLLM paper: block-based KV storage inspired by virtual memory, copy-on-write sharing for parallel sampling, and the scheduler that made high-throughput serving practical.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2403.02310">Taming Throughput-Latency Tradeoff in LLM Inference with Sarathi-Serve</a></strong><span class="reading-meta">Agrawal et al. · OSDI · 2024</span><p>Formalizes chunked prefill and stall-free batching, showing how budgeted prompt chunks let decodes continue without long pauses.</p></li>
+            <li><strong><a href="https://blog.vllm.ai/2025/09/05/anatomy-of-vllm.html">Inside vLLM: Anatomy of a High-Throughput LLM Inference System</a></strong><span class="reading-meta">Aleksa Gordić · vLLM blog · 2025</span><p>A long, diagram-rich tour of the V1 engine core, scheduler, paged KV cache, prefix caching, and distributed setups, written from reading the source.</p></li>
+          </ul>
+          <div class="source-links">
+            <strong>Engine deep dives:</strong>
+            <a href="../engines/vllm.html">vLLM engine page</a>
+            <a href="../engines/sglang.html">SGLang engine page</a>
+            <a href="../engines/index.html">All engines</a>
           </div>
 
           <div class="bridge"><strong>Bridge to day 10:</strong> Paging makes KV blocks movable and shareable building units. Day 10 asks a new question: when two prompts begin with the same tokens, why compute and store those prefix blocks twice?</div>
@@ -994,6 +1300,84 @@ def schedule_with_prefix(request):
             <article><h4>Build a grammar</h4><p>Extend the mini-infer flat-object DFA on paper to require exactly the keys <code>name</code> then <code>age</code>. Identify where a token-level implementation must handle one token containing multiple characters.</p></article>
           </div>
 
+          <h3 id="day-10-going-deeper">Going deeper: eviction, cache-aware scheduling, and fast grammar masks</h3>
+          <div id="day-10-deep-dive" class="deep-dive" data-search-item data-keywords="RadixAttention radix tree LRU eviction leaf reference count cache-aware scheduling longest prefix match LPM depth-first order FCFS starvation router data parallel grammar-constrained decoding XGrammar Outlines pushdown automaton token mask context-independent context-dependent jump-forward compressed FSM retokenization">
+            <h4>Keeping the right prefixes, and computing token masks fast</h4>
+            <p>
+              SGLang’s RadixAttention stores cached prefixes in a radix tree whose edges are labelled with token sequences and whose nodes point at KV slots on the GPU. When memory runs short, it evicts <em>leaves</em>, least recently used first, and only leaves with a reference count of zero; once a leaf is gone, its parent may become an evictable leaf in turn. Evicting from the leaves protects shared trunks such as a system prompt, which many future requests will want, while discarding unique tails like a finished user’s last answer.
+            </p>
+            <p>
+              A cache only pays off if requests that share a prefix run while that prefix is still resident. SGLang’s cache-aware scheduler can therefore reorder the waiting queue — for instance by longest prefix match — so requests with large cached prefixes run first. The SGLang paper shows that this ordering behaves like a depth-first walk of the tree, which maximizes reuse when the cache can hold a whole branch. The danger is starving requests that share nothing, so practical policies limit reordering or fall back to first-come-first-served when the queue grows long. The same idea scales out: a cache-aware router in front of several replicas sends each request to the worker most likely to hold its prefix, balanced against load.
+            </p>
+            <p>
+              Grammar-constrained decoding has a speed problem of its own: before every sampled token, the engine must decide which of perhaps 128,000 vocabulary entries keep the output valid, and checking each one against the grammar every step would be far too slow. Outlines-style approaches precompile a regular expression into a finite-state machine with a token-level transition table. XGrammar (2024), the default grammar backend in recent SGLang releases, handles full context-free grammars with a pushdown automaton and observes that most tokens’ validity depends only on the current grammar position, not on the stack beneath it. Those masks are precomputed and cached, leaving a small set of context-dependent tokens to check at runtime, work that can overlap the GPU’s forward pass.
+            </p>
+            <p>
+              Constraints can even save work. Where the grammar allows exactly one continuation — the fixed keys and punctuation of a JSON schema, say — the model does not need to choose it token by token. SGLang’s compressed finite-state machine merges such forced stretches and emits them in one <em>jump-forward</em> step that extends the KV cache with a short prefill instead of several decode iterations. One subtlety: the forced text must be retokenized the way the model would naturally split it, or the model sees token boundaries it never met in training.
+            </p>
+          </div>
+
+          <figure id="day-10-diagram" class="svg-diagram" data-search-item data-keywords="diagram radix tree prefix cache reference count LRU eviction order">
+            <svg viewBox="0 0 760 280" role="img" aria-labelledby="p2-d10-title">
+              <title id="p2-d10-title">Radix-tree prefix cache: a root links to a shared system-prompt trunk with three references, which branches to three user histories; the running user A leaf is pinned, user B's idle leaf is evicted second, and user C's least recently used leaf is evicted first</title>
+              <defs>
+                <marker id="p2-d10-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="muted" d="M0,0 L10,5 L0,10 z"/></marker>
+              </defs>
+              <text x="10" y="24">Radix-tree prefix cache: the shared trunk stays, cold unreferenced leaves go first</text>
+              <rect class="node" x="20" y="120" width="110" height="40" rx="8"/>
+              <text x="75" y="145" text-anchor="middle">root</text>
+              <text class="muted" x="75" y="180" text-anchor="middle">edges = token spans</text>
+              <path class="edge" d="M130 140 H168" marker-end="url(#p2-d10-arrow)"/>
+              <rect class="node-accent" x="170" y="118" width="180" height="44" rx="8"/>
+              <text x="260" y="136" text-anchor="middle">system prompt</text>
+              <text class="muted" x="260" y="153" text-anchor="middle">ref 3 · 1,000 tokens</text>
+              <path class="edge" d="M350 140 L408 72" marker-end="url(#p2-d10-arrow)"/>
+              <path class="edge" d="M350 140 H408" marker-end="url(#p2-d10-arrow)"/>
+              <path class="edge" d="M350 140 L408 208" marker-end="url(#p2-d10-arrow)"/>
+              <rect class="node-teal" x="410" y="48" width="170" height="44" rx="8"/>
+              <text x="495" y="66" text-anchor="middle">user A history</text>
+              <text class="muted" x="495" y="83" text-anchor="middle">ref 1 · running</text>
+              <rect class="node" x="410" y="118" width="170" height="44" rx="8"/>
+              <text x="495" y="136" text-anchor="middle">user B history</text>
+              <text class="muted" x="495" y="153" text-anchor="middle">ref 0 · used 2 s ago</text>
+              <rect class="node" x="410" y="188" width="170" height="44" rx="8"/>
+              <text x="495" y="206" text-anchor="middle">user C history</text>
+              <text class="muted" x="495" y="223" text-anchor="middle">ref 0 · used 40 s ago</text>
+              <text class="muted" x="592" y="74">pinned: never evicted</text>
+              <text class="muted" x="592" y="144">evicted second</text>
+              <text class="muted" x="592" y="214">evicted first (LRU)</text>
+              <text class="muted" x="10" y="262">Longest-prefix-first scheduling runs trunk-sharing requests while the trunk is resident</text>
+            </svg>
+            <figcaption>Original diagram. Reference counts pin nodes that running requests use; among unpinned leaves, the least recently used goes first, and the shared trunk survives because its count stays positive.</figcaption>
+          </figure>
+
+          <h4>Reference diagrams</h4>
+          <div class="ref-gallery" id="day-10-references">
+            <div class="ref-link-card">
+              <a href="https://arxiv.org/abs/2312.07104">SGLang paper — Figure 3</a>
+              <small>Nine snapshots of a radix tree growing, branching, and evicting least-recently-used nodes as chat turns, few-shot prompts, and parallel samples arrive.</small>
+            </div>
+            <div class="ref-link-card">
+              <a href="https://lmsys.org/blog/2024-02-05-compressed-fsm/">LMSYS blog — compressed FSM, Figure 5</a>
+              <small>Compares ordinary token-by-token constrained decoding with jump-forward decoding over a compressed finite-state machine on a JSON example.</small>
+            </div>
+          </div>
+
+          <h4>Further reading</h4>
+          <ul class="reading-list">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 4.3.2 “SGLang”</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Covers SGLang’s origins, its pairing of a fast runtime with a flexible frontend language, its strength on large mixture-of-experts models, and when to choose it over other engines.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day10">100 Days of Inference — Day 10: SGLang, RadixAttention and Structured Outputs</a></strong><span class="reading-meta">elizabetht · GitHub notebook series · 2026</span><p>Quantifies the prefill wasted when every request recomputes a shared system prompt, then shows a radix tree letting requests reuse the same physical KV blocks.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2312.07104">SGLang: Efficient Execution of Structured Language Model Programs</a></strong><span class="reading-meta">Zheng et al. · NeurIPS · 2024</span><p>Introduces RadixAttention for automatic KV reuse, cache-aware scheduling, and compressed finite-state machines for faster constrained decoding, evaluated on multi-call LLM programs.</p></li>
+            <li><strong><a href="https://lmsys.org/blog/2024-02-05-compressed-fsm/">Fast JSON Decoding for Local LLMs with Compressed Finite State Machine</a></strong><span class="reading-meta">LMSYS (SGLang team) · LMSYS blog · 2024</span><p>Explains how forced segments of a schema are merged into single transitions and decoded in one jump, and how retokenization keeps the model’s view consistent.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2411.15100">XGrammar: Flexible and Efficient Structured Generation Engine for Large Language Models</a></strong><span class="reading-meta">Dong et al. · MLSys · 2025</span><p>Separates context-independent tokens, whose masks are precomputed, from context-dependent ones checked at runtime, bringing context-free grammar constraints to near-zero overhead.</p></li>
+          </ul>
+          <div class="source-links">
+            <strong>Engine deep dives:</strong>
+            <a href="../engines/sglang.html">SGLang engine page</a>
+            <a href="../engines/vllm.html">vLLM engine page</a>
+            <a href="../engines/index.html">All engines</a>
+          </div>
+
           <div class="bridge"><strong>Bridge to day 11:</strong> vLLM and SGLang emphasize dynamic scheduling and cache policy. Day 11 moves toward a narrower target: compile and specialize an execution stack for NVIDIA hardware using selected tactics and plugin kernels.</div>
         </section>
 
@@ -1022,7 +1406,7 @@ def schedule_with_prefix(request):
             The <strong>build</strong> phase reads model structure and weights, chooses supported precisions, identifies fusion opportunities, selects or benchmarks implementation tactics, defines shape profiles, plans memory, and serializes an artifact or configuration. It can take minutes and may consume substantial host and GPU workspace. The <strong>runtime</strong> phase loads the prepared artifact, binds actual input/output buffers that fit its profiles, coordinates KV state and request metadata, and launches the selected operations. A fast runtime can exist because the builder already did search and specialization.
           </p>
           <p>
-            TensorRT-LLM versions and workflows evolve, so production engineers should follow the documentation matching their installed release rather than memorize one command sequence. Conceptually, however, the separation remains stable: convert or define a model, build with explicit constraints, then run through an LLM-aware runtime that also handles inflight batching, cache management, parallel execution, and communication.
+            TensorRT-LLM versions and workflows evolve, so production engineers should follow the documentation matching their installed release rather than memorize one command sequence. As of TensorRT-LLM 1.0 (2025), the default workflow is a PyTorch-based backend driven by the LLM API, and the separate checkpoint-conversion plus engine-build step belongs to the legacy TensorRT backend; the build-time decisions below describe that legacy path and, more broadly, any system that moves work out of the request path. Conceptually, however, the separation remains stable: convert or define a model, build with explicit constraints, then run through an LLM-aware runtime that also handles inflight batching, cache management, parallel execution, and communication.
           </p>
 
           <dl class="definition-grid">
@@ -1146,6 +1530,119 @@ with engine.context() as context:
           <div class="exercise-grid">
             <article><h4>Profile design</h4><p>Given traffic with 70% batch 1, 25% batch 2–4, and 5% batch 5–8, propose one or more shape profiles. Explain how you would benchmark and route requests.</p></article>
             <article><h4>Build manifest</h4><p>Draft a reproducibility manifest with model, tokenizer, GPU, driver/runtime, plugins, precision, profiles, workspace, quality suite, benchmark, and checksum fields. Mark which changes force a rebuild.</p></article>
+          </div>
+
+          <h3 id="day-11-going-deeper">Going deeper: in-flight batching and what a build fixes in advance</h3>
+          <div id="day-11-deep-dive" class="deep-dive" data-search-item data-keywords="in-flight batching inflight IFB continuous batching context phase generation phase packed inputs padding removal max_batch_size max_num_tokens max_seq_len chunked context trtllm-build PyTorch backend LLM API trtllm-serve PyExecutor">
+            <h4>Packing context and generation work into every iteration</h4>
+            <p>
+              <strong>In-flight batching</strong> is TensorRT-LLM’s name for continuous batching. Each iteration, the batch manager decides which active requests run a <em>context</em> (prefill) step and which run a <em>generation</em> (decode) step, retires finished requests, and admits new ones without waiting for the batch to drain. Inputs are packed rather than padded: the tokens of every scheduled request are laid end to end in one long row, and attention kernels use per-request offsets to keep sequences apart, so a 5-token prompt and a 1-token decode step never have to be padded to a common length.
+            </p>
+            <p>
+              Two limits shape every iteration. <code>max_batch_size</code> caps how many requests are active at once, and <code>max_num_tokens</code> caps the tokens processed in one iteration, counting every context and generation token; <code>max_seq_len</code> bounds a single request. In the documentation’s toy example below, a 12-token budget admits two 5-token prompts and then must stop, because no other prompt fits in the 2 tokens left. Enabling <em>chunked context</em> lets a long prompt be split so leftover budget is not wasted — the same idea as vLLM’s chunked prefill.
+            </p>
+            <p>
+              The classic TensorRT-LLM workflow baked those limits into a compiled artifact: convert a checkpoint, run <code>trtllm-build</code> with chosen maximums, precision, and plugins, then load the engine. Larger maximums reserve more activation workspace and leave less memory for KV cache, so build settings were also capacity settings. Since version 1.0 (2025), however, TensorRT-LLM’s default path is a PyTorch-based backend driven by the high-level LLM API and <code>trtllm-serve</code>: models are defined in PyTorch, optimized kernels are called directly, and limits such as batch size and token budget are runtime configuration. The engine-build flow is now treated as the legacy TensorRT backend, though the build-versus-runtime trade-offs in this lesson still describe it.
+            </p>
+            <p>
+              Either way, the runtime shape is similar: one executor per GPU rank loops over scheduling, paged KV-cache management, model execution, and sampling, as the architecture figure shows. Specialization buys fewer, faster kernels for known shapes; in-flight batching keeps those kernels fed with useful tokens.
+            </p>
+          </div>
+
+          <figure id="day-11-diagram" class="svg-diagram" data-search-item data-keywords="diagram in-flight batching iterations token budget context generation tokens packing">
+            <svg viewBox="0 0 760 255" role="img" aria-labelledby="p2-d11-title">
+              <title id="p2-d11-title">Three in-flight batching iterations with a 12-token budget and at most 4 requests: iteration 1 runs two 5-token prompts and leaves 2 slots idle; iteration 2 runs two generation tokens plus 7-token and 3-token prompts for a full 12; iteration 3 runs four generation tokens</title>
+              <text x="10" y="24">In-flight batching with max_num_tokens = 12 and max_batch_size = 4</text>
+              <text x="10" y="70">iteration 1</text>
+              <rect class="node-accent" x="110" y="48" width="44" height="34" rx="4"/><text x="132" y="70" text-anchor="middle">C1</text>
+              <rect class="node-accent" x="158" y="48" width="44" height="34" rx="4"/><text x="180" y="70" text-anchor="middle">C1</text>
+              <rect class="node-accent" x="206" y="48" width="44" height="34" rx="4"/><text x="228" y="70" text-anchor="middle">C1</text>
+              <rect class="node-accent" x="254" y="48" width="44" height="34" rx="4"/><text x="276" y="70" text-anchor="middle">C1</text>
+              <rect class="node-accent" x="302" y="48" width="44" height="34" rx="4"/><text x="324" y="70" text-anchor="middle">C1</text>
+              <rect class="node-accent" x="350" y="48" width="44" height="34" rx="4"/><text x="372" y="70" text-anchor="middle">C2</text>
+              <rect class="node-accent" x="398" y="48" width="44" height="34" rx="4"/><text x="420" y="70" text-anchor="middle">C2</text>
+              <rect class="node-accent" x="446" y="48" width="44" height="34" rx="4"/><text x="468" y="70" text-anchor="middle">C2</text>
+              <rect class="node-accent" x="494" y="48" width="44" height="34" rx="4"/><text x="516" y="70" text-anchor="middle">C2</text>
+              <rect class="node-accent" x="542" y="48" width="44" height="34" rx="4"/><text x="564" y="70" text-anchor="middle">C2</text>
+              <rect class="node" x="590" y="48" width="44" height="34" rx="4"/>
+              <rect class="node" x="638" y="48" width="44" height="34" rx="4"/>
+              <text class="muted" x="692" y="70">10 / 12</text>
+              <text x="10" y="120">iteration 2</text>
+              <rect class="node-teal" x="110" y="98" width="44" height="34" rx="4"/><text x="132" y="120" text-anchor="middle">G1</text>
+              <rect class="node-teal" x="158" y="98" width="44" height="34" rx="4"/><text x="180" y="120" text-anchor="middle">G2</text>
+              <rect class="node-accent" x="206" y="98" width="44" height="34" rx="4"/><text x="228" y="120" text-anchor="middle">C3</text>
+              <rect class="node-accent" x="254" y="98" width="44" height="34" rx="4"/><text x="276" y="120" text-anchor="middle">C3</text>
+              <rect class="node-accent" x="302" y="98" width="44" height="34" rx="4"/><text x="324" y="120" text-anchor="middle">C3</text>
+              <rect class="node-accent" x="350" y="98" width="44" height="34" rx="4"/><text x="372" y="120" text-anchor="middle">C3</text>
+              <rect class="node-accent" x="398" y="98" width="44" height="34" rx="4"/><text x="420" y="120" text-anchor="middle">C3</text>
+              <rect class="node-accent" x="446" y="98" width="44" height="34" rx="4"/><text x="468" y="120" text-anchor="middle">C3</text>
+              <rect class="node-accent" x="494" y="98" width="44" height="34" rx="4"/><text x="516" y="120" text-anchor="middle">C3</text>
+              <rect class="node-accent" x="542" y="98" width="44" height="34" rx="4"/><text x="564" y="120" text-anchor="middle">C4</text>
+              <rect class="node-accent" x="590" y="98" width="44" height="34" rx="4"/><text x="612" y="120" text-anchor="middle">C4</text>
+              <rect class="node-accent" x="638" y="98" width="44" height="34" rx="4"/><text x="660" y="120" text-anchor="middle">C4</text>
+              <text class="muted" x="692" y="120">12 / 12</text>
+              <text x="10" y="170">iteration 3</text>
+              <rect class="node-teal" x="110" y="148" width="44" height="34" rx="4"/><text x="132" y="170" text-anchor="middle">G1</text>
+              <rect class="node-teal" x="158" y="148" width="44" height="34" rx="4"/><text x="180" y="170" text-anchor="middle">G2</text>
+              <rect class="node-teal" x="206" y="148" width="44" height="34" rx="4"/><text x="228" y="170" text-anchor="middle">G3</text>
+              <rect class="node-teal" x="254" y="148" width="44" height="34" rx="4"/><text x="276" y="170" text-anchor="middle">G4</text>
+              <rect class="node" x="302" y="148" width="44" height="34" rx="4"/>
+              <rect class="node" x="350" y="148" width="44" height="34" rx="4"/>
+              <rect class="node" x="398" y="148" width="44" height="34" rx="4"/>
+              <rect class="node" x="446" y="148" width="44" height="34" rx="4"/>
+              <rect class="node" x="494" y="148" width="44" height="34" rx="4"/>
+              <rect class="node" x="542" y="148" width="44" height="34" rx="4"/>
+              <rect class="node" x="590" y="148" width="44" height="34" rx="4"/>
+              <rect class="node" x="638" y="148" width="44" height="34" rx="4"/>
+              <text class="muted" x="692" y="170">4 / 12</text>
+              <rect class="node-accent" x="10" y="198" width="16" height="16" rx="3"/>
+              <text class="muted" x="32" y="211">C = prompt (context) token</text>
+              <rect class="node-teal" x="220" y="198" width="16" height="16" rx="3"/>
+              <text class="muted" x="242" y="211">G = generated token</text>
+              <rect class="node" x="390" y="198" width="16" height="16" rx="3"/>
+              <text class="muted" x="412" y="211">unused token budget</text>
+              <text class="muted" x="10" y="240">Iteration 1 leaves 2 slots idle because no waiting prompt fits; chunked context could split C3 to fill them</text>
+            </svg>
+            <figcaption>Original diagram with a made-up workload (numbers next to C and G are request IDs). Context and generation tokens from different requests share one packed iteration, bounded by the token budget and the request cap.</figcaption>
+          </figure>
+
+          <h4>Reference diagrams</h4>
+          <div class="ref-gallery" id="day-11-references">
+            <figure class="ref-figure">
+              <img loading="lazy" decoding="async" width="3781" height="1490" src="https://raw.githubusercontent.com/NVIDIA/TensorRT-LLM/3d10fbf8ff9f1ba6f45c3d8ffb5b4b8da395ce1c/docs/source/media/TRTLLM_Scheduler_Vis_2.svg" alt="TensorRT-LLM scheduler visualization: with a maximum of 12 tokens per iteration, ten prompt tokens from two requests are processed in the context phase, the current token count reads 10, and the remaining request prompts stay unscheduled.">
+              <figcaption>
+                <strong>TensorRT-LLM scheduler visualization, first step.</strong>
+                With toy limits of 4 requests and 12 tokens, two 5-token prompts start their context phase and the 2 leftover tokens fit no other prompt.
+                Source: <a href="https://nvidia.github.io/TensorRT-LLM/features/paged-attention-ifb-scheduler.html">TensorRT-LLM: paged attention, IFB, and request scheduling</a> ·
+                <a href="https://github.com/NVIDIA/TensorRT-LLM/blob/3d10fbf8ff9f1ba6f45c3d8ffb5b4b8da395ce1c/docs/source/media/TRTLLM_Scheduler_Vis_2.svg">file @ 3d10fbf</a>.
+                <span class="license">License: Apache-2.0 (NVIDIA/TensorRT-LLM)</span>
+              </figcaption>
+            </figure>
+            <figure class="ref-figure">
+              <img loading="lazy" decoding="async" width="1928" height="710" src="https://raw.githubusercontent.com/NVIDIA/TensorRT-LLM/3d10fbf8ff9f1ba6f45c3d8ffb5b4b8da395ce1c/docs/source/media/TRTLLM_Architecture_Overview.png" alt="TensorRT-LLM architecture: the LLM class starts one PyExecutor worker per rank (rank 0 to rank N-1); each PyExecutor contains a scheduler, a model engine, a KV cache manager, and a sampler.">
+              <figcaption>
+                <strong>TensorRT-LLM PyTorch-backend architecture.</strong>
+                The LLM API starts one PyExecutor per rank, each holding a scheduler, a model engine, a KV cache manager, and a sampler.
+                Source: <a href="https://nvidia.github.io/TensorRT-LLM/developer-guide/overview.html">TensorRT-LLM architecture overview</a> ·
+                <a href="https://github.com/NVIDIA/TensorRT-LLM/blob/3d10fbf8ff9f1ba6f45c3d8ffb5b4b8da395ce1c/docs/source/media/TRTLLM_Architecture_Overview.png">file @ 3d10fbf</a>.
+                <span class="license">License: Apache-2.0 (NVIDIA/TensorRT-LLM)</span>
+              </figcaption>
+            </figure>
+          </div>
+
+          <h4>Further reading</h4>
+          <ul class="reading-list">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 4.3.3 “TensorRT-LLM”</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Explains what TensorRT-LLM offers beyond community engines, the extra engineering it asks for, and the cases — well-supported models on recent NVIDIA GPUs, tight Dynamo integration — where that effort pays off.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day11">100 Days of Inference — Day 11: TensorRT-LLM, Compilation and the Plugin System</a></strong><span class="reading-meta">elizabetht · GitHub notebook series · 2026</span><p>Contrasts TensorRT-LLM’s NVIDIA-only focus with general-purpose engines and traces its speed to shape specialization, kernel selection, and fused plugins, noting the PyTorch-based V1.</p></li>
+            <li><strong><a href="https://www.usenix.org/conference/osdi22/presentation/yu">Orca: A Distributed Serving System for Transformer-Based Generative Models</a></strong><span class="reading-meta">Yu, Jeong, Kim, Kim, Chun · OSDI · 2022</span><p>Introduced iteration-level scheduling and selective batching — the ideas behind continuous and in-flight batching — so requests join and leave between iterations instead of between whole requests.</p></li>
+            <li><strong><a href="https://nvidia.github.io/TensorRT-LLM/features/paged-attention-ifb-scheduler.html">Paged Attention, IFB, and Request Scheduling</a></strong><span class="reading-meta">NVIDIA · TensorRT-LLM documentation · accessed 2026</span><p>Defines the batch-size, token, and sequence-length limits and walks through scheduler decisions step by step, with and without chunked context.</p></li>
+            <li><strong><a href="https://nvidia.github.io/TensorRT-LLM/developer-guide/overview.html">TensorRT-LLM Architecture Overview</a></strong><span class="reading-meta">NVIDIA · TensorRT-LLM documentation · accessed 2026</span><p>Describes the LLM API, the per-rank PyExecutor loop, and how its scheduler, model engine, KV cache manager, and sampler cooperate.</p></li>
+          </ul>
+          <div class="source-links">
+            <strong>Engine deep dives:</strong>
+            <a href="../engines/index.html">All engines</a>
+            <a href="../engines/vllm.html">vLLM engine page</a>
+            <a href="../engines/sglang.html">SGLang engine page</a>
           </div>
 
           <div class="bridge"><strong>Bridge to day 12:</strong> An optimized engine controls execution inside a worker. A production fleet still needs to route requests, scale workers, transfer state, and decide whether prefill and decode should share a GPU. Those are control-plane problems.</div>
@@ -1301,6 +1798,95 @@ def handoff(prefill_result, decode_worker):
           <div class="exercise-grid">
             <article><h4>Break-even model</h4><p>Use three prompt sizes and assumed prefill/transfer times. Compute colocated versus disaggregated latency, then propose a threshold policy that also considers decode queue pressure.</p></article>
             <article><h4>Failure drill</h4><p>Write state transitions for reserve → transfer → commit. Inject failure at each transition and specify idempotent cleanup, retry ownership, user-visible behavior, and required trace fields.</p></article>
+          </div>
+
+          <h3 id="day-12-going-deeper">Going deeper: moving KV between workers and routing with cache awareness</h3>
+          <div id="day-12-deep-dive" class="deep-dive" data-search-item data-keywords="KV transfer NIXL RDMA NVLink UCX GPUDirect layer-wise transfer overlap layout transformation tensor parallel mismatch connector KV-aware router overlap KV events block hashes load balancing DistServe Splitwise Mooncake">
+            <h4>The handoff is a data-movement problem; placement is a cost function</h4>
+            <p>
+              In a disaggregated deployment, the prefill worker’s product is not just a first token; it is every layer’s keys and values for the prompt. With Day 9’s 128 KiB of KV per token, a 4,000-token prompt is about 500 MiB that must reach the decode worker before decoding can start. Production stacks move these bytes GPU to GPU — over NVLink inside a node or RDMA networks between nodes — without staging them in CPU memory. NVIDIA’s <a href="https://github.com/ai-dynamo/nixl">NIXL</a> transfer library, used by <a href="https://docs.nvidia.com/dynamo/latest/">Dynamo</a> and supported by vLLM, SGLang, and TensorRT-LLM, exposes one API over several backends such as UCX and GPUDirect Storage.
+            </p>
+            <p>
+              Three techniques hide or shrink that cost. <strong>Layer-wise streaming</strong> sends each layer’s KV as soon as it is computed, overlapping transfer with the remaining prefill layers; vLLM’s connector interface, pictured below, has save and load hooks around each attention layer for this reason. <strong>Layout transformation</strong> handles pools with different parallelism: if prefill runs tensor-parallel across two GPUs and decode uses another split, heads and blocks must be regrouped in flight. And because transfers are <strong>asynchronous</strong>, other requests keep computing while one request’s blocks travel.
+            </p>
+            <p>
+              Routing decides where work lands. A <strong>KV-aware router</strong> such as Dynamo’s listens to events from workers announcing which KV blocks they have stored or evicted, identified by block hashes, and keeps a global index of them. For each new request it hashes the prompt’s blocks, estimates how much of the prefix each worker already holds, and combines that overlap with each worker’s current load into a cost. A worker with a long cached prefix needs less prefill, but if its queue is full, a colder worker may still finish sooner.
+            </p>
+            <p>
+              Research systems mapped this space before it became product features. DistServe and Splitwise (both 2024) showed that sizing prefill and decode pools separately can raise goodput under latency targets, and Mooncake built a cluster-wide KV store around the cache itself. Their shared lesson matches this lesson’s formula: disaggregation wins only when transfer time and coordination cost less than the interference they remove.
+            </p>
+          </div>
+
+          <figure id="day-12-diagram" class="svg-diagram" data-search-item data-keywords="diagram KV-aware router prefill worker decode worker layer-by-layer KV transfer KV events">
+            <svg viewBox="0 0 760 270" role="img" aria-labelledby="p2-d12-title">
+              <title id="p2-d12-title">A KV-aware router sends a request to a prefill worker and selects a decode worker; the prefill worker streams KV layer by layer over NVLink or RDMA via NIXL to the decode worker; both workers publish KV events about stored and evicted blocks back to the router's index</title>
+              <defs>
+                <marker id="p2-d12-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="muted" d="M0,0 L10,5 L0,10 z"/></marker>
+              </defs>
+              <text x="10" y="24">KV-aware routing and layer-by-layer KV transfer</text>
+              <rect class="node-accent" x="10" y="100" width="170" height="90" rx="8"/>
+              <text x="95" y="128" text-anchor="middle">KV-aware router</text>
+              <text class="muted" x="95" y="150" text-anchor="middle">prefix overlap per worker</text>
+              <text class="muted" x="95" y="168" text-anchor="middle">+ queue and KV load</text>
+              <rect class="node" x="250" y="50" width="170" height="70" rx="8"/>
+              <text x="335" y="78" text-anchor="middle">Prefill worker</text>
+              <text class="muted" x="335" y="98" text-anchor="middle">computes layers 1…L</text>
+              <rect class="node" x="560" y="50" width="190" height="70" rx="8"/>
+              <text x="655" y="78" text-anchor="middle">Decode worker</text>
+              <text class="muted" x="655" y="98" text-anchor="middle">loads KV, then decodes</text>
+              <path class="edge" d="M420 85 H558" marker-end="url(#p2-d12-arrow)"/>
+              <text class="muted" x="489" y="72" text-anchor="middle">KV, layer by layer</text>
+              <text class="muted" x="489" y="104" text-anchor="middle">NVLink / RDMA via NIXL</text>
+              <path class="edge" d="M180 120 L248 90" marker-end="url(#p2-d12-arrow)"/>
+              <path class="edge" d="M180 160 H655 V122" marker-end="url(#p2-d12-arrow)"/>
+              <text class="muted" x="430" y="178" text-anchor="middle">picks the decode worker too</text>
+              <rect class="node-teal" x="250" y="210" width="500" height="40" rx="8"/>
+              <text class="muted" x="500" y="234" text-anchor="middle">workers publish KV events: block hashes stored or evicted</text>
+              <path class="edge" d="M300 120 V208" marker-end="url(#p2-d12-arrow)"/>
+              <path class="edge" d="M710 120 V208" marker-end="url(#p2-d12-arrow)"/>
+              <path class="edge" d="M250 230 H95 V192" marker-end="url(#p2-d12-arrow)"/>
+              <text class="muted" x="170" y="246" text-anchor="middle">index of cached blocks</text>
+            </svg>
+            <figcaption>Original diagram. Events from workers keep the router’s block index current; the prefill worker streams each finished layer’s KV to the chosen decode worker over a GPU-to-GPU path while later layers are still computing.</figcaption>
+          </figure>
+
+          <h4>Reference diagrams</h4>
+          <div class="ref-gallery" id="day-12-references">
+            <figure class="ref-figure">
+              <img loading="lazy" decoding="async" width="1007" height="487" src="https://raw.githubusercontent.com/vllm-project/vllm/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/features/disagg_prefill/high_level_design.png" alt="vLLM disaggregated prefill design: inside one vLLM instance, a scheduler process with a connector sends SchedulerOutput carrying connector metadata to worker processes, each with a connector and a paged KV buffer; workers of this and other vLLM instances exchange data through a shared data transfer layer.">
+              <figcaption>
+                <strong>vLLM disaggregated prefill — connector design.</strong>
+                A scheduler-side connector attaches transfer metadata to each scheduler output, and worker-side connectors move data between paged KV buffers and a data-transfer layer shared with other instances.
+                Source: <a href="https://docs.vllm.ai/en/latest/features/disagg_prefill/">vLLM disaggregated prefilling</a> ·
+                <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/features/disagg_prefill/high_level_design.png">file @ 7b77ed5</a>.
+                <span class="license">License: Apache-2.0 (vllm-project/vllm)</span>
+              </figcaption>
+            </figure>
+            <figure class="ref-figure">
+              <img loading="lazy" decoding="async" width="1796" height="1218" src="https://raw.githubusercontent.com/NVIDIA/TensorRT-LLM/3d10fbf8ff9f1ba6f45c3d8ffb5b4b8da395ce1c/docs/source/media/kv_transfer.png" alt="TensorRT-LLM disaggregated serving sequence: a proxy awaits the context worker's response with cache and communication info, sends the generation request, and the generation worker schedules, allocates cache, asynchronously receives KV from the context worker, executes its batch, and returns results while the context worker deletes its cache copy.">
+              <figcaption>
+                <strong>TensorRT-LLM disaggregated serving — KV cache exchange.</strong>
+                A proxy collects cache and communication info from a context worker, forwards the request to a generation worker, and the generation worker allocates cache, receives KV asynchronously, then decodes while the context side frees its copy.
+                Source: <a href="https://nvidia.github.io/TensorRT-LLM/features/disagg-serving.html">TensorRT-LLM disaggregated serving</a> ·
+                <a href="https://github.com/NVIDIA/TensorRT-LLM/blob/3d10fbf8ff9f1ba6f45c3d8ffb5b4b8da395ce1c/docs/source/media/kv_transfer.png">file @ 3d10fbf</a>.
+                <span class="license">License: Apache-2.0 (NVIDIA/TensorRT-LLM)</span>
+              </figcaption>
+            </figure>
+          </div>
+
+          <h4>Further reading</h4>
+          <ul class="reading-list">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 4.4 “NVIDIA Dynamo”</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Introduces Dynamo as an orchestration layer above vLLM, SGLang, and TensorRT-LLM and surveys the large-deployment features it adds, such as disaggregation and cache-aware routing.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day12">100 Days of Inference — Day 12: NVIDIA Dynamo, Disaggregated Serving</a></strong><span class="reading-meta">elizabetht · GitHub notebook series · 2026</span><p>Frames prefill and decode as phases with opposite bottlenecks that interfere when colocated, and shows how Dynamo splits them across a worker fleet.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2401.09670">DistServe: Disaggregating Prefill and Decoding for Goodput-optimized Large Language Model Serving</a></strong><span class="reading-meta">Zhong et al. · OSDI · 2024</span><p>Places the two phases on separate GPUs and searches per-phase parallelism and resource ratios that maximize goodput under first-token and per-token latency targets.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2311.18677">Splitwise: Efficient Generative LLM Inference Using Phase Splitting</a></strong><span class="reading-meta">Patel et al. · ISCA · 2024</span><p>Characterizes prefill and decode on production traces and shows that separate — even heterogeneous — hardware pools improve throughput per cost and per watt.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2407.00079">Mooncake: A KVCache-centric Disaggregated Architecture for LLM Serving</a></strong><span class="reading-meta">Qin et al. · USENIX FAST · 2025</span><p>Describes Moonshot AI’s serving platform built around a distributed KV cache pool, with cache-aware scheduling and early rejection when overloaded.</p></li>
+          </ul>
+          <div class="source-links">
+            <strong>Engine deep dives:</strong>
+            <a href="../engines/index.html">All engines</a>
+            <a href="../engines/vllm.html">vLLM engine page</a>
+            <a href="../engines/sglang.html">SGLang engine page</a>
           </div>
 
           <div class="bridge"><strong>Bridge beyond phase 2:</strong> We now have a full stack: roofline constraints, kernels, deployable artifacts, memory-aware engines, prefix and grammar policy, compiled execution, and fleet orchestration. The next phase can optimize precision, speculation, parallelism, and model architecture without losing sight of where each technique belongs.</div>
@@ -1491,6 +2077,34 @@ def handoff(prefill_result, decode_worker):
           <h3>Suggested implementation lab with mini_infer</h3>
           <p>
             Use the project as a conceptual laboratory rather than a performance benchmark. Submit requests with different prompt lengths to the synchronous engine and inspect the token-budget scheduler. Append toy keys and values into <code>PagedKVCache</code> and watch block tables change. Insert shared token prefixes into <code>RadixPrefixCache</code>, acquire/release them, and trigger eviction. Run the structured decoder through its JSON-like states. Route request IDs through <code>PrefillDecodeRouter</code>. Then write a one-page gap analysis listing everything a production implementation still needs: GPU tensors and kernels, thread safety, process boundaries, transfer protocols, failure recovery, autoscaling, security, and distributed observability.
+          </p>
+        </section>
+
+        <section id="sources-and-credits" class="content-section" data-search-group="Credits">
+          <div class="section-heading" data-search-item data-keywords="sources credits licenses attribution images figures">
+            <div>
+              <p class="eyebrow">Attribution</p>
+              <h2>Sources and credits</h2>
+            </div>
+            <p>Every embedded external figure on this page, where it comes from, and the license that permits its use.</p>
+          </div>
+          <div class="table-wrap">
+            <table class="comparison">
+              <thead><tr><th>Where</th><th>Embedded image</th><th>Source (pinned commit)</th><th>License</th></tr></thead>
+              <tbody>
+                <tr><td><a href="#day-07-references">Day 7</a></td><td>vLLM CUDA Graphs: piecewise, full, and eager modes</td><td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/cuda_graphs/current_design.png">vllm-project/vllm @ 7b77ed5 — docs/assets/design/cuda_graphs/current_design.png</a></td><td>Apache-2.0</td></tr>
+                <tr><td><a href="#day-07-references">Day 7</a></td><td>vLLM CUDA Graphs: runtime dispatch</td><td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/cuda_graphs/executor_runtime.png">vllm-project/vllm @ 7b77ed5 — docs/assets/design/cuda_graphs/executor_runtime.png</a></td><td>Apache-2.0</td></tr>
+                <tr><td><a href="#day-09-references">Day 9</a></td><td>vLLM LLMEngine and its four jobs</td><td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/arch_overview/llm_engine.excalidraw.png">vllm-project/vllm @ 7b77ed5 — docs/assets/design/arch_overview/llm_engine.excalidraw.png</a></td><td>Apache-2.0</td></tr>
+                <tr><td><a href="#day-09-references">Day 9</a></td><td>vLLM prefix caching: freed blocks in the free queue</td><td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/prefix_caching/free.png">vllm-project/vllm @ 7b77ed5 — docs/assets/design/prefix_caching/free.png</a></td><td>Apache-2.0</td></tr>
+                <tr><td><a href="#day-11-references">Day 11</a></td><td>TensorRT-LLM scheduler visualization, first step</td><td><a href="https://github.com/NVIDIA/TensorRT-LLM/blob/3d10fbf8ff9f1ba6f45c3d8ffb5b4b8da395ce1c/docs/source/media/TRTLLM_Scheduler_Vis_2.svg">NVIDIA/TensorRT-LLM @ 3d10fbf — docs/source/media/TRTLLM_Scheduler_Vis_2.svg</a></td><td>Apache-2.0</td></tr>
+                <tr><td><a href="#day-11-references">Day 11</a></td><td>TensorRT-LLM PyTorch-backend architecture</td><td><a href="https://github.com/NVIDIA/TensorRT-LLM/blob/3d10fbf8ff9f1ba6f45c3d8ffb5b4b8da395ce1c/docs/source/media/TRTLLM_Architecture_Overview.png">NVIDIA/TensorRT-LLM @ 3d10fbf — docs/source/media/TRTLLM_Architecture_Overview.png</a></td><td>Apache-2.0</td></tr>
+                <tr><td><a href="#day-12-references">Day 12</a></td><td>vLLM disaggregated prefill: connector design</td><td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/features/disagg_prefill/high_level_design.png">vllm-project/vllm @ 7b77ed5 — docs/assets/features/disagg_prefill/high_level_design.png</a></td><td>Apache-2.0</td></tr>
+                <tr><td><a href="#day-12-references">Day 12</a></td><td>TensorRT-LLM disaggregated serving: KV cache exchange</td><td><a href="https://github.com/NVIDIA/TensorRT-LLM/blob/3d10fbf8ff9f1ba6f45c3d8ffb5b4b8da395ce1c/docs/source/media/kv_transfer.png">NVIDIA/TensorRT-LLM @ 3d10fbf — docs/source/media/kv_transfer.png</a></td><td>Apache-2.0</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            Images are loaded directly from <code>raw.githubusercontent.com</code> at the pinned commits, unmodified, with attribution in each caption; the explanatory pages they come from are linked in those captions. All inline SVG diagrams on this page are original to this guide. Reference cards and reading-list entries only link to external papers, documentation, and articles; their summaries are original paraphrases, so consult the linked sources for the authors’ own words and figures. <em>Inference Engineering</em> (Philip Kiely, Baseten Books, 2026) is cited by chapter only; none of its text or figures are reproduced here.
           </p>
         </section>
 

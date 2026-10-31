@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="Compare how one token travels through vLLM and SGLang: processes, source files, schedulers, KV caches, model runners, samplers, streaming, and features, pinned to exact commits."
+    >
+    <meta name="theme-color" content="#3156d3">
+    <title>Engines Overview: vLLM vs SGLang | LLM Inference from Scratch</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%233156d3'/><text x='32' y='40' text-anchor='middle' font-size='22' font-family='sans-serif' font-weight='700' fill='white'>ENG</text></svg>">
+    <link rel="stylesheet" href="../styles.css?v=7">
+    <link rel="stylesheet" href="lifecycle.css?v=1">
+    <script src="../app.js?v=2" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="../index.html" aria-label="Return to the systems guide">
+          <span class="brand-mark" aria-hidden="true">LLM</span>
+          <span class="brand-text">Inference from Scratch</span>
+        </a>
+        <div class="search-wrap">
+          <label for="site-search" aria-hidden="true">⌕</label>
+          <input
+            id="site-search"
+            type="search"
+            placeholder="Search engine comparison"
+            autocomplete="off"
+            aria-controls="search-results"
+            aria-label="Search the engine comparison"
+          >
+          <kbd class="search-key" aria-hidden="true">Ctrl K</kbd>
+          <ul id="search-results" class="search-results" aria-label="Search results" hidden></ul>
+        </div>
+        <div class="top-actions">
+          <button class="icon-button theme-button" type="button" data-theme-toggle aria-label="Change color theme">
+            <span data-theme-icon aria-hidden="true">◐</span>
+          </button>
+          <button
+            class="icon-button menu-button"
+            type="button"
+            data-menu-toggle
+            aria-label="Open section navigation"
+            aria-controls="section-navigation"
+            aria-expanded="false"
+          >
+            <span aria-hidden="true">☰</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside id="section-navigation" class="sidebar" aria-label="Engines overview navigation">
+        <p class="sidebar-title">Engines overview</p>
+        <nav>
+          <ul class="nav-list">
+            <li><a href="#engines-overview" aria-current="true">Overview</a></li>
+            <li><a href="#pinned-sources">Pinned sources</a></li>
+            <li><a href="#process-layout">Process layout</a></li>
+            <li><a href="#token-path">One token, two paths</a></li>
+            <li><a href="#design-differences">Design differences</a></li>
+            <li><a href="#feature-map">Feature map</a></li>
+            <li><a href="#choosing">Choosing an engine</a></li>
+            <li><a href="#study-plan">Study plan</a></li>
+            <li><a href="#overview-reading">Further reading</a></li>
+            <li><a href="vllm.html">vLLM deep dive ↗</a></li>
+            <li><a href="sglang.html">SGLang deep dive ↗</a></li>
+            <li><a href="../index.html">Systems guide ↗</a></li>
+            <li><a href="../curriculum.html">26-day curriculum ↗</a></li>
+          </ul>
+        </nav>
+        <div class="sidebar-note">
+          <strong>Accuracy marker</strong><br>
+          Every source link points to an exact commit. If upstream code moves, the
+          links still show the version this page explains.
+        </div>
+      </aside>
+
+      <main id="main-content">
+        <section id="engines-overview" class="hero curriculum-hero" data-search-group="Engines overview" data-search-item data-keywords="vLLM SGLang comparison overview token lifecycle">
+          <p class="eyebrow">Engine internals</p>
+          <h1>One token, two production engines.</h1>
+          <p class="hero-copy">
+            vLLM and SGLang both turn an OpenAI-style request into streamed tokens
+            using continuous batching, reusable KV cache, CUDA graphs, and
+            optimized attention kernels. They divide the work differently. This page
+            is the map; the two deep dives animate every step and show the exact source
+            files a token triggers.
+          </p>
+          <div class="hero-actions">
+            <a class="button" href="vllm.html#lifecycle">Watch the vLLM lifecycle</a>
+            <a class="button button-secondary" href="sglang.html#lifecycle">Watch the SGLang lifecycle</a>
+          </div>
+          <div class="engine-hero-meta">
+            <a href="https://github.com/vllm-project/vllm/tree/7b77ed581d92fa14e34ab43344837bb1ca1b4257">vLLM @ 7b77ed5</a>
+            <a href="https://github.com/sgl-project/sglang/tree/07a85353d6c6be47a268e33a416ad537985ef262">SGLang @ 07a8535</a>
+            <span>snapshots from 2026-10-31</span>
+          </div>
+        </section>
+
+        <section id="pinned-sources" class="content-section" data-search-group="Pinned sources" data-search-item data-keywords="commit pinned source code permalink accuracy">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Read this first</p>
+              <h2>Why the pages are pinned to commits</h2>
+            </div>
+            <p>Inference engines change weekly. Pinning prevents a diagram from silently drifting away from the code.</p>
+          </div>
+          <p>
+            Many blog posts about vLLM and SGLang describe files that have since been
+            renamed, split, or replaced. For example, at the pinned vLLM snapshot the
+            chat-completions HTTP route lives in
+            <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/entrypoints/openai/chat_completion/api_router.py#L59"><code>vllm/entrypoints/openai/chat_completion/api_router.py</code></a>,
+            not in the older monolithic API-server module. At the pinned SGLang snapshot,
+            decode CUDA graphs are managed by
+            <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/model_executor/runner/decode_cuda_graph_runner.py#L254"><code>DecodeCudaGraphRunner</code></a>
+            under <code>model_executor/runner/</code>.
+          </p>
+          <p>
+            The rule for this section of the site is simple: a file, class, function,
+            flag, or feature appears only if it was located in the pinned source tree.
+            Line links point to definitions, so you can open the code beside the
+            explanation. When you study a newer release, use the concepts here as a
+            map and search for the same symbols in the new tree.
+          </p>
+          <div class="callout">
+            <strong>Beginner tip:</strong> do not try to read either engine from top to
+            bottom. Follow one request. Each time the token crosses a process boundary,
+            ask three questions: what data structure carries it, who owns its KV memory,
+            and what decides when it runs again?
+          </div>
+        </section>
+
+        <section id="process-layout" class="content-section" data-search-group="Process layout" data-search-item data-keywords="processes ZMQ API server EngineCore worker TokenizerManager Scheduler DetokenizerManager">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Architecture</p>
+              <h2>Where each engine draws process boundaries</h2>
+            </div>
+            <p>Both isolate HTTP and tokenization work from the GPU loop, but they place detokenization and model execution differently.</p>
+          </div>
+
+          <figure class="svg-diagram" data-search-item data-keywords="process diagram vLLM SGLang side by side">
+            <svg viewBox="0 0 980 470" role="img" aria-labelledby="process-layout-title process-layout-desc">
+              <title id="process-layout-title">vLLM and SGLang process layouts side by side</title>
+              <desc id="process-layout-desc">vLLM uses an API server process, an EngineCore process, and optional worker processes. SGLang uses a main HTTP and TokenizerManager process, scheduler processes that also run the model, and a DetokenizerManager process.</desc>
+              <defs>
+                <marker id="pl-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0 0 L10 5 L0 10 z" fill="currentColor"></path>
+                </marker>
+              </defs>
+              <text x="235" y="28" text-anchor="middle" font-weight="700">vLLM (V1 engine)</text>
+              <text x="735" y="28" text-anchor="middle" font-weight="700">SGLang (SRT runtime)</text>
+              <line x1="490" y1="15" x2="490" y2="455" class="edge" stroke-dasharray="4 6"></line>
+
+              <rect x="40" y="50" width="390" height="92" rx="12" class="node"></rect>
+              <text x="60" y="76" font-weight="700">API server process</text>
+              <text x="60" y="98" class="muted">FastAPI route → OpenAIServingChat → AsyncLLM</text>
+              <text x="60" y="118" class="muted">InputProcessor (tokenize) · OutputProcessor (detokenize)</text>
+
+              <rect x="40" y="190" width="390" height="92" rx="12" class="node-accent"></rect>
+              <text x="60" y="216" font-weight="700">EngineCore process</text>
+              <text x="60" y="238" class="muted">busy loop → Scheduler.schedule()</text>
+              <text x="60" y="258" class="muted">KVCacheManager · BlockPool · prefix-cache hashes</text>
+
+              <rect x="40" y="330" width="390" height="100" rx="12" class="node-teal"></rect>
+              <text x="60" y="356" font-weight="700">Executor + GPU worker(s)</text>
+              <text x="60" y="378" class="muted">Worker → GPUModelRunner → model → Sampler</text>
+              <text x="60" y="398" class="muted">one GPU: in-process "uni" executor</text>
+              <text x="60" y="418" class="muted">multi-GPU: "mp" or Ray worker processes</text>
+
+              <path d="M235 142 V188" class="edge" marker-end="url(#pl-arrow)"></path>
+              <text x="245" y="170" class="muted">ZMQ + msgpack requests / outputs</text>
+              <path d="M235 282 V328" class="edge" marker-end="url(#pl-arrow)"></path>
+              <text x="245" y="310" class="muted">scheduler output → execute_model</text>
+
+              <rect x="545" y="50" width="390" height="92" rx="12" class="node"></rect>
+              <text x="565" y="76" font-weight="700">Main process</text>
+              <text x="565" y="98" class="muted">HTTP server → OpenAIServingChat</text>
+              <text x="565" y="118" class="muted">TokenizerManager: tokenize, track, stream</text>
+
+              <rect x="545" y="190" width="390" height="112" rx="12" class="node-accent"></rect>
+              <text x="565" y="216" font-weight="700">Scheduler process (per GPU rank)</text>
+              <text x="565" y="238" class="muted">event loop → get_next_batch_to_run()</text>
+              <text x="565" y="258" class="muted">RadixCache · memory pools · SchedulePolicy</text>
+              <text x="565" y="278" class="muted">TpModelWorker → ModelRunner → model → Sampler</text>
+
+              <rect x="545" y="350" width="390" height="80" rx="12" class="node-teal"></rect>
+              <text x="565" y="376" font-weight="700">DetokenizerManager process</text>
+              <text x="565" y="398" class="muted">incremental token IDs → text pieces</text>
+
+              <path d="M700 142 V188" class="edge" marker-end="url(#pl-arrow)"></path>
+              <text x="560" y="170" class="muted">ZMQ: tokenized request</text>
+              <path d="M740 302 V348" class="edge" marker-end="url(#pl-arrow)"></path>
+              <text x="750" y="330" class="muted">ZMQ: token IDs</text>
+              <path d="M935 390 C965 390 965 96 937 96" class="edge" marker-end="url(#pl-arrow)"></path>
+              <text x="955" y="250" class="muted" transform="rotate(90 955 250)">ZMQ: text back to TokenizerManager</text>
+            </svg>
+            <figcaption>
+              Original diagram. vLLM separates scheduling (EngineCore) from GPU workers and detokenizes in the API
+              server. SGLang runs the model inside each scheduler process and gives detokenization its own process.
+            </figcaption>
+          </figure>
+
+          <div class="card-grid">
+            <article class="card" data-search-item data-keywords="vLLM process model executor uni mp ray">
+              <span class="tag implemented">vLLM</span>
+              <h3>Engine core separated from serving</h3>
+              <p>
+                The API server owns HTTP, chat templating, tokenization, and output
+                processing. It talks to an EngineCore process through
+                <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/engine/core_client.py#L1161"><code>AsyncMPClient</code></a>.
+                The core runs a busy loop that schedules one engine step at a time. With
+                one GPU, the parallel configuration selects the in-process
+                <code>uni</code> executor; with multiple GPUs it defaults to
+                multiprocessing unless Ray is configured or already active
+                (<a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/config/parallel.py#L1191"><code>config/parallel.py</code></a>).
+              </p>
+            </article>
+            <article class="card" data-search-item data-keywords="SGLang process model TokenizerManager Scheduler DetokenizerManager">
+              <span class="tag implemented">SGLang</span>
+              <h3>Scheduler and model runner co-located</h3>
+              <p>
+                SGLang’s
+                <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/managers/tokenizer_manager.py#L485"><code>TokenizerManager</code></a>
+                tokenizes and tracks request state in the main process. Each scheduler
+                process owns batching decisions, prefix-cache state, memory pools, and its
+                model worker. Generated token IDs go to
+                <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/managers/detokenizer_manager.py#L75"><code>DetokenizerManager</code></a>,
+                which returns text to the TokenizerManager for streaming.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="token-path" class="content-section" data-search-group="Token path" data-search-item data-keywords="token lifecycle files triggered source files step by step comparison">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Side-by-side trace</p>
+              <h2>One token, two paths through the source tree</h2>
+            </div>
+            <p>Read across a row to compare equivalent responsibilities. The deep dives add tensor shapes, prefill/decode differences, and animation.</p>
+          </div>
+          <div class="table-wrap">
+            <table class="comparison file-map">
+              <thead>
+                <tr><th>#</th><th>Responsibility</th><th>vLLM file and symbol</th><th>SGLang file and symbol</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>1</td><td>HTTP route receives the chat request</td>
+                  <td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/entrypoints/openai/chat_completion/api_router.py#L59">chat_completion/api_router.py</a> · <code>create_chat_completion</code></td>
+                  <td><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/entrypoints/http_server.py#L1861">entrypoints/http_server.py</a> · <code>openai_v1_chat_completions</code></td>
+                </tr>
+                <tr>
+                  <td>2</td><td>OpenAI adapter applies chat semantics</td>
+                  <td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/entrypoints/openai/chat_completion/serving.py#L287">chat_completion/serving.py</a> · <code>OpenAIServingChat.create_chat_completion</code></td>
+                  <td><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/entrypoints/openai/serving_chat.py#L382">openai/serving_chat.py</a> · <code>OpenAIServingChat</code></td>
+                </tr>
+                <tr>
+                  <td>3</td><td>Admission, validation, and tokenization</td>
+                  <td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/engine/async_llm.py#L411">v1/engine/async_llm.py</a> · <code>AsyncLLM.add_request</code>; <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/engine/input_processor.py#L382">input_processor.py</a> · <code>process_inputs</code></td>
+                  <td><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/managers/tokenizer_manager.py#L926">tokenizer_manager.py</a> · <code>generate_request</code>; <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/managers/tokenizer_manager.py#L1127"><code>_tokenize_one_request</code></a></td>
+                </tr>
+                <tr>
+                  <td>4</td><td>Request crosses into the engine loop</td>
+                  <td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/engine/core_client.py#L1161">core_client.py</a> · <code>AsyncMPClient</code> (ZMQ)</td>
+                  <td><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/managers/scheduler.py#L2257">managers/scheduler.py</a> · <code>process_input_requests</code></td>
+                </tr>
+                <tr>
+                  <td>5</td><td>Engine loop drives repeated steps</td>
+                  <td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/engine/core.py#L1670">v1/engine/core.py</a> · <code>run_busy_loop</code> → <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/engine/core.py#L674"><code>step</code></a></td>
+                  <td><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/managers/scheduler.py#L2057">scheduler.py</a> · <code>event_loop_normal</code> or <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/managers/scheduler.py#L2093"><code>event_loop_overlap</code></a></td>
+                </tr>
+                <tr>
+                  <td>6</td><td>Choose which requests and how many tokens run</td>
+                  <td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/sched/scheduler.py#L698">v1/core/sched/scheduler.py</a> · <code>Scheduler.schedule</code></td>
+                  <td><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/managers/scheduler.py#L4036">scheduler.py</a> · <code>get_next_batch_to_run</code>; <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/managers/schedule_policy.py#L609"><code>PrefillAdder</code></a></td>
+                </tr>
+                <tr>
+                  <td>7</td><td>Reuse a cached prefix</td>
+                  <td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/kv_cache_manager.py#L266">v1/core/kv_cache_manager.py</a> · <code>get_computed_blocks</code></td>
+                  <td><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/mem_cache/radix_cache.py#L369">mem_cache/radix_cache.py</a> · <code>RadixCache.match_prefix</code></td>
+                </tr>
+                <tr>
+                  <td>8</td><td>Reserve KV memory for new tokens</td>
+                  <td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/kv_cache_manager.py#L379">kv_cache_manager.py</a> · <code>allocate_slots</code>; <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/block_pool.py#L137"><code>BlockPool</code></a></td>
+                  <td><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/mem_cache/memory_pool.py#L379">mem_cache/memory_pool.py</a> · <code>ReqToTokenPool</code>; <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/mem_cache/memory_pool.py#L2167"><code>MHATokenToKVPool</code></a></td>
+                </tr>
+                <tr>
+                  <td>9</td><td>Hand a batch to the GPU runner</td>
+                  <td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/worker/gpu_worker.py#L1344">v1/worker/gpu_worker.py</a> · <code>Worker.execute_model</code></td>
+                  <td><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/managers/tp_worker.py#L626">managers/tp_worker.py</a> · <code>TpModelWorker.forward_batch_generation</code></td>
+                </tr>
+                <tr>
+                  <td>10</td><td>Prepare GPU-side batch metadata</td>
+                  <td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/worker/gpu_model_runner.py#L3906">v1/worker/gpu_model_runner.py</a> · <code>GPUModelRunner.execute_model</code></td>
+                  <td><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/model_executor/forward_batch_info.py#L486">forward_batch_info.py</a> · <code>ForwardBatch</code>; <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/model_executor/model_runner.py#L1818"><code>ModelRunner.forward</code></a></td>
+                </tr>
+                <tr>
+                  <td>11</td><td>Replay a captured graph when shapes allow</td>
+                  <td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/compilation/cuda_graph.py#L145">compilation/cuda_graph.py</a> · <code>CUDAGraphWrapper</code></td>
+                  <td><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/model_executor/runner/decode_cuda_graph_runner.py#L254">runner/decode_cuda_graph_runner.py</a> · <code>DecodeCudaGraphRunner</code></td>
+                </tr>
+                <tr>
+                  <td>12</td><td>Run transformer layers and paged attention</td>
+                  <td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/model_executor/models/llama.py#L464">models/llama.py</a> · <code>LlamaForCausalLM</code></td>
+                  <td><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/models/llama.py#L535">models/llama.py</a> · <code>LlamaForCausalLM</code>; <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/layers/radix_attention.py#L60"><code>RadixAttention</code></a></td>
+                </tr>
+                <tr>
+                  <td>13</td><td>Turn hidden states into the next token</td>
+                  <td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/worker/gpu_model_runner.py#L4260">gpu_model_runner.py</a> · <code>sample_tokens</code>; <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/sample/sampler.py#L78"><code>Sampler</code></a></td>
+                  <td><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/layers/logits_processor.py#L512">layers/logits_processor.py</a> · <code>LogitsProcessor</code>; <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/layers/sampler.py#L119"><code>Sampler</code></a></td>
+                </tr>
+                <tr>
+                  <td>14</td><td>Update request state, stop checks, cache bookkeeping</td>
+                  <td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/sched/scheduler.py#L2252">scheduler.py</a> · <code>update_from_output</code></td>
+                  <td><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/managers/scheduler.py#L5261">scheduler.py</a> · <code>process_batch_result</code></td>
+                </tr>
+                <tr>
+                  <td>15</td><td>Detokenize incrementally and stream text</td>
+                  <td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/engine/output_processor.py#L728">output_processor.py</a> · <code>process_outputs</code>; <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/entrypoints/openai/chat_completion/serving.py#L472"><code>chat_completion_stream_generator</code></a></td>
+                  <td><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/managers/detokenizer_manager.py#L158">detokenizer_manager.py</a> · <code>event_loop</code>; <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/managers/tokenizer_manager.py#L2525"><code>_handle_batch_output</code></a></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">
+            <strong>Prefill versus decode:</strong> rows 5–14 repeat for every generated
+            token. On the first pass, a request may process hundreds of prompt tokens
+            (prefill or, in SGLang terminology, “extend”). Later passes usually process
+            one new token per request while reading all cached keys and values.
+          </div>
+        </section>
+
+        <section id="design-differences" class="content-section" data-search-group="Design differences" data-search-item data-keywords="prefix caching radix tree hash blocks scheduling policies overlap async structured outputs disaggregation">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Concepts</p>
+              <h2>The design choices that matter most</h2>
+            </div>
+            <p>Both engines solve the same problems. These are the places where their data structures and control flow differ.</p>
+          </div>
+
+          <div class="deep-dive" data-search-item data-keywords="prefix cache hash block radix tree match prefix">
+            <h3>1. Prefix reuse: hashed blocks versus a radix tree</h3>
+            <p>
+              vLLM stores KV memory in fixed-size blocks; the cache configuration uses
+              16 tokens as its default block size and enables prefix caching by default
+              (<a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/config/cache.py#L185"><code>config/cache.py</code></a>).
+              A full block’s identity depends on its tokens and on the identity of the
+              blocks before it, so two requests that share an entire prefix produce the
+              same chain of block identities. The KV cache manager looks up that chain to
+              find already-computed blocks before allocating new ones.
+            </p>
+            <p>
+              SGLang organizes reusable prefixes as a radix tree. Each path from the root
+              spells a token sequence, and nodes point at KV slots. A new request walks the
+              tree to its longest matching prefix, locks the nodes it uses, and inserts its
+              newly computed suffix when finished. Unlocked leaves can be evicted under
+              memory pressure. This naturally supports branching workloads such as
+              few-shot templates, multi-turn chat, and the parallel branches created by
+              SGLang’s frontend language.
+            </p>
+            <p>
+              Beginners should remember the shared invariant rather than the data
+              structure: a cached prefix is valid only when the exact token IDs, model,
+              adapter, and other identity-affecting inputs match. Matching text after
+              detokenization is not enough.
+            </p>
+          </div>
+
+          <div class="deep-dive" data-search-item data-keywords="scheduler token budget chunked prefill extend decode policy fcfs priority lpm dfs-weight">
+            <h3>2. Scheduling: one token budget versus explicit batch types</h3>
+            <p>
+              vLLM’s V1 scheduler treats each request as “some number of tokens still need
+              computing.” A step assigns tokens from a shared budget to running and waiting
+              requests, which lets prompt chunks and decode tokens share the same step.
+              Its configured policy can be first-come-first-served or priority
+              (<a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/config/scheduler.py#L21"><code>config/scheduler.py</code></a>).
+            </p>
+            <p>
+              SGLang forms new prefill (“extend”) batches with
+              <code>PrefillAdder</code> and continues decode batches for running requests.
+              Its policy enum includes cache-aware choices—longest prefix match and
+              DFS weighting—and cache-agnostic choices such as FCFS, longest output first,
+              random, and routing-key ordering
+              (<a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/managers/schedule_policy.py#L164"><code>schedule_policy.py</code></a>).
+              Cache-aware ordering can improve reuse but may require fairness safeguards.
+            </p>
+          </div>
+
+          <div class="deep-dive" data-search-item data-keywords="overlap scheduling async scheduling CPU GPU idle">
+            <h3>3. Hiding CPU work behind GPU work</h3>
+            <p>
+              A synchronous loop schedules, launches the GPU, waits, processes results, and
+              repeats. When GPU steps are short, CPU bookkeeping can leave the accelerator
+              idle. SGLang provides an overlap event loop that prepares the next batch while
+              the current one runs. vLLM exposes an <code>async_scheduling</code>
+              scheduler setting
+              (<a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/config/scheduler.py#L211"><code>config/scheduler.py</code></a>)
+              and an EngineCore batch-queue path for overlapping work. Both techniques
+              trade some implementation complexity for lower per-token overhead.
+            </p>
+          </div>
+
+          <div class="deep-dive" data-search-item data-keywords="structured outputs xgrammar guidance outlines llguidance lm-format-enforcer">
+            <h3>4. Structured outputs and speculative decoding are pluggable</h3>
+            <p>
+              At the pinned commits, vLLM’s structured-output configuration accepts
+              <code>auto</code>, <code>xgrammar</code>, <code>guidance</code>,
+              <code>outlines</code>, and a deprecated <code>lm-format-enforcer</code>
+              backend
+              (<a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/config/structured_outputs.py#L14"><code>structured_outputs.py</code></a>).
+              SGLang includes xgrammar, Outlines, and llguidance backend modules under
+              <a href="https://github.com/sgl-project/sglang/tree/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/constrained"><code>srt/constrained/</code></a>.
+              In both engines, a grammar becomes a mask over allowed next-token IDs before
+              sampling.
+            </p>
+            <p>
+              Speculative decoding is similarly modular: vLLM has proposer modules such as
+              EAGLE, draft model, n-gram, and suffix decoding in
+              <a href="https://github.com/vllm-project/vllm/tree/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/spec_decode"><code>v1/spec_decode/</code></a>,
+              while SGLang’s algorithms live under
+              <a href="https://github.com/sgl-project/sglang/tree/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/speculative"><code>srt/speculative/</code></a>.
+              The deep dives list the exact algorithms present in each snapshot.
+            </p>
+          </div>
+
+          <div class="deep-dive" data-search-item data-keywords="prefill decode disaggregation KV connector NIXL Mooncake LMCache">
+            <h3>5. Disaggregation is a KV-transfer problem</h3>
+            <p>
+              Separating prefill and decode workers only helps if the KV cache can move
+              quickly and reliably. vLLM implements this through KV connectors, including
+              NIXL, Mooncake, LMCache, offloading, and multi-connector modules under
+              <a href="https://github.com/vllm-project/vllm/tree/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/distributed/kv_transfer/kv_connector/v1"><code>kv_transfer/kv_connector/v1/</code></a>.
+              SGLang has prefill and decode disaggregation managers plus transfer backends
+              such as Mooncake, NIXL, and Mori under
+              <a href="https://github.com/sgl-project/sglang/tree/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/disaggregation"><code>srt/disaggregation/</code></a>.
+            </p>
+          </div>
+        </section>
+
+        <section id="feature-map" class="content-section" data-search-group="Feature map" data-search-item data-keywords="feature comparison matrix vLLM SGLang">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Navigate features</p>
+              <h2>Feature map</h2>
+            </div>
+            <p>Each link opens the detailed feature card: what it does, why it matters, source files, flags, and caveats.</p>
+          </div>
+          <div class="table-wrap">
+            <table class="comparison">
+              <thead><tr><th>Capability</th><th>vLLM</th><th>SGLang</th></tr></thead>
+              <tbody>
+                <tr><td>KV memory and prefix reuse</td><td><a href="vllm.html#feature-paged-attention">PagedAttention</a> · <a href="vllm.html#feature-prefix-caching">prefix caching</a></td><td><a href="sglang.html#feature-radix-attention">RadixAttention</a></td></tr>
+                <tr><td>Continuous batching</td><td><a href="vllm.html#feature-continuous-batching">Scheduler</a></td><td><a href="sglang.html#feature-continuous-batching">Scheduler</a></td></tr>
+                <tr><td>Chunked prefill</td><td><a href="vllm.html#feature-chunked-prefill">Chunked prefill</a></td><td><a href="sglang.html#feature-chunked-prefill">Chunked prefill</a></td></tr>
+                <tr><td>CPU/GPU overlap</td><td><a href="vllm.html#feature-async-scheduling">Async scheduling</a></td><td><a href="sglang.html#feature-overlap-scheduler">Overlap scheduler</a></td></tr>
+                <tr><td>Request ordering</td><td><a href="vllm.html#feature-preemption">Preemption and policy</a></td><td><a href="sglang.html#feature-schedule-policies">Schedule policies</a></td></tr>
+                <tr><td>Launch overhead</td><td><a href="vllm.html#feature-cuda-graphs">CUDA graphs</a> · <a href="vllm.html#feature-torch-compile">torch.compile</a></td><td><a href="sglang.html#feature-cuda-graphs">CUDA graphs</a> · <a href="sglang.html#feature-torch-compile">torch.compile</a></td></tr>
+                <tr><td>Attention kernels</td><td><a href="vllm.html#feature-attention-backends">Backends</a></td><td><a href="sglang.html#feature-attention-backends">Backends</a></td></tr>
+                <tr><td>Quantization</td><td><a href="vllm.html#feature-quantization">Methods</a></td><td><a href="sglang.html#feature-quantization">Methods</a></td></tr>
+                <tr><td>Speculative decoding</td><td><a href="vllm.html#feature-spec-decode">Proposers</a></td><td><a href="sglang.html#feature-spec-decode">Algorithms</a></td></tr>
+                <tr><td>Structured outputs</td><td><a href="vllm.html#feature-structured-outputs">Backends</a></td><td><a href="sglang.html#feature-structured-outputs">Backends</a></td></tr>
+                <tr><td>Adapters and modalities</td><td><a href="vllm.html#feature-lora">LoRA</a> · <a href="vllm.html#feature-multimodal">multimodal</a></td><td><a href="sglang.html#feature-lora">LoRA</a> · <a href="sglang.html#feature-multimodal">multimodal</a></td></tr>
+                <tr><td>Model parallelism</td><td><a href="vllm.html#feature-tensor-parallel">TP</a> · <a href="vllm.html#feature-pipeline-parallel">PP</a> · <a href="vllm.html#feature-data-parallel">DP</a> · <a href="vllm.html#feature-expert-parallel">EP</a></td><td><a href="sglang.html#feature-tensor-parallel">TP</a> · <a href="sglang.html#feature-pipeline-parallel">PP</a> · <a href="sglang.html#feature-dp-attention">DP attention</a> · <a href="sglang.html#feature-expert-parallel">EP</a></td></tr>
+                <tr><td>Prefill/decode disaggregation</td><td><a href="vllm.html#feature-disagg">KV connectors</a></td><td><a href="sglang.html#feature-disagg">PD disaggregation</a></td></tr>
+                <tr><td>KV beyond GPU memory</td><td><a href="vllm.html#feature-kv-offload">KV offloading</a></td><td><a href="sglang.html#feature-hicache">HiCache</a></td></tr>
+                <tr><td>Serving API</td><td><a href="vllm.html#feature-openai-api">OpenAI-compatible API</a> · <a href="vllm.html#feature-streaming">streaming</a></td><td><a href="sglang.html#feature-openai-api">OpenAI API</a> · <a href="sglang.html#feature-native-api">native API</a> · <a href="sglang.html#feature-streaming">streaming</a></td></tr>
+                <tr><td>Tool calls and reasoning output</td><td><a href="vllm.html#feature-tool-calling">Tool parsers</a> · <a href="vllm.html#feature-reasoning">reasoning parsers</a></td><td><a href="sglang.html#feature-function-calling">Function calling</a> · <a href="sglang.html#feature-reasoning">reasoning parsers</a></td></tr>
+                <tr><td>Observability</td><td><a href="vllm.html#feature-metrics">Metrics</a></td><td><a href="sglang.html#feature-metrics">Metrics</a></td></tr>
+                <tr><td>Programming and routing extras</td><td><a href="vllm.html#feature-pooling">Pooling models</a> · <a href="vllm.html#feature-sleep-mode">sleep mode</a></td><td><a href="sglang.html#feature-frontend-language">Frontend language</a> · <a href="sglang.html#feature-router">router</a> · <a href="sglang.html#feature-offline-engine">offline Engine</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="choosing" class="content-section" data-search-group="Choosing an engine" data-search-item data-keywords="choose vLLM SGLang benchmark workload decision">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Practical judgment</p>
+              <h2>How to choose without guessing</h2>
+            </div>
+            <p>Feature lists are a starting point. Your workload and measurements decide.</p>
+          </div>
+          <div class="card-grid three">
+            <article class="card">
+              <h3>Describe the traffic</h3>
+              <p>Record prompt and output length distributions, concurrency, prefix-sharing rate, structured-output use, and latency targets for TTFT and inter-token latency.</p>
+            </article>
+            <article class="card">
+              <h3>Match the model</h3>
+              <p>Check architecture support, quantization formats, attention variants, MoE parallelism, multimodal processors, and tool/reasoning parsers for the exact checkpoint.</p>
+            </article>
+            <article class="card">
+              <h3>Benchmark fairly</h3>
+              <p>Use identical models, hardware, precision, prompt sets, sampling settings, and warm-up. Report p50, p95, and p99—not a single best run.</p>
+            </article>
+            <article class="card">
+              <h3>Prefix-heavy programs</h3>
+              <p>Agents, branching prompts, and repeated templates benefit from strong prefix reuse. Measure cache hit rate and recomputed tokens in both engines.</p>
+            </article>
+            <article class="card">
+              <h3>Operational fit</h3>
+              <p>Consider metrics, deployment tooling, upgrade cadence, routing, disaggregation support, and how easily your team can debug the code paths you depend on.</p>
+            </article>
+            <article class="card">
+              <h3>Re-test after upgrades</h3>
+              <p>Both projects evolve rapidly. Defaults, kernels, and supported features can change, so pin versions and rerun the same benchmark before upgrading production.</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="study-plan" class="content-section" data-search-group="Study plan" data-search-item data-keywords="how to study engine source code exercises">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Learning path</p>
+              <h2>A four-session study plan</h2>
+            </div>
+            <p>Use the animated lifecycles, then confirm each step in code.</p>
+          </div>
+          <ol class="study-loop">
+            <li><span><strong>Session 1 — admission.</strong> Trace rows 1–4 in both engines. Write down the request object at each process boundary.</span></li>
+            <li><span><strong>Session 2 — scheduling and memory.</strong> Compare rows 5–8. Explain where a prefix hit is detected and who frees memory after completion.</span></li>
+            <li><span><strong>Session 3 — model execution.</strong> Follow rows 9–13. Draw the shapes of input IDs, positions, KV slots, logits, and sampled tokens.</span></li>
+            <li><span><strong>Session 4 — streaming and operations.</strong> Follow rows 14–15, then study metrics, structured outputs, speculation, and disaggregation in the feature catalogs.</span></li>
+          </ol>
+          <div class="callout">
+            Pair this page with the executable learning components in this repository:
+            <a href="../index.html#memory">paged and prefix caches</a>,
+            <a href="../index.html#scheduling">batching and scheduling</a>, and the
+            <a href="../notes/phase-2-engines.html">Phase 2 engines textbook</a>.
+          </div>
+        </section>
+
+        <section id="overview-reading" class="content-section" data-search-group="Further reading" data-search-item data-keywords="papers docs vLLM SGLang reading">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Primary sources</p>
+              <h2>Further reading</h2>
+            </div>
+            <p>Start with primary sources; use secondary articles for intuition and always check dates.</p>
+          </div>
+          <ul class="reading-list">
+            <li>
+              <strong><a href="https://arxiv.org/abs/2309.06180">Efficient Memory Management for Large Language Model Serving with PagedAttention</a></strong>
+              <span class="reading-meta">Kwon et al. · SOSP · 2023 · paper</span>
+              <p>The original vLLM paper explains why contiguous KV reservations waste memory and how block tables enable sharing and higher batch sizes.</p>
+            </li>
+            <li>
+              <strong><a href="https://arxiv.org/abs/2312.07104">SGLang: Efficient Execution of Structured Language Model Programs</a></strong>
+              <span class="reading-meta">Zheng et al. · NeurIPS · 2024 · paper</span>
+              <p>Introduces RadixAttention and the co-design between a programming frontend and a runtime that reuses prefixes across branching LLM calls.</p>
+            </li>
+            <li>
+              <strong><a href="https://docs.vllm.ai/">vLLM documentation</a></strong>
+              <span class="reading-meta">vLLM project · official docs</span>
+              <p>The best reference for current deployment options, supported models, flags, and design notes. Compare its version with the pinned source when details differ.</p>
+            </li>
+            <li>
+              <strong><a href="https://docs.sglang.ai/">SGLang documentation</a></strong>
+              <span class="reading-meta">SGLang project · official docs</span>
+              <p>Covers server arguments, backends, structured outputs, speculative decoding, parallelism, and deployment recipes for the SGLang runtime.</p>
+            </li>
+            <li>
+              <strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, chapters 4.3.1 and 4.3.2</a></strong>
+              <span class="reading-meta">Philip Kiely · Baseten Books · 2026 · book</span>
+              <p>Places vLLM and SGLang within the larger runtime, infrastructure, and tooling stack. Use it for production context; use the pinned code for implementation details.</p>
+            </li>
+            <li>
+              <strong><a href="https://github.com/elizabetht/100-days-of-inference">100 Days of Inference, days 9 and 10</a></strong>
+              <span class="reading-meta">Companion learning repository</span>
+              <p>Hands-on notebooks that accompany the book’s engine chapters and pair well with the side-by-side source trace on this page.</p>
+            </li>
+          </ul>
+        </section>
+      </main>
+    </div>
+    <a class="back-to-top" href="#engines-overview" aria-label="Back to top">↑</a>
+  </body>
+</html>

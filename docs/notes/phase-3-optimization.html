@@ -18,7 +18,7 @@
     <meta property="og:description" content="Six detailed lessons that connect numerical compression to distributed LLM serving.">
     <title>Days 13–18: Optimization Textbook | LLM Inference from Scratch</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%233156d3'/><text x='32' y='40' text-anchor='middle' font-size='24' font-family='sans-serif' font-weight='700' fill='white'>P3</text></svg>">
-    <link rel="stylesheet" href="../styles.css?v=6">
+    <link rel="stylesheet" href="../styles.css?v=7">
     <script src="../app.js" defer></script>
     <style>
       .textbook-hero h1 { max-width: 16ch; }
@@ -95,6 +95,7 @@
             <li><a href="#formula-sheet">Formula sheet</a></li>
             <li><a href="#glossary">Glossary</a></li>
             <li><a href="#capstone">Cumulative exercise</a></li>
+            <li><a href="#sources-and-credits">Sources &amp; credits</a></li>
             <li><a href="phase-2-engines.html">Previous: Phase 2 ↗</a></li>
             <li><a href="phase-4-production.html">Next: Phase 4 ↗</a></li>
             <li><a href="../curriculum.html">26-day curriculum ↗</a></li>
@@ -202,6 +203,149 @@
           </div>
           <h3>Exercises</h3>
           <ol class="exercise-list"><li>Compute weight memory for 7B and 70B parameters in FP32, BF16, FP8, and INT4 before metadata. Convert decimal GB and binary GiB separately.</li><li>Quantize [−2.0, −0.1, 0.0, 0.7, 1.8] to symmetric INT8 and INT4. Report scale, codes, reconstructions, maximum error, and mean absolute error.</li><li>Add an outlier of 20, then compare one tensor scale with groups of two values. Explain the quality/metadata tradeoff.</li><li>Design a benchmark that separates model-load time, prefill throughput, decode tokens/second, and end-to-end latency.</li></ol>
+          <div class="deep-dive" data-search-item data-keywords="microscaling MX MXFP4 MXFP8 NVFP4 E8M0 E4M3 E2M1 block scale FP8 per-tensor per-channel per-token block-wise scaling granularity delayed scaling" id="day13-deep-dive">
+            <h4>Deep dive: microscaling (MXFP4, NVFP4) and FP8 scaling granularity</h4>
+            <p>A 4-bit float by itself is a tiny alphabet. FP4 E2M1 can spell only ±0, 0.5, 1, 1.5, 2, 3, 4, and 6. Those codes become useful only after a <strong>scale</strong> slides them to the right magnitude, so the real design choice is <em>granularity</em>: how many values share one scale, and how precisely that scale is stored. One scale per tensor is cheap, but a single outlier stretches the grid for everyone. One scale per value would be exact, but the metadata would outweigh the data. Microscaling sits in between by giving each small, fixed-size block its own scale.</p>
+            <p>The Open Compute Project <strong>MX</strong> specification lets 32 consecutive elements share one 8-bit E8M0 scale. E8M0 stores only an exponent, so every block scale is an exact power of two. <strong>MXFP4</strong> pairs that scale with E2M1 elements, costing about 4 + 8/32 = 4.25 bits per value; MXFP6 and MXFP8 reuse the same block idea with wider elements. NVIDIA’s <strong>NVFP4</strong> keeps E2M1 elements but halves the block to 16 values and stores each block scale as FP8 E4M3, which can express fractional multipliers. A second FP32 scale per tensor keeps those E4M3 scales inside their representable range. NVFP4 therefore costs about 4 + 8/16 = 4.5 bits per value in exchange for finer local fit.</p>
+            <p>A small example shows why the scale’s own format matters. Suppose a block’s largest magnitude is 9. A power-of-two scale must be 2 so that 9/2 = 4.5 stays under the top code 6; 4.5 then rounds to 4, and the value comes back as 8. An E4M3 scale can instead be 1.5, mapping 9 exactly onto code 6. Neither format is magic: both still round the smaller members of the block, and both need kernels that read scales in the expected memory layout.</p>
+            <p>FP8 serving makes the same trade at coarser granularity. <em>Per-tensor</em> scaling stores one factor per tensor, either from recently observed maxima (delayed scaling) or computed on the fly (current scaling). <em>Per-channel</em> or <em>per-token</em> scaling gives each output channel or activation row its own factor, which helps when a few channels are much louder than the rest. <em>Block-wise</em> FP8, such as the 128×128 weight blocks and 1×128 activation tiles described in the DeepSeek-V3 technical report, contains outliers without 4-bit-sized blocks. Treat a checkpoint’s scaling recipe as part of its compatibility contract with the kernel, not as a footnote.</p>
+          </div>
+          <figure class="svg-diagram" data-search-item id="day13-diagram">
+            <svg viewBox="0 0 760 292" role="img" aria-labelledby="d13svg-title">
+              <title id="d13svg-title">Scaling granularity compared: per-tensor FP8, MXFP4 with one power-of-two scale per 32 values, and NVFP4 with one E4M3 scale per 16 values plus a tensor scale</title>
+              <defs><marker id="d13svg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+              <text x="12" y="62" text-anchor="start" font-weight="700">FP8, per-tensor</text>
+              <text x="12" y="78" text-anchor="start" class="muted">E4M3 codes + one FP32 scale</text>
+              <text x="648" y="67" text-anchor="start" class="muted">8 bits/value</text>
+              <rect class="node" x="190" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="204" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="218" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="232" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="246" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="260" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="274" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="288" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="302" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="316" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="330" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="344" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="358" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="372" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="386" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="400" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="414" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="428" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="442" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="456" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="470" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="484" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="498" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="512" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="526" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="540" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="554" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="568" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="582" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="596" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="610" y="52" width="12" height="22" rx="2"/>
+              <rect class="node" x="624" y="52" width="12" height="22" rx="2"/>
+              <text x="12" y="152" text-anchor="start" font-weight="700">MXFP4</text>
+              <text x="12" y="168" text-anchor="start" class="muted">E2M1 codes, E8M0 scale</text>
+              <text x="648" y="157" text-anchor="start" class="muted">≈4.25 bits/value</text>
+              <rect class="node" x="190" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="204" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="218" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="232" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="246" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="260" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="274" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="288" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="302" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="316" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="330" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="344" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="358" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="372" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="386" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="400" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="414" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="428" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="442" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="456" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="470" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="484" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="498" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="512" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="526" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="540" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="554" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="568" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="582" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="596" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="610" y="142" width="12" height="22" rx="2"/>
+              <rect class="node" x="624" y="142" width="12" height="22" rx="2"/>
+              <text x="12" y="242" text-anchor="start" font-weight="700">NVFP4</text>
+              <text x="12" y="258" text-anchor="start" class="muted">E2M1 codes, E4M3 scales</text>
+              <text x="648" y="247" text-anchor="start" class="muted">≈4.5 bits/value</text>
+              <rect class="node" x="190" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="204" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="218" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="232" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="246" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="260" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="274" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="288" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="302" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="316" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="330" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="344" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="358" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="372" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="386" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="400" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="414" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="428" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="442" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="456" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="470" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="484" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="498" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="512" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="526" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="540" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="554" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="568" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="582" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="596" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="610" y="232" width="12" height="22" rx="2"/>
+              <rect class="node" x="624" y="232" width="12" height="22" rx="2"/>
+              <rect class="node-accent" x="190" y="28" width="446" height="18" rx="4"/>
+              <text x="413" y="41" text-anchor="middle" class="muted">one scale shared by the entire tensor</text>
+              <rect class="node-accent" x="190" y="118" width="446" height="18" rx="4"/>
+              <text x="413" y="131" text-anchor="middle" class="muted">one power-of-two (E8M0) scale per 32 values</text>
+              <rect class="node-accent" x="190" y="208" width="222" height="18" rx="4"/>
+              <rect class="node-accent" x="414" y="208" width="222" height="18" rx="4"/>
+              <text x="301" y="221" text-anchor="middle" class="muted">E4M3 scale · 16 values</text>
+              <text x="525" y="221" text-anchor="middle" class="muted">E4M3 scale · 16 values</text>
+              <rect class="node-teal" x="190" y="260" width="446" height="22" rx="4"/>
+              <text x="413" y="275" text-anchor="middle" class="muted">+ one FP32 scale per tensor keeps the block scales in range</text>
+            </svg>
+            <figcaption>Original diagram. The same 32 values under three scaling recipes. Smaller blocks adapt to local outliers but add scale metadata, which is why “4-bit” formats cost slightly more than four bits per value.</figcaption>
+          </figure>
+          <h4 id="day13-reference-diagrams">Reference diagrams</h4>
+          <div class="ref-gallery">
+            <div class="ref-link-card"><a href="https://arxiv.org/abs/2310.10537">Microscaling Data Formats for Deep Learning — Figure 1</a><small>Figure 1 draws a single MX block: k private elements sharing one scale X. Linked rather than embedded because the paper figure has no explicit reuse license.</small></div>
+            <div class="ref-link-card"><a href="https://developer.nvidia.com/blog/introducing-nvfp4-for-efficient-and-accurate-low-precision-inference/">NVIDIA Technical Blog: Introducing NVFP4 — Figure 2</a><small>Figure 2 shows NVFP4’s two-level scaling (per-16-value E4M3 block scale plus per-tensor FP32 scale); later figures compare E8M0 and E4M3 scale error. Linked, not embedded: NVIDIA blog imagery is not openly licensed.</small></div>
+          </div>
+          <h4 id="day13-further-reading">Further reading</h4>
+          <ul class="reading-list" id="day13-reading">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 5.1.1: Number Formats</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>The book’s number-format section ties each precision to what modern GPUs can execute natively and to the quality budget a product can tolerate. Read it to connect the bit layouts above with real serving decisions.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day13">100 Days of Inference — Day 13: Number formats (FP8, INT8, INT4, NVFP4)</a></strong><span class="reading-meta">elizabetht · GitHub notebook and notes · 2026</span><p>A hands-on notebook that quantizes tensors into several formats and compares their errors and memory footprints. Running it is a quick way to see block scaling change reconstruction error.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2310.10537">Microscaling Data Formats for Deep Learning</a></strong><span class="reading-meta">Rouhani et al. · arXiv · 2023</span><p>Introduces the MX family of block-scaled formats and reports training and inference results with them. The early sections are the clearest description of how a shared exponent and private elements combine.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2209.05433">FP8 Formats for Deep Learning</a></strong><span class="reading-meta">Micikevicius et al. · arXiv · 2022</span><p>Defines the E4M3 and E5M2 encodings, including how special values are handled, and argues for using E4M3 in forward passes. Useful background for any FP8 scaling recipe.</p></li>
+            <li><strong><a href="https://developer.nvidia.com/blog/introducing-nvfp4-for-efficient-and-accurate-low-precision-inference/">Introducing NVFP4 for Efficient and Accurate Low-Precision Inference</a></strong><span class="reading-meta">NVIDIA Technical Blog · 2025</span><p>Explains why NVFP4 uses 16-value blocks with E4M3 scales and a tensor-level FP32 scale, and contrasts it with MXFP4. Treat its performance claims as vendor results to reproduce.</p></li>
+          </ul>
+
           <div class="bridge"><strong>Bridge to Day 14:</strong> today used nearest rounding and exposed the outlier problem. Tomorrow asks which errors matter to the network, then uses calibration data to spend scarce codes where they protect outputs most.</div>
         </section>
 
@@ -277,6 +421,68 @@
           </div>
           <h3>Exercises</h3>
           <ol class="exercise-list"><li>For X = [[1,10],[1,−10]], compute XᵀX and interpret the diagonal and off-diagonal entries.</li><li>Construct a two-channel example where minimizing weight error selects the wrong channel to protect, then evaluate output error.</li><li>Sweep α conceptually from 0 to 1 in SmoothQuant. Predict weight range and activation range at each extreme.</li><li>Write a validation plan with one reconstruction metric, two language-model metrics, two product tasks, and two serving metrics.</li></ol>
+          <div class="deep-dive" data-search-item data-keywords="GPTQ AWQ SmoothQuant intuition KV cache quantization FP8 KV INT8 KV KIVI QAT PTQ fake quantization straight-through estimator calibration" id="day14-deep-dive">
+            <h4>Deep dive: the intuition behind GPTQ, AWQ, and SmoothQuant—plus KV-cache quantization and QAT</h4>
+            <p>Three everyday pictures summarize the methods. <strong>GPTQ</strong> is a careful bookkeeper: it rounds one column, records the error it just created, and nudges the columns it has not rounded yet so that the layer’s output stays close to the original. The inverse Hessian says how much each remaining column can absorb. <strong>AWQ</strong> is triage: activation magnitudes reveal the small fraction of input channels that matter most, and AWQ multiplies those weight channels by a factor before rounding (dividing the matching activations) so they receive finer relative precision without leaving the low-bit format. <strong>SmoothQuant</strong> rebalances difficulty: activations have spiky channels that are hard for INT8 while weights are smooth, so a per-channel factor moves some of the spikiness into the weights and makes W8A8 practical.</p>
+            <p>Weights are not the only bytes decode streams. With long contexts and large batches the <strong>KV cache</strong> can outgrow the weights, so engines also store keys and values in FP8 or INT8, and research systems push to 2–4 bits. KV quantization differs from weight PTQ in two ways: values are created at runtime, so scales come from fast on-the-fly statistics or calibration, and small errors in keys perturb attention scores across thousands of positions. KIVI observed that keys have outlier <em>channels</em> while values vary by <em>token</em>, so it quantizes keys per channel and values per token. Halving KV bytes roughly doubles how many tokens fit in a fixed memory budget, which raises the batch ceiling—often a bigger win than the faster reads themselves.</p>
+            <p><strong>PTQ</strong> runs after training with a small calibration set, typically in minutes to hours. <strong>QAT</strong> inserts fake quantization—quantize then immediately dequantize—into the forward pass during training or fine-tuning, so the model learns weights that survive rounding; gradients pass through the non-differentiable rounding with a straight-through estimator. QAT usually recovers more quality at very low bit widths, but it needs data, a training pipeline, and a fresh evaluation cycle. A pragmatic order is: try PTQ, measure task-level regressions, and reach for QAT only when the target bit width fails your quality gate.</p>
+          </div>
+          <figure class="svg-diagram" data-search-item id="day14-diagram">
+            <svg viewBox="0 0 760 300" role="img" aria-labelledby="d14svg-title">
+              <title id="d14svg-title">How GPTQ, AWQ, and SmoothQuant differ, what each produces, and where KV-cache quantization and QAT fit</title>
+              <defs><marker id="d14svg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+              <rect class="node" x="20" y="16" width="216" height="86" rx="8"/>
+              <text x="128" y="48" text-anchor="middle" font-weight="700">GPTQ</text>
+              <text x="128" y="65" text-anchor="middle" class="muted">round a column, then nudge</text>
+              <text x="128" y="81" text-anchor="middle" class="muted">later columns to cancel error</text>
+              <rect class="node" x="272" y="16" width="216" height="86" rx="8"/>
+              <text x="380" y="48" text-anchor="middle" font-weight="700">AWQ</text>
+              <text x="380" y="65" text-anchor="middle" class="muted">activation size marks salient</text>
+              <text x="380" y="81" text-anchor="middle" class="muted">channels; scale them up first</text>
+              <rect class="node" x="524" y="16" width="216" height="86" rx="8"/>
+              <text x="632" y="48" text-anchor="middle" font-weight="700">SmoothQuant</text>
+              <text x="632" y="65" text-anchor="middle" class="muted">X ÷ s and W × s per channel:</text>
+              <text x="632" y="81" text-anchor="middle" class="muted">same XW, tamer activations</text>
+              <line class="edge" x1="128" y1="102" x2="128" y2="138" marker-end="url(#d14svg-arrow)"/>
+              <line class="edge" x1="380" y1="102" x2="380" y2="138" marker-end="url(#d14svg-arrow)"/>
+              <line class="edge" x1="632" y1="102" x2="632" y2="138" marker-end="url(#d14svg-arrow)"/>
+              <rect class="node-teal" x="20" y="140" width="468" height="50" rx="8"/>
+              <text x="254" y="162" text-anchor="middle" font-weight="700">Weight-only low bit (e.g., W4A16)</text>
+              <text x="254" y="179" text-anchor="middle" class="muted">fewer weight bytes streamed per decode step</text>
+              <rect class="node-teal" x="524" y="140" width="216" height="50" rx="8"/>
+              <text x="632" y="162" text-anchor="middle" font-weight="700">W8A8 (INT8 or FP8)</text>
+              <text x="632" y="179" text-anchor="middle" class="muted">both matmul operands low-bit</text>
+              <rect class="node-accent" x="20" y="214" width="356" height="72" rx="8"/>
+              <text x="198" y="239" text-anchor="middle" font-weight="700">KV-cache quantization</text>
+              <text x="198" y="256" text-anchor="middle" class="muted">FP8/INT8 keys and values: more tokens fit</text>
+              <text x="198" y="272" text-anchor="middle" class="muted">keys per-channel, values per-token (KIVI)</text>
+              <rect class="node" x="384" y="214" width="356" height="72" rx="8"/>
+              <text x="562" y="239" text-anchor="middle" font-weight="700">PTQ vs QAT</text>
+              <text x="562" y="256" text-anchor="middle" class="muted">PTQ: calibrate a finished model (hours)</text>
+              <text x="562" y="272" text-anchor="middle" class="muted">QAT: learn with fake-quant (a training run)</text>
+            </svg>
+            <figcaption>Original diagram. Top: the three PTQ algorithms in one line each. Middle: the deployment formats they usually feed. Bottom: two neighboring decisions—quantizing the KV cache and choosing between post-training and quantization-aware training.</figcaption>
+          </figure>
+          <h4 id="day14-reference-diagrams">Reference diagrams</h4>
+          <div class="ref-gallery">
+            <figure class="ref-figure">
+              <img loading="lazy" src="https://raw.githubusercontent.com/mit-han-lab/smoothquant/c61476d728e42ae0d8a35e7e78494edcac3237b5/figures/intuition.png" alt="Two-part chart. Original: activations have one tall outlier channel and are hard to quantize while weights are flat and easy. SmoothQuant: after migrating difficulty, both activations and weights have moderate ranges and are easy to quantize.">
+              <figcaption><strong>SmoothQuant intuition</strong> — an activation outlier wastes quantization levels until SmoothQuant scales it down per channel and lets the weights absorb the factor. Source: <a href="https://github.com/mit-han-lab/smoothquant/blob/c61476d728e42ae0d8a35e7e78494edcac3237b5/figures/intuition.png">mit-han-lab/smoothquant, figures/intuition.png @ c61476d</a>. <span class="license">License: MIT (repository LICENSE)</span></figcaption>
+            </figure>
+            <figure class="ref-figure">
+              <img loading="lazy" src="https://raw.githubusercontent.com/mit-han-lab/llm-awq/d6e797a42b9ef7778de8ee2352116e0f48a78d61/figures/overview.png" alt="Three panels: round-to-nearest INT3 quantization; keeping one percent of salient weight channels in FP16 chosen by activation magnitude; scaling salient channels before quantization.">
+              <figcaption><strong>AWQ overview</strong> — (a) plain round-to-nearest, (b) keeping 1% salient channels in FP16, which is accurate but hardware-unfriendly, and (c) AWQ’s alternative of scaling salient channels before rounding. Source: <a href="https://github.com/mit-han-lab/llm-awq/blob/d6e797a42b9ef7778de8ee2352116e0f48a78d61/figures/overview.png">mit-han-lab/llm-awq, figures/overview.png @ d6e797a</a>. <span class="license">License: MIT (repository LICENSE)</span></figcaption>
+            </figure>
+          </div>
+          <h4 id="day14-further-reading">Further reading</h4>
+          <ul class="reading-list" id="day14-reading">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 5.1.2: Quantization Approaches</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>This section surveys how serving teams choose among quantization algorithms and what each demands in calibration and kernels. It pairs well with the quality-measurement advice in the same chapter.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day14">100 Days of Inference — Day 14: GPTQ, AWQ, SmoothQuant</a></strong><span class="reading-meta">elizabetht · GitHub notebook and notes · 2026</span><p>Notebook implementations of the three algorithms on toy layers, so you can watch reconstruction error fall as each method protects different structure.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2210.17323">GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers</a></strong><span class="reading-meta">Frantar, Ashkboos, Hoefler, Alistarh · ICLR · 2023</span><p>Shows how second-order error compensation, applied one column block at a time, makes 3–4-bit weight quantization of very large models feasible in hours. The algorithm section is the source of the update rule sketched above.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2306.00978">AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration</a></strong><span class="reading-meta">Lin et al. · MLSys · 2024</span><p>Argues that a tiny set of activation-salient channels dominates quantization error and protects them with per-channel scaling instead of mixed precision. Also describes an efficient 4-bit inference kernel.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2402.02750">KIVI: A Tuning-Free Asymmetric 2bit Quantization for KV Cache</a></strong><span class="reading-meta">Liu et al. · ICML · 2024</span><p>Studies how keys and values distribute differently and quantizes keys per channel and values per token. A compact introduction to why KV-cache quantization needs its own recipe.</p></li>
+          </ul>
+
           <div class="bridge"><strong>Bridge to Day 15:</strong> quantization reduces the cost of every model pass. Speculative decoding attacks a different unit: how many expensive target passes are needed per emitted token while preserving the target distribution exactly.</div>
         </section>
 
@@ -319,7 +525,7 @@
 
           <h3>Medusa, EAGLE, and multi-token prediction</h3>
           <p><strong>Medusa</strong> attaches several prediction heads to target hidden states. Heads predict tokens at different future offsets, producing branches that the target verifies with a tree-aware attention pattern. It avoids loading a separate draft model but requires trained heads, additional parameters, and an engine capable of tree construction and verification. Because future predictions are not independent, tree topology and pruning strongly affect useful acceptance.</p>
-          <p><strong>EAGLE</strong> drafts in a feature space informed by the target’s hidden states, then maps candidates to tokens and verifies them. Later variants adapt tree expansion or use richer feature prediction. The useful mental distinction is that token-level draft-target predicts only discrete next tokens with a separate model, while EAGLE exploits internal target representations that carry more information. It can increase acceptance but couples the draft artifact to a particular target architecture and serving implementation.</p>
+          <p><strong>EAGLE</strong> drafts in a feature space informed by the target’s hidden states, then maps candidates to tokens and verifies them. EAGLE-2 keeps the drafter but grows the draft tree dynamically from its confidence scores; EAGLE-3 drops the feature-prediction objective and predicts tokens directly from fused low-, middle-, and high-level target features. The useful mental distinction is that token-level draft-target predicts only discrete next tokens with a separate model, while EAGLE exploits internal target representations that carry more information. It can increase acceptance but couples the draft artifact to a particular target architecture and serving implementation.</p>
           <p><strong>Multi-token prediction (MTP)</strong> trains auxiliary objectives or heads to predict multiple future positions. At inference these predictions can form speculative candidates. MTP is a broad training/design concept; it is not automatically the exact serving algorithm. Exactness still depends on authoritative target verification and a correct acceptance/correction procedure. A head that simply emits several tokens without verification changes the model being sampled.</p>
           <p><strong>N-gram speculation</strong> needs no neural draft. It finds the recent token pattern earlier in the prompt or output and proposes what followed. This is powerful for copied text, retrieval contexts, repetitive templates, and code. It is weak on novel prose. The project’s proposer deliberately returns an empty proposal when no repeated context exists, which is preferable to inventing low-quality guesses.</p>
 
@@ -347,6 +553,88 @@
           </div>
           <h3>Exercises</h3>
           <ol class="exercise-list"><li>For q=[.5,.25,.25] and p=[.2,.5,.3], compute acceptance probabilities, residual, and final mass.</li><li>Show algebraically why “accept with p, otherwise sample p” is biased for a two-token vocabulary.</li><li>Measure the project function with deterministic random sources that force acceptance and rejection branches.</li><li>Design an adaptive K policy using recent acceptance, draft latency, queue depth, and target batch utilization.</li></ol>
+          <div class="deep-dive" data-search-item data-keywords="Medusa EAGLE EAGLE-2 EAGLE-3 multi-token prediction MTP tree attention tree verification n-gram prompt lookup suffix decoding expected accepted length acceptance rate draft length" id="day15-deep-dive">
+            <h4>Deep dive: Medusa, EAGLE-1/2/3, MTP, tree verification, and expected accepted length</h4>
+            <p>Where candidate tokens come from defines each family. <strong>Medusa</strong> adds a few small decoding heads on the target’s final hidden state; head <em>i</em> guesses the token <em>i</em>+1 positions ahead. The heads guess independently, so Medusa combines their top choices into a candidate tree instead of a single chain. <strong>EAGLE-1</strong> trains a lightweight drafter that runs autoregressively on the target’s final hidden states (the features just before the LM head) and is also fed the token sampled one step ahead, which removes ambiguity about which branch the text took. <strong>EAGLE-2</strong> keeps that drafter but grows the tree dynamically, expanding where the drafter is confident because its confidence tracks acceptance well. <strong>EAGLE-3</strong> drops feature prediction as a training target, predicts tokens directly from a fusion of low-, middle-, and high-level target features, and trains with a “training-time test” that simulates multi-step drafting.</p>
+            <p><strong>Multi-token prediction (MTP)</strong> modules are trained together with the model—DeepSeek-V3, for example, adds sequential MTP modules during pre-training—so at inference they can act as a built-in drafter with no separate artifact. Model-free methods reuse text that already exists. <strong>N-gram (prompt lookup)</strong> matches the last few tokens against the prompt and proposes whatever followed. <strong>Suffix decoding</strong> indexes the prompt and earlier outputs in suffix trees and speculates more tokens when a continuation has been frequent. These methods shine on agent loops, code edits, and retrieval answers where output repeats input.</p>
+            <p><strong>Tree verification</strong> scores every branch in one target pass with a tree attention mask: each candidate attends to the committed context and its own ancestors, never to siblings, and position indices follow tree depth rather than flattened order. The engine then commits the longest accepted root-to-leaf path, keeps only that path’s KV entries, and discards the rest. Wider trees raise the chance that some path survives, but they also spend verification compute—a real cost when the batch is already large.</p>
+            <p><strong>Expected accepted length.</strong> If each draft token is accepted independently with probability α and the draft length is K, one round emits (1 − α<sup>K+1</sup>)/(1 − α) tokens on average, counting the final correction or bonus token. With α = 0.8 and K = 4 that is (1 − 0.328)/0.2 ≈ 3.36 tokens per target pass; with α = 0.5 it is only ≈ 1.94. The curve flattens quickly as K grows, so engines tune K, and acceptance quality—not drafter speed alone—sets the ceiling on speedup.</p>
+          </div>
+          <p class="engine-crosslinks"><strong>Engine pages:</strong> compare how draft models, EAGLE heads, MTP, and n-gram proposers are switched on and measured in <a href="../engines/vllm.html">vLLM</a> and <a href="../engines/sglang.html">SGLang</a>, or start from the <a href="../engines/index.html">engine index</a>.</p>
+          <figure class="svg-diagram" data-search-item id="day15-diagram">
+            <svg viewBox="0 0 760 320" role="img" aria-labelledby="d15svg-title">
+              <title id="d15svg-title">Speculative decoding: five proposer families feed a candidate token tree; the target verifies the whole tree in one pass and keeps the longest accepted path</title>
+              <defs><marker id="d15svg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+              <text x="12" y="13" text-anchor="start" class="muted">Where candidates come from</text>
+              <rect class="node" x="12" y="22" width="160" height="32" rx="8"/>
+              <text x="92" y="43" text-anchor="middle">Draft model</text>
+              <line class="edge" x1="172" y1="38" x2="226" y2="128"/>
+              <rect class="node" x="12" y="64" width="160" height="32" rx="8"/>
+              <text x="92" y="85" text-anchor="middle">Medusa heads</text>
+              <line class="edge" x1="172" y1="80" x2="226" y2="128"/>
+              <rect class="node" x="12" y="106" width="160" height="32" rx="8"/>
+              <text x="92" y="127" text-anchor="middle">EAGLE drafter</text>
+              <line class="edge" x1="172" y1="122" x2="226" y2="128"/>
+              <rect class="node" x="12" y="148" width="160" height="32" rx="8"/>
+              <text x="92" y="169" text-anchor="middle">MTP module</text>
+              <line class="edge" x1="172" y1="164" x2="226" y2="128"/>
+              <rect class="node" x="12" y="190" width="160" height="32" rx="8"/>
+              <text x="92" y="211" text-anchor="middle">n-gram / suffix</text>
+              <line class="edge" x1="172" y1="206" x2="226" y2="128"/>
+              <line class="edge" x1="226" y1="128" x2="262" y2="128" marker-end="url(#d15svg-arrow)"/>
+              <text x="388" y="13" text-anchor="middle" class="muted">Candidate tree, verified in one pass</text>
+              <rect class="node-teal" x="262" y="115" width="56" height="26" rx="6"/>
+              <text x="290" y="132" text-anchor="middle">The</text>
+              <rect class="node-teal" x="360" y="60" width="56" height="26" rx="6"/>
+              <text x="388" y="77" text-anchor="middle">cat</text>
+              <rect class="node" x="360" y="170" width="56" height="26" rx="6"/>
+              <text x="388" y="187" text-anchor="middle">dog</text>
+              <rect class="node-teal" x="460" y="30" width="56" height="26" rx="6"/>
+              <text x="488" y="47" text-anchor="middle">sat</text>
+              <rect class="node" x="460" y="82" width="56" height="26" rx="6"/>
+              <text x="488" y="99" text-anchor="middle">ran</text>
+              <rect class="node" x="460" y="145" width="56" height="26" rx="6"/>
+              <text x="488" y="162" text-anchor="middle">is</text>
+              <rect class="node" x="460" y="197" width="56" height="26" rx="6"/>
+              <text x="488" y="214" text-anchor="middle">was</text>
+              <line class="edge" x1="318" y1="128" x2="360" y2="73" marker-end="url(#d15svg-arrow)"/>
+              <line class="edge" x1="318" y1="128" x2="360" y2="183" marker-end="url(#d15svg-arrow)"/>
+              <line class="edge" x1="416" y1="73" x2="460" y2="43" marker-end="url(#d15svg-arrow)"/>
+              <line class="edge" x1="416" y1="73" x2="460" y2="95" marker-end="url(#d15svg-arrow)"/>
+              <line class="edge" x1="416" y1="183" x2="460" y2="158" marker-end="url(#d15svg-arrow)"/>
+              <line class="edge" x1="416" y1="183" x2="460" y2="210" marker-end="url(#d15svg-arrow)"/>
+              <line class="edge" x1="520" y1="125" x2="546" y2="125" marker-end="url(#d15svg-arrow)"/>
+              <rect class="node-accent" x="548" y="58" width="200" height="134" rx="8"/>
+              <text x="648" y="84" text-anchor="middle" font-weight="700">Target verifies all</text>
+              <text x="648" y="104" text-anchor="middle" class="muted">tree mask: each token attends</text>
+              <text x="648" y="120" text-anchor="middle" class="muted">only to its own ancestors</text>
+              <text x="648" y="146" text-anchor="middle" font-weight="700">Keep: The → cat → sat</text>
+              <text x="648" y="166" text-anchor="middle" class="muted">plus one bonus or</text>
+              <text x="648" y="182" text-anchor="middle" class="muted">correction token</text>
+              <text x="388" y="242" text-anchor="middle" class="muted">teal = accepted path; plain = discarded branches</text>
+              <text x="380" y="268" text-anchor="middle" font-weight="700">Expected tokens per target pass ≈ (1 − α^(K+1)) ÷ (1 − α)</text>
+              <text x="380" y="288" text-anchor="middle" class="muted">α = chance each draft token is accepted (treated as independent); K = draft length</text>
+              <text x="380" y="306" text-anchor="middle" class="muted">α = 0.8, K = 4 → 3.36 tokens per pass;  α = 0.5, K = 4 → 1.94 tokens per pass</text>
+            </svg>
+            <figcaption>Original diagram. Any proposer can feed a tree; tree attention lets the target score every branch at once, and only the longest accepted root-to-leaf path (plus one target-sampled token) is committed.</figcaption>
+          </figure>
+          <h4 id="day15-reference-diagrams">Reference diagrams</h4>
+          <div class="ref-gallery">
+            <figure class="ref-figure">
+              <img loading="lazy" src="https://raw.githubusercontent.com/FasterDecoding/Medusa/e2a5d20c048a9b0a4092e6933c34313687422518/assets/medusa_pipeline.jpg" alt="Medusa pipeline: the original model&#x27;s last hidden state feeds the LM head and three Medusa heads; each produces top-k token predictions that are combined into candidates, and the verified candidate becomes a multi-token single-step prediction.">
+              <figcaption><strong>Medusa pipeline</strong> — the original model’s last hidden state feeds both the LM head and several Medusa heads; their top-k guesses form candidate continuations that the model checks in one step. Source: <a href="https://github.com/FasterDecoding/Medusa/blob/e2a5d20c048a9b0a4092e6933c34313687422518/assets/medusa_pipeline.jpg">FasterDecoding/Medusa, assets/medusa_pipeline.jpg @ e2a5d20</a>. <span class="license">License: Apache-2.0 (repository LICENSE)</span></figcaption>
+            </figure>
+          </div>
+          <div class="ref-link-card"><a href="https://arxiv.org/abs/2401.15077">EAGLE paper — Figure 6, “Pipeline of EAGLE”</a><small>Figure 6 traces how the drafter consumes features plus shifted tokens and how the drafted tree is verified. Linked rather than embedded (paper figure without an explicit reuse license).</small></div>
+          <h4 id="day15-further-reading">Further reading</h4>
+          <ul class="reading-list" id="day15-reading">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 5.2: Speculative Decoding</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Walks through draft-target speculation, Medusa, EAGLE, and n-gram/lookahead methods from a production point of view, including when speculation stops paying off under load.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day15">100 Days of Inference — Day 15: Speculative decoding: draft, verify, repeat</a></strong><span class="reading-meta">elizabetht · GitHub notebook and notes · 2026</span><p>A notebook that implements draft-verify rounds and measures acceptance, making the expected-length formula above tangible.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2211.17192">Fast Inference from Transformers via Speculative Decoding</a></strong><span class="reading-meta">Leviathan, Kalman, Matias · ICML · 2023</span><p>The paper that formalized exact speculative sampling and derived the expected tokens per iteration under an acceptance rate. Its analysis section is the source of the closed-form expression used here.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2503.01840">EAGLE-3: Scaling up Inference Acceleration of Large Language Models via Training-Time Test</a></strong><span class="reading-meta">Li et al. · arXiv · 2025</span><p>Explains why the EAGLE line moved from feature prediction to direct token prediction with multi-layer feature fusion. Its related-work section doubles as a map of EAGLE-1 and EAGLE-2.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2411.04975">SuffixDecoding: Extreme Speculative Decoding for Emerging AI Applications</a></strong><span class="reading-meta">Oliaro et al. · arXiv · 2024</span><p>A model-free speculator that mines suffix trees built from prompts and prior outputs, aimed at repetitive agentic workloads. A good contrast to learned drafters.</p></li>
+          </ul>
+
           <div class="bridge"><strong>Bridge to Day 16:</strong> speculation avoids some target decode calls. Prefix caching avoids repeated target prefill work across requests. Both rely on exact token histories, but the cache adds ownership, eviction, placement, and routing problems.</div>
         </section>
 
@@ -413,6 +701,96 @@
           </div>
           <h3>Exercises</h3>
           <ol class="exercise-list"><li>Reorder a prompt containing system rules, tool schemas, current time, user profile, and user query to maximize stable prefix length without changing semantics.</li><li>Use the KV formula for L=80, Hkv=8, Dhead=128, T=32K, e=2. Compare transfer on 32, 100, and 900 GB/s links.</li><li>Design a worker score using overlap tokens, prefill rate, queue length, and memory pressure. Test two hypothetical workers.</li><li>Extend the learning cache design from entry capacity to byte capacity and state which metadata is needed.</li></ol>
+          <div class="deep-dive" data-search-item data-keywords="hash block prefix caching radix tree RadixAttention chained hash full blocks KV offload CPU DRAM NVMe remote KV store LMCache Mooncake cache-aware routing approximate tree SGLang router" id="day16-deep-dive">
+            <h4>Deep dive: hash-block versus radix prefix caching, offload tiers, and cache-aware routing</h4>
+            <p><strong>Hash blocks.</strong> vLLM divides each sequence’s KV into fixed-size blocks. A full block receives a hash computed from its own tokens <em>and the hash of the block before it</em>, plus extra keys such as a LoRA adapter ID or multimodal input hashes. Because the parent hash is folded in, two equal keys imply two equal prefixes, so lookup is just one dictionary probe per block in order. Only full blocks are cacheable. Freed blocks keep their hash while they wait in the eviction queue, so a prefix that returns soon can be revived without recomputation.</p>
+            <p><strong>Radix trees.</strong> SGLang’s RadixAttention keeps a tree whose edges are token runs and whose nodes point at KV memory. Matching walks down to the longest shared prefix at token granularity; inserting splits an edge where two requests diverge; eviction removes least-recently-used leaves that no running request references. The tree makes sharing structure explicit—many chats branching from one system prompt—while hash blocks are simpler to distribute across processes and align naturally with paged allocators. Both are exact; they differ in bookkeeping and granularity.</p>
+            <p><strong>Offload tiers.</strong> When HBM fills, eviction normally means recomputing later. Offloading keeps evicted blocks in CPU DRAM, local NVMe, or a shared remote store such as LMCache or Mooncake Store. Each step down adds capacity and latency, so the fetch-versus-re-prefill race from earlier in this chapter decides whether a tier pays off for a given prefix length. A shared tier has a bonus: one replica can reuse a prefix that another replica computed.</p>
+            <p><strong>Cache-aware routing.</strong> Caches live on replicas, so the router largely decides the hit rate. SGLang’s router keeps an approximate radix tree of recently routed prompts for each worker and prefers the worker with the longest match unless load imbalance passes a threshold. KV-aware routers in projects such as NVIDIA Dynamo and the Kubernetes Gateway API Inference Extension follow the same idea: estimate overlap, then trade it against queue depth and memory pressure.</p>
+          </div>
+          <p class="engine-crosslinks"><strong>Engine pages:</strong> see hash-block prefix caching in the <a href="../engines/vllm.html">vLLM page</a>, RadixAttention in the <a href="../engines/sglang.html">SGLang page</a>, and the side-by-side summary in the <a href="../engines/index.html">engine index</a>.</p>
+          <figure class="svg-diagram" data-search-item id="day16-diagram">
+            <svg viewBox="0 0 760 390" role="img" aria-labelledby="d16svg-title">
+              <title id="d16svg-title">Prefix caching designs: chained block hashes versus a radix tree, KV offload tiers, and a cache-aware router choosing a replica</title>
+              <defs><marker id="d16svg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+              <text x="12" y="18" text-anchor="start" font-weight="700">Hash-block cache (vLLM-style)</text>
+              <text x="400" y="18" text-anchor="start" font-weight="700">Radix-tree cache (SGLang-style)</text>
+              <rect class="node" x="12" y="32" width="112" height="46" rx="8"/>
+              <text x="68" y="52" text-anchor="middle" font-weight="700">Block 0</text>
+              <text x="68" y="69" text-anchor="middle" class="muted">h0=H(t0–t3)</text>
+              <rect class="node" x="136" y="32" width="112" height="46" rx="8"/>
+              <text x="192" y="52" text-anchor="middle" font-weight="700">Block 1</text>
+              <text x="192" y="69" text-anchor="middle" class="muted">h1=H(h0,t4–t7)</text>
+              <rect class="node" x="260" y="32" width="112" height="46" rx="8"/>
+              <text x="316" y="52" text-anchor="middle" font-weight="700">Block 2</text>
+              <text x="316" y="69" text-anchor="middle" class="muted">h2=H(h1,t8–t11)</text>
+              <line class="edge" x1="124" y1="55" x2="136" y2="55" marker-end="url(#d16svg-arrow)"/>
+              <line class="edge" x1="248" y1="55" x2="260" y2="55" marker-end="url(#d16svg-arrow)"/>
+              <text x="12" y="100" text-anchor="start" class="muted">Only full blocks are hashed; a partial tail is recomputed.</text>
+              <text x="12" y="116" text-anchor="start" class="muted">Lookup = one hash-table probe per block, in order.</text>
+              <text x="12" y="132" text-anchor="start" class="muted">Parent hash inside each key: equal key ⇒ equal whole prefix.</text>
+              <rect class="node-teal" x="400" y="32" width="130" height="32" rx="8"/>
+              <text x="465" y="53" text-anchor="middle" font-weight="700">system prompt</text>
+              <rect class="node" x="574" y="32" width="150" height="32" rx="8"/>
+              <text x="649" y="53" text-anchor="middle" font-weight="700">“refund?” turn</text>
+              <rect class="node" x="574" y="78" width="150" height="32" rx="8"/>
+              <text x="649" y="99" text-anchor="middle" font-weight="700">“shipping?” turn</text>
+              <line class="edge" x1="530" y1="48" x2="574" y2="48" marker-end="url(#d16svg-arrow)"/>
+              <line class="edge" x1="530" y1="48" x2="574" y2="94" marker-end="url(#d16svg-arrow)"/>
+              <text x="400" y="132" text-anchor="start" class="muted">Edges hold token runs; matching walks to the</text>
+              <text x="400" y="148" text-anchor="start" class="muted">longest shared prefix, splitting where requests diverge.</text>
+              <text x="12" y="178" text-anchor="start" class="muted">Offload tiers: capacity grows to the right, and so does fetch latency</text>
+              <rect class="node-teal" x="12" y="188" width="170" height="46" rx="8"/>
+              <text x="97" y="208" text-anchor="middle" font-weight="700">GPU HBM</text>
+              <text x="97" y="225" text-anchor="middle" class="muted">hot blocks</text>
+              <rect class="node" x="200" y="188" width="170" height="46" rx="8"/>
+              <text x="285" y="208" text-anchor="middle" font-weight="700">CPU DRAM</text>
+              <text x="285" y="225" text-anchor="middle" class="muted">warm blocks</text>
+              <rect class="node" x="388" y="188" width="170" height="46" rx="8"/>
+              <text x="473" y="208" text-anchor="middle" font-weight="700">Local NVMe</text>
+              <text x="473" y="225" text-anchor="middle" class="muted">cold blocks</text>
+              <rect class="node" x="576" y="188" width="170" height="46" rx="8"/>
+              <text x="661" y="208" text-anchor="middle" font-weight="700">Remote KV store</text>
+              <text x="661" y="225" text-anchor="middle" class="muted">shared by replicas</text>
+              <line class="edge" x1="182" y1="211" x2="200" y2="211" marker-end="url(#d16svg-arrow)"/>
+              <line class="edge" x1="370" y1="211" x2="388" y2="211" marker-end="url(#d16svg-arrow)"/>
+              <line class="edge" x1="558" y1="211" x2="576" y2="211" marker-end="url(#d16svg-arrow)"/>
+              <rect class="node-accent" x="240" y="256" width="280" height="54" rx="8"/>
+              <text x="380" y="280" text-anchor="middle" font-weight="700">Cache-aware router</text>
+              <text x="380" y="297" text-anchor="middle" class="muted">score = prefill saved − queue − transfer</text>
+              <text x="530" y="286" text-anchor="start" class="muted">A wins: big hit, short queue</text>
+              <rect class="node-teal" x="35" y="334" width="170" height="46" rx="8"/>
+              <text x="120" y="354" text-anchor="middle" font-weight="700">Replica A</text>
+              <text x="120" y="371" text-anchor="middle" class="muted">6K-token hit, idle</text>
+              <rect class="node" x="295" y="334" width="170" height="46" rx="8"/>
+              <text x="380" y="354" text-anchor="middle" font-weight="700">Replica B</text>
+              <text x="380" y="371" text-anchor="middle" class="muted">no hit, idle</text>
+              <rect class="node" x="555" y="334" width="170" height="46" rx="8"/>
+              <text x="640" y="354" text-anchor="middle" font-weight="700">Replica C</text>
+              <text x="640" y="371" text-anchor="middle" class="muted">10K hit, long queue</text>
+              <line class="edge" x1="380" y1="310" x2="120" y2="334" marker-end="url(#d16svg-arrow)"/>
+              <line class="edge" x1="380" y1="310" x2="380" y2="334" marker-end="url(#d16svg-arrow)"/>
+              <line class="edge" x1="380" y1="310" x2="640" y2="334" marker-end="url(#d16svg-arrow)"/>
+            </svg>
+            <figcaption>Original diagram. Both cache designs give exact reuse; they differ in bookkeeping granularity. Offload tiers trade latency for capacity, and the router decides whether a warm cache is actually used.</figcaption>
+          </figure>
+          <h4 id="day16-reference-diagrams">Reference diagrams</h4>
+          <div class="ref-gallery">
+            <figure class="ref-figure">
+              <img loading="lazy" src="https://raw.githubusercontent.com/vllm-project/vllm/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/prefix_caching/overview.png" alt="vLLM prefix-caching data structures: a block pool list of blocks with ID, hash, previous and next pointers; a free block queue with head and tail; a cache-blocks map from hash key to block IDs; and a request-blocks map from request ID to block IDs.">
+              <figcaption><strong>vLLM prefix-caching data structures</strong> — the block pool, the doubly linked free-block queue used for LRU eviction, and the two maps from block hash and from request ID to block IDs. Source: <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/prefix_caching/overview.png">vllm-project/vllm, docs/assets/design/prefix_caching/overview.png @ 7b77ed5</a>. <span class="license">License: Apache-2.0 (repository LICENSE)</span></figcaption>
+            </figure>
+          </div>
+          <div class="ref-link-card"><a href="https://arxiv.org/abs/2312.07104">SGLang paper — Figure 3, RadixAttention operations</a><small>Figure 3 animates a radix tree across nine time points as requests insert, share, and evict prefixes under LRU. Linked rather than embedded (paper figure without an explicit reuse license).</small></div>
+          <h4 id="day16-further-reading">Further reading</h4>
+          <ul class="reading-list" id="day16-reading">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 5.3: Caching</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Covers prefix caching and KV reuse, where to store the KV cache, cache-aware routing, and long-context handling—the same four layers as this deep dive.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day16">100 Days of Inference — Day 16: Prefix caching is a prompt design problem</a></strong><span class="reading-meta">elizabetht · GitHub notebook and notes · 2026</span><p>Shows with measurements how prompt ordering changes hit rates, reinforcing the “stable content first” rule.</p></li>
+            <li><strong><a href="https://docs.vllm.ai/en/latest/design/prefix_caching.html">vLLM design doc: Automatic Prefix Caching</a></strong><span class="reading-meta">vLLM project · documentation · current</span><p>Describes the chained block-hash key, the free-block queue, and how cached blocks are revived or evicted. Read it with the embedded diagram above.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2312.07104">SGLang: Efficient Execution of Structured Language Model Programs</a></strong><span class="reading-meta">Zheng et al. · NeurIPS · 2024</span><p>Introduces RadixAttention and a cache-aware scheduling policy that orders requests to maximize prefix reuse. The RadixAttention section is short and readable.</p></li>
+            <li><strong><a href="https://docs.lmcache.ai/">LMCache documentation</a></strong><span class="reading-meta">LMCache project · documentation · current</span><p>Explains a KV-cache layer that offloads and shares cached blocks across CPU memory, disk, and remote backends for engines such as vLLM. Useful for seeing offload tiers as deployable components.</p></li>
+          </ul>
+
           <div class="bridge"><strong>Bridge to Day 17:</strong> one replica eventually runs out of memory or throughput. Parallelism decides how a request and model span devices; prefix locality then has to be understood inside those device groups rather than on one GPU.</div>
         </section>
 
@@ -496,6 +874,89 @@
           </div>
           <h3>Exercises</h3>
           <ol class="exercise-list"><li>For DP=2, PP=2, TP=4, EP=1, CP=2, compute world size and describe each rank’s conceptual coordinates.</li><li>Calculate simple pipeline utilization for p=8 and m in {1,8,32}. Explain why balanced stage time is assumed.</li><li>Estimate ring all-reduce bytes per rank for 8 ranks and a 16 MiB tensor; compare 50 and 400 GB/s effective links before latency.</li><li>Design a topology map for two eight-GPU nodes: identify which axes stay within a node and justify any cross-node boundary.</li></ol>
+          <div class="deep-dive" data-search-item data-keywords="Megatron column parallel row parallel all-reduce cost ring all-reduce expert parallelism all-to-all dispatch combine DP attention MLA DeepSeek ring attention context parallel Ulysses" id="day17-deep-dive">
+            <h4>Deep dive: Megatron splits, all-reduce cost, EP all-to-all, DP attention, and ring/context parallelism</h4>
+            <p><strong>Megatron’s trick.</strong> An MLP computes Y = GeLU(XA) and then Z = YB. Megatron splits A <em>by columns</em>, so GPU <em>i</em> computes XA<sub>i</sub> and applies GeLU locally—GeLU acts element by element, so no communication is needed yet. It then splits B <em>by rows</em>: GPU <em>i</em> multiplies its slice Y<sub>i</sub> by B<sub>i</sub> and obtains a full-shaped partial Z<sub>i</sub>, and one all-reduce sums the partials. Attention follows the same pattern: Q/K/V projections are split by heads (column style) and the output projection by rows, followed by one all-reduce. A layer’s forward pass therefore costs two all-reduces.</p>
+            <p><strong>What an all-reduce costs.</strong> Each all-reduce moves a tensor of (tokens in the batch) × hidden × bytes. For 64 decode tokens, hidden size 8,192, and BF16, that is 1 MiB. A ring over 8 GPUs sends 2 × 7/8 × 1 MiB = 1.75 MiB per rank, about 18 µs at an effective 100 GB/s. With 80 layers, though, a step runs 160 collectives; if each also pays an illustrative 10 µs of fixed launch and synchronization latency, that adds 1.6 ms per step. During decode, latency rather than bytes often dominates, which is why TP prefers the fastest local fabric and fused communication kernels.</p>
+            <p><strong>EP and DP attention.</strong> In expert parallelism the router picks top-<em>k</em> experts per token, a <em>dispatch</em> all-to-all sends each token’s hidden vector to the ranks that own those experts, and a <em>combine</em> all-to-all brings the results back to be weighted and summed. Traffic is uneven because popular experts attract more tokens. <strong>DP attention</strong>, used by SGLang for DeepSeek-style models whose MLA attention stores one compact latent KV per token, avoids splitting attention by heads (which would replicate that latent cache on every TP rank). Each rank runs attention for its own requests, and tokens then meet in expert-parallel MoE layers. This cuts KV duplication and enlarges per-rank batches, at the cost of gathers and synchronized steps.</p>
+            <p><strong>Ring and context parallelism.</strong> Ring attention splits a long sequence into chunks across N GPUs. Each GPU keeps its query chunk and passes its KV chunk to a neighbor N−1 times, computing blockwise attention with an online softmax while the next chunk is in flight; when compute per chunk exceeds transfer time, communication hides. Ulysses-style sequence parallelism instead uses all-to-all to switch from sequence-sharded to head-sharded layouts around attention, which requires the head count to divide evenly. Both are mainly prefill tools for very long prompts.</p>
+          </div>
+          <p class="engine-crosslinks"><strong>Engine pages:</strong> the <a href="../engines/vllm.html">vLLM</a> and <a href="../engines/sglang.html">SGLang</a> pages show where TP, EP, DP, and DP-attention settings live; the <a href="../engines/index.html">engine index</a> compares them.</p>
+          <figure class="svg-diagram" data-search-item id="day17-diagram">
+            <svg viewBox="0 0 760 318" role="img" aria-labelledby="d17svg-title">
+              <title id="d17svg-title">Megatron tensor parallelism for an MLP across two GPUs with one all-reduce, its communication cost, and three related strategies: expert parallelism, DP attention, and ring context parallelism</title>
+              <defs><marker id="d17svg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+              <rect class="node" x="12" y="40" width="84" height="110" rx="8"/>
+              <text x="54" y="84" text-anchor="middle" font-weight="700">X</text>
+              <text x="54" y="101" text-anchor="middle" class="muted">same input</text>
+              <text x="54" y="117" text-anchor="middle" class="muted">on all GPUs</text>
+              <text x="120" y="32" text-anchor="start" class="muted">GPU 0</text>
+              <text x="120" y="102" text-anchor="start" class="muted">GPU 1</text>
+              <rect class="node" x="120" y="40" width="110" height="40" rx="8"/>
+              <text x="175" y="65" text-anchor="middle" font-weight="700">X·A₀</text>
+              <rect class="node" x="254" y="40" width="80" height="40" rx="8"/>
+              <text x="294" y="65" text-anchor="middle" font-weight="700">GeLU</text>
+              <rect class="node" x="358" y="40" width="120" height="40" rx="8"/>
+              <text x="418" y="65" text-anchor="middle" font-weight="700">Y₀·B₀ = Z₀</text>
+              <line class="edge" x1="96" y1="60" x2="120" y2="60" marker-end="url(#d17svg-arrow)"/>
+              <line class="edge" x1="230" y1="60" x2="254" y2="60" marker-end="url(#d17svg-arrow)"/>
+              <line class="edge" x1="334" y1="60" x2="358" y2="60" marker-end="url(#d17svg-arrow)"/>
+              <rect class="node" x="120" y="110" width="110" height="40" rx="8"/>
+              <text x="175" y="135" text-anchor="middle" font-weight="700">X·A₁</text>
+              <rect class="node" x="254" y="110" width="80" height="40" rx="8"/>
+              <text x="294" y="135" text-anchor="middle" font-weight="700">GeLU</text>
+              <rect class="node" x="358" y="110" width="120" height="40" rx="8"/>
+              <text x="418" y="135" text-anchor="middle" font-weight="700">Y₁·B₁ = Z₁</text>
+              <line class="edge" x1="96" y1="130" x2="120" y2="130" marker-end="url(#d17svg-arrow)"/>
+              <line class="edge" x1="230" y1="130" x2="254" y2="130" marker-end="url(#d17svg-arrow)"/>
+              <line class="edge" x1="334" y1="130" x2="358" y2="130" marker-end="url(#d17svg-arrow)"/>
+              <rect class="node-accent" x="510" y="40" width="120" height="110" rx="8"/>
+              <text x="570" y="84" text-anchor="middle" font-weight="700">all-reduce</text>
+              <text x="570" y="101" text-anchor="middle" class="muted">Z = Z₀ + Z₁</text>
+              <text x="570" y="117" text-anchor="middle" class="muted">sum of partials</text>
+              <line class="edge" x1="478" y1="60" x2="510" y2="72" marker-end="url(#d17svg-arrow)"/>
+              <line class="edge" x1="478" y1="130" x2="510" y2="118" marker-end="url(#d17svg-arrow)"/>
+              <rect class="node-teal" x="660" y="75" width="84" height="40" rx="8"/>
+              <text x="702" y="100" text-anchor="middle" font-weight="700">Z</text>
+              <line class="edge" x1="630" y1="95" x2="660" y2="95" marker-end="url(#d17svg-arrow)"/>
+              <text x="175" y="170" text-anchor="middle" class="muted">A split by columns</text>
+              <text x="294" y="170" text-anchor="middle" class="muted">local, no comm</text>
+              <text x="418" y="170" text-anchor="middle" class="muted">B split by rows</text>
+              <text x="570" y="170" text-anchor="middle" class="muted">2 per layer (attn + MLP)</text>
+              <text x="12" y="202" text-anchor="start" font-weight="700">Ring all-reduce: each rank sends ≈ 2(n−1)/n × tokens × hidden × bytes</text>
+              <text x="12" y="220" text-anchor="start" class="muted">Decode batches are small, so per-collective latency × (2 × layers) often outweighs the bytes.</text>
+              <rect class="node-teal" x="12" y="236" width="236" height="72" rx="8"/>
+              <text x="130" y="261" text-anchor="middle" font-weight="700">Expert parallel (EP)</text>
+              <text x="130" y="278" text-anchor="middle" class="muted">all-to-all dispatch → experts</text>
+              <text x="130" y="294" text-anchor="middle" class="muted">→ all-to-all combine</text>
+              <rect class="node-teal" x="262" y="236" width="236" height="72" rx="8"/>
+              <text x="380" y="261" text-anchor="middle" font-weight="700">DP attention</text>
+              <text x="380" y="278" text-anchor="middle" class="muted">each rank attends its own</text>
+              <text x="380" y="294" text-anchor="middle" class="muted">requests; MoE layers use EP</text>
+              <rect class="node-teal" x="512" y="236" width="236" height="72" rx="8"/>
+              <text x="630" y="261" text-anchor="middle" font-weight="700">Context parallel (ring)</text>
+              <text x="630" y="278" text-anchor="middle" class="muted">KV chunks circulate the ring,</text>
+              <text x="630" y="294" text-anchor="middle" class="muted">overlapping block attention</text>
+            </svg>
+            <figcaption>Original diagram. Megatron’s column-then-row split lets the nonlinearity run locally, so one MLP needs only one all-reduce. The bottom row names the communication pattern behind three other strategies.</figcaption>
+          </figure>
+          <h4 id="day17-reference-diagrams">Reference diagrams</h4>
+          <div class="ref-gallery">
+            <figure class="ref-figure">
+              <img loading="lazy" src="https://raw.githubusercontent.com/vllm-project/vllm/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/deployment/dp_internal_lb.png" alt="vLLM data-parallel deployment with internal load balancing: HTTP requests reach several API server processes sharing one socket; a DP coordinator exchanges request counts over ZMQ; engine cores on node 0 and node 1 each serve as data-parallel ranks.">
+              <figcaption><strong>vLLM data-parallel deployment (internal load balancing)</strong> — API servers on one node feed engine-core DP ranks spread over two nodes, while a DP coordinator publishes request counts for load balancing and coordinates request waves. Source: <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/deployment/dp_internal_lb.png">vllm-project/vllm, docs/assets/deployment/dp_internal_lb.png @ 7b77ed5</a>. <span class="license">License: Apache-2.0 (repository LICENSE)</span></figcaption>
+            </figure>
+          </div>
+          <div class="ref-link-card"><a href="https://arxiv.org/abs/1909.08053">Megatron-LM paper — Figure 3, “Blocks of Transformer with Model Parallelism”</a><small>Figure 3 shows the MLP and self-attention blocks with the f/g conjugate operators that become all-reduces. Linked rather than embedded (paper figure without an explicit reuse license).</small></div>
+          <h4 id="day17-further-reading">Further reading</h4>
+          <ul class="reading-list" id="day17-reading">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 5.4: Model Parallelism</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Frames tensor parallelism as a latency tool, expert parallelism as a throughput tool for MoE models, and multi-node inference as the point where topology starts to dominate.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day17">100 Days of Inference — Day 17: Tensor, expert, pipeline, and data parallelism</a></strong><span class="reading-meta">elizabetht · GitHub notebook and notes · 2026</span><p>A notebook that simulates how each split changes per-GPU memory and communication volume. Pair it with the all-reduce arithmetic above.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/1909.08053">Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism</a></strong><span class="reading-meta">Shoeybi et al. · arXiv · 2019</span><p>The original description of column- and row-parallel transformer layers. Although written for training, its layer-splitting scheme is what inference engines still call tensor parallelism.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2310.01889">Ring Attention with Blockwise Transformers for Near-Infinite Context</a></strong><span class="reading-meta">Liu, Zaharia, Abbeel · ICLR · 2024</span><p>Shows how to rotate KV blocks around a ring of devices while overlapping communication with blockwise attention. The clearest starting point for context parallelism.</p></li>
+            <li><strong><a href="https://lmsys.org/blog/2024-12-04-sglang-v0-4/">SGLang v0.4 release blog</a></strong><span class="reading-meta">LMSYS / SGLang team · blog · 2024</span><p>Introduces data-parallel attention for DeepSeek models and a cache-aware load balancer. Read the DP-attention section for the motivation behind avoiding duplicated MLA caches.</p></li>
+          </ul>
+
           <div class="bridge"><strong>Bridge to Day 18:</strong> parallelism decides how one homogeneous replica executes the whole request. Disaggregation goes further: it separates the two phases of a request into heterogeneous worker pools and must transfer the KV state between them.</div>
         </section>
 
@@ -566,6 +1027,68 @@
           </div>
           <h3>Exercises</h3>
           <ol class="exercise-list"><li>Compute KV handoff for a model with L=48, Hkv=8, Dhead=128, e=2 at 2K, 8K, and 32K prompts over 25 and 200 GB/s links.</li><li>Given 20 requests/s, mean 2,000 input and 300 output tokens, Rp=20K input tokens/s and Rd=1,500 output tokens/s per worker, estimate minimum pools before headroom.</li><li>Draw state transitions for allocation, transfer, decode ownership, cancellation, and worker failure. Identify idempotent operations.</li><li>Design a benchmark comparing colocated and disaggregated serving under a mixture of short-chat and long-RAG prompts, including tail metrics.</li></ol>
+          <div class="deep-dive" data-search-item data-keywords="KV transfer bandwidth math disaggregation NIXL Mooncake transfer engine RDMA GPUDirect xPyD prefill decode ratio pool sizing layer-wise transfer" id="day18-deep-dive">
+            <h4>Deep dive: KV-transfer bandwidth math, NIXL and Mooncake, and xPyD ratios</h4>
+            <p><strong>Two different bandwidth questions.</strong> For a single request, transfer time ≈ setup + KV bytes ÷ effective bandwidth. A 70B-class model with grouped-query attention—80 layers, 8 KV heads, head dimension 128, BF16—stores 2 × 80 × 8 × 128 × 2 = 327,680 bytes (320 KiB) per token, so an 8,192-token prompt carries about 2.7 GB of KV: roughly 54 ms at an effective 50 GB/s and 6.7 ms at 400 GB/s. That number lands directly on time to first token unless the engine streams KV <em>layer by layer</em> while prefill is still computing later layers. For the fleet, the steady-state requirement is KV bytes per token × prefill tokens per second: an instance prefilling 20,000 tokens/s with this model emits about 6.6 GB/s of KV. Sustained bandwidth is often affordable; single-transfer latency is what hurts.</p>
+            <p><strong>Transport libraries.</strong> Engines need to move GPU-resident KV pages between processes on different hosts without staging them through CPU memory. <strong>NIXL</strong> (NVIDIA Inference Xfer Library), used by Dynamo and by vLLM’s NIXL connector, offers one API over several backends—UCX for RDMA and NVLink, GPUDirect Storage, and others—handling memory registration and the exchange of remote-memory metadata. <strong>Mooncake’s Transfer Engine</strong>, from Moonshot AI’s serving stack, solves the same problem over RDMA, TCP, and other transports with multi-NIC support, and Mooncake Store builds a distributed KV pool on top. Both keep “who owns which blocks” metadata separate from the bulk data path.</p>
+            <p><strong>Choosing xPyD.</strong> “xPyD” means x prefill instances and y decode instances. Size each pool from its own limit: x ≈ (requests/s × mean input tokens) ÷ Rp and y ≈ (requests/s × mean output tokens) ÷ Rd, where Rp and Rd are per-instance rates measured at the latency target. At 10 requests/s with 3,000 input and 400 output tokens, Rp = 30,000 tokens/s and Rd = 2,000 tokens/s give 1P2D before headroom. If prompts double to 6,000 tokens, the answer becomes 2P2D. Because the ratio moves with the traffic mix, planners such as NVIDIA Dynamo’s rebalance the two pools dynamically instead of fixing them at deploy time.</p>
+          </div>
+          <p class="engine-crosslinks"><strong>Engine pages:</strong> disaggregated prefill/decode connectors are covered on the <a href="../engines/vllm.html">vLLM</a> and <a href="../engines/sglang.html">SGLang</a> pages; the <a href="../engines/index.html">engine index</a> links both.</p>
+          <figure class="svg-diagram" data-search-item id="day18-diagram">
+            <svg viewBox="0 0 760 296" role="img" aria-labelledby="d18svg-title">
+              <title id="d18svg-title">Disaggregated serving: three prefill instances send KV through a transfer layer to two decode instances, with transfer-time and pool-sizing formulas</title>
+              <defs><marker id="d18svg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+              <text x="90" y="18" text-anchor="middle" font-weight="700">Prefill pool</text>
+              <text x="665" y="18" text-anchor="middle" font-weight="700">Decode pool</text>
+              <rect class="node" x="20" y="30" width="140" height="40" rx="8"/>
+              <text x="90" y="55" text-anchor="middle" font-weight="700">P1 · prompt → KV</text>
+              <rect class="node" x="20" y="80" width="140" height="40" rx="8"/>
+              <text x="90" y="105" text-anchor="middle" font-weight="700">P2 · prompt → KV</text>
+              <rect class="node" x="20" y="130" width="140" height="40" rx="8"/>
+              <text x="90" y="155" text-anchor="middle" font-weight="700">P3 · prompt → KV</text>
+              <rect class="node-accent" x="250" y="48" width="250" height="104" rx="8"/>
+              <text x="375" y="81" text-anchor="middle" font-weight="700">KV transfer layer</text>
+              <text x="375" y="98" text-anchor="middle" class="muted">NIXL · Mooncake Transfer Engine</text>
+              <text x="375" y="114" text-anchor="middle" class="muted">RDMA / NVLink / TCP, layer by layer</text>
+              <text x="375" y="130" text-anchor="middle" class="muted">metadata: block IDs, layout, shard</text>
+              <rect class="node-teal" x="590" y="50" width="150" height="40" rx="8"/>
+              <text x="665" y="75" text-anchor="middle" font-weight="700">D1 · token loop</text>
+              <rect class="node-teal" x="590" y="110" width="150" height="40" rx="8"/>
+              <text x="665" y="135" text-anchor="middle" font-weight="700">D2 · token loop</text>
+              <line class="edge" x1="160" y1="50" x2="250" y2="78" marker-end="url(#d18svg-arrow)"/>
+              <line class="edge" x1="160" y1="100" x2="250" y2="100" marker-end="url(#d18svg-arrow)"/>
+              <line class="edge" x1="160" y1="150" x2="250" y2="122" marker-end="url(#d18svg-arrow)"/>
+              <line class="edge" x1="500" y1="90" x2="590" y2="70" marker-end="url(#d18svg-arrow)"/>
+              <line class="edge" x1="500" y1="110" x2="590" y2="130" marker-end="url(#d18svg-arrow)"/>
+              <text x="375" y="172" text-anchor="middle" class="muted">drawn as 3P2D: three prefill and two decode instances</text>
+              <text x="12" y="204" text-anchor="start" font-weight="700">t_transfer ≈ setup + (2 · L · H_kv · D · e · prompt tokens) ÷ effective bandwidth</text>
+              <text x="12" y="222" text-anchor="start" class="muted">Example: 80 layers, 8 KV heads, D = 128, BF16 → 320 KiB of KV per token</text>
+              <text x="12" y="238" text-anchor="start" class="muted">8K-token prompt ≈ 2.7 GB → about 54 ms at 50 GB/s or 6.7 ms at 400 GB/s, before setup</text>
+              <text x="12" y="266" text-anchor="start" font-weight="700">Pool sizing: x ≈ prompt tokens/s ÷ Rp   and   y ≈ output tokens/s ÷ Rd</text>
+              <text x="12" y="284" text-anchor="start" class="muted">10 req/s × 3,000 in ÷ 30K tok/s → 1 prefill;  10 × 400 out ÷ 2K tok/s → 2 decode  ⇒  1P2D</text>
+            </svg>
+            <figcaption>Original diagram. Pool sizes come from two different throughput limits, so the xPyD ratio follows the traffic mix. Rp and Rd are measured per-instance rates at the latency target.</figcaption>
+          </figure>
+          <h4 id="day18-reference-diagrams">Reference diagrams</h4>
+          <div class="ref-gallery">
+            <figure class="ref-figure">
+              <img loading="lazy" src="https://raw.githubusercontent.com/vllm-project/vllm/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/features/disagg_prefill/high_level_design.png" alt="vLLM disaggregated prefill high-level design: inside one vLLM instance a scheduler process with a connector sends SchedulerOutput carrying connector metadata to worker processes, each with a connector and a paged KV buffer; workers of this and other vLLM instances exchange KV through a shared data transfer layer.">
+              <figcaption><strong>vLLM KV-connector design for disaggregated prefill</strong> — a connector lives in both the scheduler and each worker; workers read and write paged KV buffers through a data-transfer layer shared with other instances. Source: <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/features/disagg_prefill/high_level_design.png">vllm-project/vllm, docs/assets/features/disagg_prefill/high_level_design.png @ 7b77ed5</a>. <span class="license">License: Apache-2.0 (repository LICENSE)</span></figcaption>
+            </figure>
+            <figure class="ref-figure">
+              <img loading="lazy" src="https://raw.githubusercontent.com/kvcache-ai/Mooncake/d01447808d10af78011e9203d53796a15a032a03/image/architecture.png" alt="Mooncake architecture: a KVCache-centric conductor with cache-aware prefill, KVCache balance, and load-balance decoding schedulers; a prefill pool and a decoding pool of GPU instances with paged KV caches; and a distributed CPU, DRAM, and SSD KV pool connected by an RDMA KVCache transfer engine.">
+              <figcaption><strong>Mooncake KVCache-centric architecture</strong> — separate prefill and decoding pools, a distributed CPU/DRAM/SSD KV pool, an RDMA transfer engine between them, and a conductor with separate schedulers and optimization goals for each stage. Source: <a href="https://github.com/kvcache-ai/Mooncake/blob/d01447808d10af78011e9203d53796a15a032a03/image/architecture.png">kvcache-ai/Mooncake, image/architecture.png @ d014478</a>. <span class="license">License: Apache-2.0 (repository LICENSE-APACHE)</span></figcaption>
+            </figure>
+          </div>
+          <h4 id="day18-further-reading">Further reading</h4>
+          <ul class="reading-list" id="day18-reading">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 5.5: Disaggregation</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Explains how disaggregation works, the workloads where it pays off, and dynamic pool management with NVIDIA Dynamo. Use it to sanity-check the break-even reasoning in this chapter.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day18">100 Days of Inference — Day 18: Disaggregation: prefill/decode split</a></strong><span class="reading-meta">elizabetht · GitHub notebook and notes · 2026</span><p>A notebook that models KV handoff time and pool ratios. Changing prompt length in it shows how quickly xPyD drifts.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2401.09670">DistServe: Disaggregating Prefill and Decoding for Goodput-optimized Large Language Model Serving</a></strong><span class="reading-meta">Zhong et al. · OSDI · 2024</span><p>Argues that colocating prefill and decode forces one SLO to suffer, then places and sizes separate pools to maximize goodput. Its placement discussion connects bandwidth to topology.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2407.00079">Mooncake: A KVCache-centric Disaggregated Architecture for LLM Serving</a></strong><span class="reading-meta">Qin et al. · arXiv · 2024</span><p>Describes a production design that treats the KV cache as the central resource, with a disaggregated pool spanning GPU, DRAM, and SSD and an RDMA transfer engine.</p></li>
+            <li><strong><a href="https://github.com/ai-dynamo/nixl">NIXL: NVIDIA Inference Xfer Library</a></strong><span class="reading-meta">NVIDIA / ai-dynamo · GitHub repository · current</span><p>The transport library behind many KV-transfer connectors. Its README explains the agent, memory-registration, and backend-plugin model in a few pages.</p></li>
+          </ul>
+
           <div class="bridge"><strong>Bridge to Day 19:</strong> Phase 3 has chosen representations, avoided redundant work, distributed models, and specialized phases. The next layer is GPU execution itself: kernels, memory hierarchy, streams, and profiling explain whether these architectural plans become real speedups.</div>
         </section>
 
@@ -689,6 +1212,20 @@
           <h3>A strong answer should reveal tradeoffs, not one magic configuration</h3>
           <p>Begin with constraints. Quantization may let a replica fit in fewer GPUs, enabling more DP groups, but quality and kernel evidence decide the format. Shared 8K prefixes make cache-aware routing attractive, yet routing must not overload one replica. N-gram speculation may help tool schemas or copied context while long novel answers may require another draft or no speculation. TP belongs on the fast intra-node fabric; cross-node TP over 50 GB/s needs strong evidence. Disaggregation must price a large KV handoff and may be reserved for the longest prompts rather than applied universally.</p>
           <p>Finally, state how you will know the design worked. Success is not “GPU utilization increased.” It is quality within contract, P95/P99 TTFT and ITL within SLO, stable goodput at burst load, lower cost per accepted output token, and predictable behavior under failures. If one technique improves an isolated benchmark while harming those outcomes, remove it.</p>
+        </section>
+
+        <section id="sources-and-credits" class="content-section" data-search-group="Credits">
+          <div class="section-heading"><div><p class="eyebrow">Attribution</p><h2>Sources and credits</h2></div><p>Every externally hosted image embedded on this page, with its commit-pinned source and license.</p></div>
+          <ul class="reading-list" id="credits-image-list">
+            <li><strong>Day 14 — SmoothQuant intuition figure.</strong> Source: <a href="https://github.com/mit-han-lab/smoothquant/blob/c61476d728e42ae0d8a35e7e78494edcac3237b5/figures/intuition.png">mit-han-lab/smoothquant @ c61476d</a> (commit-pinned). License: MIT.</li>
+            <li><strong>Day 14 — AWQ overview figure.</strong> Source: <a href="https://github.com/mit-han-lab/llm-awq/blob/d6e797a42b9ef7778de8ee2352116e0f48a78d61/figures/overview.png">mit-han-lab/llm-awq @ d6e797a</a> (commit-pinned). License: MIT.</li>
+            <li><strong>Day 15 — Medusa pipeline figure.</strong> Source: <a href="https://github.com/FasterDecoding/Medusa/blob/e2a5d20c048a9b0a4092e6933c34313687422518/assets/medusa_pipeline.jpg">FasterDecoding/Medusa @ e2a5d20</a> (commit-pinned). License: Apache-2.0.</li>
+            <li><strong>Day 16 — vLLM prefix-caching data structures.</strong> Source: <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/prefix_caching/overview.png">vllm-project/vllm @ 7b77ed5</a> (commit-pinned). License: Apache-2.0.</li>
+            <li><strong>Day 17 — vLLM data-parallel deployment diagram.</strong> Source: <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/deployment/dp_internal_lb.png">vllm-project/vllm @ 7b77ed5</a> (commit-pinned). License: Apache-2.0.</li>
+            <li><strong>Day 18 — vLLM disaggregated-prefill connector design.</strong> Source: <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/features/disagg_prefill/high_level_design.png">vllm-project/vllm @ 7b77ed5</a> (commit-pinned). License: Apache-2.0.</li>
+            <li><strong>Day 18 — Mooncake architecture.</strong> Source: <a href="https://github.com/kvcache-ai/Mooncake/blob/d01447808d10af78011e9203d53796a15a032a03/image/architecture.png">kvcache-ai/Mooncake @ d014478</a> (commit-pinned). License: Apache-2.0.</li>
+          </ul>
+          <p>All inline SVG diagrams, deep-dive text, and reading-list summaries are original to this textbook. Chapter pointers to <em>Inference Engineering</em> (Philip Kiely, Baseten Books, 2026) and to the <a href="https://github.com/elizabetht/100-days-of-inference">100 Days of Inference</a> notebooks are references only; no text or figures from them are reproduced. Diagrams whose licenses do not clearly permit reuse appear only as link cards. Externally hosted images load from the commit-pinned URLs listed above and remain under their original licenses.</p>
         </section>
 
         <footer class="site-footer">

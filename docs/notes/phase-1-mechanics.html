@@ -10,7 +10,7 @@
     <meta name="theme-color" content="#3156d3" />
     <title>Days 1-5: Model Mechanics | LLM Inference from Scratch</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%233156d3'/%3E%3Ctext x='32' y='40' text-anchor='middle' font-size='24' font-family='sans-serif' font-weight='700' fill='white'%3EP1%3C/text%3E%3C/svg%3E" />
-    <link rel="stylesheet" href="../styles.css?v=6" />
+    <link rel="stylesheet" href="../styles.css?v=7" />
     <script src="../app.js?v=2" defer=""></script>
   </head>
   <body>
@@ -69,6 +69,7 @@
             <li><a href="#glossary">Glossary</a></li>
             <li><a href="#formula-sheet">Formula sheet</a></li>
             <li><a href="#cumulative-exercises">Cumulative exercises</a></li>
+            <li><a href="#sources-and-credits">Sources &amp; credits</a></li>
             <li><a href="phase-2-engines.html">Next: Phase 2 ↗</a></li>
             <li><a href="../curriculum.html">26-day curriculum ↗</a></li>
             <li><a href="../index.html">Systems guide ↗</a></li>
@@ -346,6 +347,106 @@
             <details class="qa-item"><summary>Name three valid stop conditions.</summary><div class="qa-answer">Examples: EOS, maximum new tokens, stop sequence, cancellation, deadline, error, or context limit.</div></details>
           </article>
 
+          <article id="day-1-going-deeper">
+            <h3>Going deeper: from token IDs back to streamed text</h3>
+            <div id="day-1-deep-dive" class="deep-dive" data-search-item="" data-keywords="detokenization incremental detokenizer streaming SSE server-sent events UTF-8 replacement character stop string hold back TTFT chunk">
+              <h4>Detokenization is incremental, and a streamed character cannot be taken back</h4>
+              <p>
+                Each loop iteration ends with an integer, but people read characters.
+                For a finished answer, converting back is nearly a table lookup: join the
+                pieces, turn them into bytes, and decode the bytes as UTF-8. While the
+                answer is still growing, two problems appear. A byte-level tokenizer may
+                spend several tokens on one emoji or accented letter, because one
+                character can need up to four UTF-8 bytes; decoding only the newest token
+                then yields a broken fragment that libraries show as the replacement
+                character “�”. Some tokenizers also infer leading spaces from neighbouring
+                pieces, so a piece decoded alone can gain or lose whitespace.
+              </p>
+              <p>
+                Serving engines therefore run an <em>incremental detokenizer</em>. It
+                remembers how much text has already been sent and keeps a few earlier
+                tokens as context. After each new ID it decodes that short window with and
+                without the new ID and treats the difference as candidate text. If the
+                candidate ends in an unfinished character, nothing is emitted yet; the
+                bytes wait for the next token. Work per step stays small, and the emitted
+                chunks concatenate to exactly what a full decode would produce.
+              </p>
+              <p>
+                Streaming adds a delivery contract. OpenAI-compatible servers usually use
+                server-sent events: the HTTP response stays open, each chunk arrives as a
+                <code>data:</code> line holding a small JSON object, and a final
+                <code>[DONE]</code> marker closes the stream. Because streamed text
+                cannot be recalled, stop strings force the server to hold back any tail
+                that might be the start of a stop sequence until later tokens confirm or
+                rule it out. A chunk may therefore carry zero, one, or several tokens’
+                worth of text; chunk boundaries are not token boundaries.
+              </p>
+              <p>
+                This changes how latency should be read. The time to first token a user
+                experiences ends at the first <em>visible</em> chunk, which held-back
+                bytes can delay. Detokenization and JSON framing are CPU work, so
+                high-throughput engines keep them away from the loop that feeds the GPU;
+                vLLM’s V1 design, for instance, performs output processing in its API
+                server process rather than in the engine core.
+              </p>
+            </div>
+
+            <figure id="day-1-diagram" class="svg-diagram" data-search-item="" data-keywords="diagram incremental detokenizer streaming hold back UTF-8 bytes SSE chunk">
+              <svg viewBox="0 0 760 220" role="img" aria-labelledby="p1-d1-title">
+                <title id="p1-d1-title">Incremental detokenization and streaming: sampled IDs fill a byte buffer, the detokenizer emits only complete text that cannot start a stop string, and each chunk is sent as a server-sent event</title>
+                <defs>
+                  <marker id="p1-d1-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="muted" d="M0,0 L10,5 L0,10 z"/></marker>
+                </defs>
+                <text x="10" y="28">One decode step, from sampled ID to client-visible text</text>
+                <rect class="node" x="10" y="60" width="130" height="80" rx="8"/>
+                <text x="75" y="94" text-anchor="middle">Sampled IDs</text>
+                <text class="muted" x="75" y="114" text-anchor="middle">…, id 41, id 7</text>
+                <rect class="node" x="165" y="60" width="130" height="80" rx="8"/>
+                <text x="230" y="94" text-anchor="middle">Byte buffer</text>
+                <text class="muted" x="230" y="114" text-anchor="middle">F0 9F 98 + 80</text>
+                <rect class="node-accent" x="320" y="50" width="196" height="100" rx="8"/>
+                <text x="418" y="80" text-anchor="middle">Incremental detokenizer</text>
+                <text class="muted" x="418" y="102" text-anchor="middle">ends mid-character?</text>
+                <text class="muted" x="418" y="122" text-anchor="middle">could start a stop string?</text>
+                <rect class="node" x="540" y="60" width="110" height="80" rx="8"/>
+                <text x="595" y="94" text-anchor="middle">Text chunk</text>
+                <text class="muted" x="595" y="114" text-anchor="middle">new text only</text>
+                <rect class="node-teal" x="668" y="60" width="84" height="80" rx="8"/>
+                <text x="710" y="94" text-anchor="middle">SSE event</text>
+                <text class="muted" x="710" y="114" text-anchor="middle">data: {…}</text>
+                <path class="edge" d="M140 100 H163" marker-end="url(#p1-d1-arrow)"/>
+                <path class="edge" d="M295 100 H318" marker-end="url(#p1-d1-arrow)"/>
+                <path class="edge" d="M516 100 H538" marker-end="url(#p1-d1-arrow)"/>
+                <path class="edge" d="M650 100 H666" marker-end="url(#p1-d1-arrow)"/>
+                <path class="edge" d="M418 150 V184 H230 V142" marker-end="url(#p1-d1-arrow)"/>
+                <text class="muted" x="324" y="202" text-anchor="middle">hold back; wait for the next token</text>
+                <text class="muted" x="752" y="202" text-anchor="end">TTFT ends at the first visible chunk</text>
+              </svg>
+              <figcaption>Original diagram. A character such as an emoji may need bytes from several sampled tokens. The incremental detokenizer releases only text that is complete and cannot be the start of a stop string; the server then frames each chunk as a server-sent event.</figcaption>
+            </figure>
+
+            <h4>Reference diagrams</h4>
+            <div class="ref-gallery" id="day-1-references">
+              <div class="ref-link-card">
+                <a href="https://huggingface.co/docs/text-generation-inference/conceptual/streaming">Hugging Face TGI — “Streaming” conceptual guide</a>
+                <small>Interactive side-by-side demo of non-streaming versus streaming generation, followed by client code that consumes streamed chunks.</small>
+              </div>
+              <div class="ref-link-card">
+                <a href="https://huggingface.co/blog/how-to-generate">Hugging Face blog — “How to generate text”</a>
+                <small>Tree figures contrasting greedy search with beam search, then plots showing which candidates top-k and top-p sampling keep.</small>
+              </div>
+            </div>
+
+            <h4>Further reading</h4>
+            <ul class="reading-list">
+              <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 2.2 “LLM Inference Mechanics”</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Introduces autoregressive generation, subword tokens, and the sampling controls applied after each forward pass. A production-minded companion to today’s token loop.</p></li>
+              <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day01">100 Days of Inference — Day 01: What Is LLM Inference?</a></strong><span class="reading-meta">elizabetht · GitHub notebook series · 2026</span><p>Breaks a GPT-2 request into tokenization, a forward pass that scores the whole vocabulary, and decoding. It also shows that token count, not word count, drives compute cost.</p></li>
+              <li><strong><a href="https://huggingface.co/blog/how-to-generate">How to generate text: using different decoding methods for language generation with Transformers</a></strong><span class="reading-meta">Patrick von Platen · Hugging Face blog · 2020</span><p>Compares greedy search, beam search, and top-k and top-p sampling on the same prompts, making the quality trade-offs of each policy concrete.</p></li>
+              <li><strong><a href="https://arxiv.org/abs/1904.09751">The Curious Case of Neural Text Degeneration</a></strong><span class="reading-meta">Holtzman, Buys, Du, Forbes, Choi · ICLR · 2020</span><p>Explains why maximizing likelihood produces bland, repetitive text and introduces nucleus (top-p) sampling as a way to keep only the plausible head of the distribution.</p></li>
+              <li><strong><a href="https://huggingface.co/docs/text-generation-inference/conceptual/streaming">Streaming (Text Generation Inference docs)</a></strong><span class="reading-meta">Hugging Face · TGI documentation · accessed 2026</span><p>Describes why streaming lowers perceived latency and how clients receive tokens progressively from a server, with Python and HTTP examples.</p></li>
+            </ul>
+          </article>
+
           <article id="day-1-exercises" class="card" data-search-item="" data-keywords="practical exercises bridge">
             <h3>Practical exercises and bridge to Day 2</h3>
             <ol>
@@ -565,6 +666,109 @@
             <details class="qa-item"><summary>Why can token count affect both latency and memory?</summary><div class="qa-answer">It sets prompt positions processed in prefill, output decode iterations, and positions stored in the KV cache.</div></details>
           </article>
 
+          <article id="day-2-going-deeper">
+            <h3>Going deeper: BPE, SentencePiece, and chat templates</h3>
+            <div id="day-2-deep-dive" class="deep-dive" data-search-item="" data-keywords="BPE training merges byte-level SentencePiece unigram byte fallback whitespace pre-tokenization chat template Jinja special tokens apply_chat_template tokenizer prefix caching">
+              <h4>Three layers of the tokenizer contract</h4>
+              <p>
+                BPE has two separate lives. <strong>Training</strong> happens once,
+                offline: begin with single bytes or characters, count which adjacent pair
+                is most frequent in a large corpus, add that pair as a new piece, record
+                the merge, and repeat until the vocabulary reaches a target size such as
+                32,000 or 128,000. <strong>Encoding</strong> happens at serving time: the
+                tokenizer replays the recorded merges in rank order on new text. Before
+                merging, a pre-tokenizer usually splits the text with a regular expression
+                so that merges never cross certain boundaries, for example between a
+                space and the next word. GPT-2-style byte-level BPE starts from all 256
+                byte values, so any string can be encoded without an “unknown” token.
+              </p>
+              <p>
+                SentencePiece starts elsewhere. It reads raw Unicode text without
+                language-specific word splitting and turns spaces into the visible marker
+                “▁”, so decoding can restore spacing exactly. It can learn a BPE vocabulary
+                or a <em>unigram</em> vocabulary, which begins with many candidate pieces
+                and prunes those that add least to the corpus likelihood. With byte
+                fallback enabled, characters missing from the vocabulary become byte
+                tokens instead of an unknown symbol. Llama 1 and 2 used a 32K SentencePiece
+                BPE model; Llama 3 switched to a 128K byte-level BPE vocabulary built with
+                tiktoken, which encodes typical text in noticeably fewer tokens.
+              </p>
+              <p>
+                Chat models add a third layer, the <strong>chat template</strong>. An API
+                request is a list of role-tagged messages, but the model was fine-tuned on
+                one exact string layout, with special tokens marking where each turn
+                starts and ends and where the assistant’s reply begins. Hugging Face
+                checkpoints ship that layout as a Jinja template next to the tokenizer
+                files, and servers render it before tokenizing. A wrong template — a
+                missing assistant prompt, a doubled beginning-of-sequence token, or an
+                end-of-turn marker the stop logic does not know — leaves the weights
+                untouched yet makes answers degrade, run on, or leak role markers.
+              </p>
+              <p>
+                Treat tokenizer files, special-token IDs, and the template as versioned
+                parts of the model. They even govern caching: two requests can share
+                cached prefix state only if their rendered prompts begin with identical
+                token IDs, so a template that inserts today’s date or a random ID at the
+                top of every prompt silently destroys prefix reuse.
+              </p>
+            </div>
+
+            <figure id="day-2-diagram" class="svg-diagram" data-search-item="" data-keywords="diagram chat template pre-tokenizer BPE merges token IDs SentencePiece">
+              <svg viewBox="0 0 760 250" role="img" aria-labelledby="p1-d2-title">
+                <title id="p1-d2-title">From chat messages to token IDs: a chat template renders messages with special tokens, a pre-tokenizer splits text, BPE merges are replayed, and integer IDs result; SentencePiece skips the regex split and marks spaces explicitly</title>
+                <defs>
+                  <marker id="p1-d2-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="muted" d="M0,0 L10,5 L0,10 z"/></marker>
+                </defs>
+                <text x="10" y="24">Three contracts between a chat request and the model’s input IDs</text>
+                <rect class="node" x="10" y="46" width="130" height="70" rx="8"/>
+                <text x="75" y="76" text-anchor="middle">Messages</text>
+                <text class="muted" x="75" y="96" text-anchor="middle">role + content</text>
+                <rect class="node-accent" x="165" y="46" width="140" height="70" rx="8"/>
+                <text x="235" y="76" text-anchor="middle">Chat template</text>
+                <text class="muted" x="235" y="96" text-anchor="middle">Jinja, per model</text>
+                <rect class="node" x="330" y="46" width="130" height="70" rx="8"/>
+                <text x="395" y="76" text-anchor="middle">Pre-tokenizer</text>
+                <text class="muted" x="395" y="96" text-anchor="middle">regex split</text>
+                <rect class="node" x="485" y="46" width="130" height="70" rx="8"/>
+                <text x="550" y="76" text-anchor="middle">BPE merges</text>
+                <text class="muted" x="550" y="96" text-anchor="middle">replayed by rank</text>
+                <rect class="node-teal" x="640" y="46" width="110" height="70" rx="8"/>
+                <text x="695" y="76" text-anchor="middle">Token IDs</text>
+                <text class="muted" x="695" y="96" text-anchor="middle">ints, shape [S]</text>
+                <path class="edge" d="M140 81 H163" marker-end="url(#p1-d2-arrow)"/>
+                <path class="edge" d="M305 81 H328" marker-end="url(#p1-d2-arrow)"/>
+                <path class="edge" d="M460 81 H483" marker-end="url(#p1-d2-arrow)"/>
+                <path class="edge" d="M615 81 H638" marker-end="url(#p1-d2-arrow)"/>
+                <text class="muted" x="75" y="160" text-anchor="middle">user: Hi!</text>
+                <text class="muted" x="235" y="160" text-anchor="middle">&lt;|user|&gt;Hi!&lt;|end|&gt;</text>
+                <text class="muted" x="235" y="176" text-anchor="middle">&lt;|assistant|&gt;</text>
+                <text class="muted" x="395" y="160" text-anchor="middle">specials kept whole</text>
+                <text class="muted" x="550" y="160" text-anchor="middle">Hi = one piece</text>
+                <text class="muted" x="695" y="160" text-anchor="middle">special + text IDs</text>
+                <rect class="node" x="10" y="196" width="740" height="40" rx="8"/>
+                <text class="muted" x="380" y="220" text-anchor="middle">SentencePiece variant: no regex split; spaces become ▁ and unknown characters can fall back to bytes</text>
+              </svg>
+              <figcaption>Original diagram with an illustrative template; real special-token names differ by model family. Special tokens are matched as whole units before ordinary text is split and merged.</figcaption>
+            </figure>
+
+            <h4>Reference diagrams</h4>
+            <div class="ref-gallery" id="day-2-references">
+              <div class="ref-link-card">
+                <a href="https://huggingface.co/learn/llm-course/chapter6/5">Hugging Face LLM Course — “Byte-Pair Encoding tokenization”</a>
+                <small>Step-by-step walkthrough (with a short video) that learns merges from a toy corpus, then applies them to tokenize new words.</small>
+              </div>
+            </div>
+
+            <h4>Further reading</h4>
+            <ul class="reading-list">
+              <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 2.2 “LLM Inference Mechanics”</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Shows how subword tokenization gives common words a single token while splitting rarer ones, and ties token counts to the cost of every generation step.</p></li>
+              <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day02">100 Days of Inference — Day 02: What’s Inside a Model</a></strong><span class="reading-meta">elizabetht · GitHub notebook series · 2026</span><p>Parses GPT-2’s SafeTensors file with only <code>struct</code> and NumPy, listing its 148 tensors and showing how the 124M parameters divide between embeddings and repeated blocks.</p></li>
+              <li><strong><a href="https://arxiv.org/abs/1508.07909">Neural Machine Translation of Rare Words with Subword Units</a></strong><span class="reading-meta">Sennrich, Haddow, Birch · ACL · 2016</span><p>Adapts byte pair encoding from data compression to vocabulary building, so rare and unseen words become sequences of known subword units.</p></li>
+              <li><strong><a href="https://arxiv.org/abs/1808.06226">SentencePiece: A simple and language independent subword tokenizer and detokenizer for Neural Text Processing</a></strong><span class="reading-meta">Kudo, Richardson · EMNLP (system demonstrations) · 2018</span><p>Presents a tokenizer that trains directly on raw sentences, treats whitespace as an ordinary symbol, and guarantees lossless round trips — reasons many multilingual models adopted it.</p></li>
+              <li><strong><a href="https://huggingface.co/docs/transformers/main/en/chat_templating">Chat templates</a></strong><span class="reading-meta">Hugging Face · Transformers documentation · accessed 2026</span><p>Explains how role-tagged messages are rendered into a model-specific prompt string, including the generation prompt that cues the assistant’s turn.</p></li>
+            </ul>
+          </article>
+
           <article id="day-2-exercises" class="card" data-search-item="" data-keywords="practical exercises bridge">
             <h3>Practical exercises and bridge to Day 3</h3>
             <ol>
@@ -760,7 +964,113 @@
             <details class="qa-item"><summary>Why is lookup not ordinary multiplication by an ID?</summary><div class="qa-answer">The ID is a discrete address selecting a learned row; its numeric magnitude has no scaling meaning.</div></details>
             <details class="qa-item"><summary>What does the output projection produce?</summary><div class="qa-answer">One unrestricted logit per vocabulary item for each supplied sequence position.</div></details>
             <details class="qa-item"><summary>What does weight tying save?</summary><div class="qa-answer">It avoids storing a separate <code>[V,D]</code> output matrix and links input/output vocabulary geometry.</div></details>
-            <details class="qa-item"><summary>Why does position information matter?</summary><div class="qa-answer">Without it, attention cannot distinguish different orders containing the same token representations.</div></details>
+            <details class="qa-item"><summary>Why does position information matter?</summary><div class="qa-answer">Attention by itself treats its inputs as an unordered set; a causal mask leaks only weak, implicit order cues. Explicit position information (learned positions or RoPE) gives the model a reliable way to tell different orders of the same tokens apart.</div></details>
+          </article>
+
+          <article id="day-3-going-deeper">
+            <h3>Going deeper: weight tying and logit soft-capping</h3>
+            <div id="day-3-deep-dive" class="deep-dive" data-search-item="" data-keywords="weight tying tied embeddings lm_head tie_word_embeddings parameter savings logit soft-capping softcap tanh Gemma 2 attention cap final logit cap FlashAttention">
+              <h4>One matrix at both ends, and a smooth ceiling on scores</h4>
+              <p>
+                With <strong>weight tying</strong>, the embedding table <code>E</code>
+                of shape <code>[V, D]</code> does double duty: it supplies a row for each
+                input ID and also scores the final hidden state, so logits are
+                <code>z = E·h</code>. Press and Wolf (2017) showed that sharing the two
+                matrices can improve language-model perplexity while removing a whole
+                <code>V × D</code> parameter block. GPT-2 ties its weights, as do small
+                modern models such as Gemma and the 1B and 3B Llama 3.2 models, while
+                larger Llama 3 models keep a separate output head. Configs record the
+                choice in a field such as <code>tie_word_embeddings</code>.
+              </p>
+              <p>
+                Numbers make the trade visible. A 128,256-entry vocabulary at width 2,048
+                is about 263 million values per matrix, roughly 525 MB in BF16 — a large
+                share of a 1-billion-parameter model, but a rounding error for a
+                70-billion-parameter one, where an untied head buys extra flexibility.
+                Tying saves storage and memory capacity, not work: each decode step still
+                multiplies the hidden vector by all <code>V</code> rows, and in small
+                models with big vocabularies that final projection is one of the largest
+                weight reads per generated token.
+              </p>
+              <p>
+                <strong>Logit soft-capping</strong> limits how large a score can get
+                without a hard cutoff. Instead of sending logits <code>z</code> straight
+                to softmax, the model computes <code>c · tanh(z / c)</code> for a cap
+                <code>c</code>. Near zero, tanh is almost linear, so ordinary scores pass
+                through nearly unchanged; extreme scores bend smoothly toward
+                <code>±c</code>. Gemma 2 uses it twice: on attention scores before
+                softmax with <code>c = 50</code>, and on the final vocabulary logits with
+                <code>c = 30</code>. The motivation is training stability — a few
+                runaway logits can saturate softmax and destabilize gradients.
+              </p>
+              <p>
+                At inference time the cap is part of the model, not an optional sampling
+                knob. Omitting it changes the probabilities the model was trained to
+                produce. The attention cap must live inside the fused attention kernel,
+                because the full score matrix is never materialized; FlashAttention 2
+                added a soft-cap option for exactly this case. The final cap is applied
+                when logits are computed, before temperature or top-p. Newer families
+                have moved to other stabilizers, such as normalizing queries and keys, so
+                always read the config of the exact checkpoint you serve.
+              </p>
+            </div>
+
+            <figure id="day-3-diagram" class="svg-diagram" data-search-item="" data-keywords="diagram weight tying shared embedding matrix soft-capping tanh curve">
+              <svg viewBox="0 0 760 280" role="img" aria-labelledby="p1-d3-title">
+                <title id="p1-d3-title">Left: a tied embedding matrix provides input rows and scores the final hidden state. Right: soft-capped logits follow raw logits near zero but saturate at plus or minus the cap of 30</title>
+                <defs>
+                  <marker id="p1-d3-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="muted" d="M0,0 L10,5 L0,10 z"/></marker>
+                </defs>
+                <text x="10" y="24">One matrix at both ends; a smooth ceiling on scores</text>
+                <rect class="node" x="20" y="46" width="150" height="44" rx="8"/>
+                <text x="95" y="73" text-anchor="middle">Token IDs → rows</text>
+                <rect class="node" x="20" y="118" width="150" height="44" rx="8"/>
+                <text x="95" y="145" text-anchor="middle">Transformer blocks</text>
+                <rect class="node" x="20" y="190" width="150" height="44" rx="8"/>
+                <text x="95" y="217" text-anchor="middle">Logits z = E · h</text>
+                <path class="edge" d="M95 90 V116" marker-end="url(#p1-d3-arrow)"/>
+                <path class="edge" d="M95 162 V188" marker-end="url(#p1-d3-arrow)"/>
+                <rect class="node-accent" x="220" y="100" width="140" height="80" rx="8"/>
+                <text x="290" y="128" text-anchor="middle">Shared E</text>
+                <text class="muted" x="290" y="148" text-anchor="middle">[V, D]</text>
+                <text class="muted" x="290" y="166" text-anchor="middle">tied weights</text>
+                <path class="edge" d="M220 118 L172 70" marker-end="url(#p1-d3-arrow)"/>
+                <path class="edge" d="M220 162 L172 210" marker-end="url(#p1-d3-arrow)"/>
+                <text class="muted" x="176" y="60">lookup</text>
+                <text class="muted" x="178" y="237">score all V rows</text>
+                <path class="edge" d="M385 40 V262"/>
+                <text x="575" y="40" text-anchor="middle">Gemma 2 final logits: c = 30</text>
+                <path class="edge" d="M410 160 H740"/>
+                <path class="edge" d="M575 55 V265"/>
+                <path class="edge" d="M410 105 H740" stroke-dasharray="4 4"/>
+                <path class="edge" d="M410 215 H740" stroke-dasharray="4 4"/>
+                <path class="edge" d="M474.2 260.8 L675.8 59.2" stroke-dasharray="6 4"/>
+                <path class="edge" d="M410.0 214.7 L421.0 214.6 L432.0 214.4 L443.0 214.1 L454.0 213.7 L465.0 213.0 L476.0 212.1 L487.0 210.7 L498.0 208.7 L509.0 205.9 L520.0 201.9 L531.0 196.5 L542.0 189.5 L553.0 180.9 L564.0 170.9 L575.0 160.0 L586.0 149.1 L597.0 139.1 L608.0 130.5 L619.0 123.5 L630.0 118.1 L641.0 114.1 L652.0 111.3 L663.0 109.3 L674.0 107.9 L685.0 107.0 L696.0 106.3 L707.0 105.9 L718.0 105.6 L729.0 105.4 L740.0 105.3" stroke-width="2.6"/>
+                <text class="muted" x="668" y="56" text-anchor="end">no cap</text>
+                <text class="muted" x="742" y="98" text-anchor="end">+c = 30</text>
+                <text class="muted" x="680" y="128" text-anchor="middle">soft-capped</text>
+                <text class="muted" x="740" y="176" text-anchor="end">z (raw logit)</text>
+                <text class="muted" x="742" y="230" text-anchor="end">−c = −30</text>
+              </svg>
+              <figcaption>Original diagram. Left: with tied weights the same <code>[V, D]</code> matrix supplies input rows and scores the final hidden state. Right: the soft-capped logit (thick curve) tracks the raw logit (dashed diagonal) near zero but can never pass ±c.</figcaption>
+            </figure>
+
+            <h4>Reference diagrams</h4>
+            <div class="ref-gallery" id="day-3-references">
+              <div class="ref-link-card">
+                <a href="https://jalammar.github.io/illustrated-gpt2/">Jay Alammar — “The Illustrated GPT-2”</a>
+                <small>The model-output figures show the final vector multiplied by the token-embedding matrix to produce one score per vocabulary entry — tied weights drawn step by step.</small>
+              </div>
+            </div>
+
+            <h4>Further reading</h4>
+            <ul class="reading-list">
+              <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 2.2.1 “LLM Architecture”</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Follows a forward pass to its vector of logits and explains how temperature, top-k, top-p, and logit biasing act on it after every step — useful for placing soft-capping in the right order.</p></li>
+              <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day03">100 Days of Inference — Day 03: Embeddings</a></strong><span class="reading-meta">elizabetht · GitHub notebook series · 2026</span><p>Demonstrates that token IDs carry no geometry while embedding vectors do, and inspects GPT-2’s token and position embedding tables with similarity probes.</p></li>
+              <li><strong><a href="https://arxiv.org/abs/1608.05859">Using the Output Embedding to Improve Language Models</a></strong><span class="reading-meta">Press, Wolf · EACL · 2017</span><p>Analyzes input and output embeddings and shows that tying them cuts parameters while improving perplexity — the origin of tied heads in GPT-style models.</p></li>
+              <li><strong><a href="https://arxiv.org/abs/2408.00118">Gemma 2: Improving Open Language Models at a Practical Size</a></strong><span class="reading-meta">Gemma Team, Google DeepMind · arXiv technical report · 2024</span><p>Documents Gemma 2’s architecture, including its attention and final-logit soft-cap values, interleaved local and global attention, and grouped-query attention.</p></li>
+              <li><strong><a href="https://huggingface.co/blog/gemma2">Welcome Gemma 2 — Google’s new open LLM</a></strong><span class="reading-meta">Hugging Face team · Hugging Face blog · 2024</span><p>A practitioner’s tour of the release that explains soft-capping and its consequences for attention implementations and integrations.</p></li>
+            </ul>
           </article>
 
           <article id="day-3-exercises" class="card" data-search-item="" data-keywords="practical exercises bridge">
@@ -875,8 +1185,10 @@
             <p>
               RoPE groups adjacent query and key features into two-dimensional pairs.
               For one pair <code>(x₀,x₁)</code> at position <code>p</code>, use angle
-              <code>φ = p × θ^(-r/d_h)</code> for a frequency determined by pair index
-              <code>r</code>, head width <code>d_h</code>, and base <code>θ</code>.
+              <code>φ = p × θ^(-r/d_h)</code>, where <code>r = 0, 2, 4, …</code> is the
+              even feature index that starts the pair (equivalently <code>2i</code> for
+              pair number <code>i</code>), <code>d_h</code> is head width, and
+              <code>θ</code> is the base, commonly 10,000.
               The project expresses the rotation as:
             </p>
             <div class="formula">
@@ -982,6 +1294,133 @@
             <details class="qa-item"><summary>Which vectors does RoPE rotate here?</summary><div class="qa-answer">Queries and keys, in adjacent feature pairs, using position-dependent angles.</div></details>
             <details class="qa-item"><summary>With 12 query heads and 3 KV heads, how many query heads share each KV head?</summary><div class="qa-answer">Four query heads per KV head.</div></details>
             <details class="qa-item"><summary>What remains shaped <code>[S,D]</code> across a block?</summary><div class="qa-answer">The residual-stream input and output, enabling residual additions and stacked blocks.</div></details>
+          </article>
+
+          <article id="day-4-going-deeper">
+            <h3>Going deeper: MQA, MLA, and sliding-window attention</h3>
+            <div id="day-4-deep-dive" class="deep-dive" data-search-item="" data-keywords="MQA multi-query attention GQA grouped-query uptraining MLA multi-head latent attention DeepSeek latent KV compression sliding window attention Mistral Gemma 2 local global rolling buffer KV cache size">
+              <h4>Sharing, compressing, or forgetting keys and values</h4>
+              <p>
+                Grouped-query attention sits on a spectrum. Multi-head attention keeps a
+                key head and a value head for every query head. <strong>Multi-query
+                attention</strong> (Shazeer, 2019) keeps one key head and one value head
+                for all query heads, shrinking the cache by the full head count but
+                sometimes costing quality. GQA (Ainslie et al., 2023) picks an
+                intermediate number of KV heads and showed that a multi-head checkpoint can
+                be converted by mean-pooling its key and value heads and then training
+                briefly. The ratio that matters for serving is query heads per KV head:
+                Llama 3 8B has 32 query heads and 8 KV heads, so each cached token costs a
+                quarter of what full multi-head attention would.
+              </p>
+              <p>
+                <strong>Multi-head latent attention</strong> (MLA), introduced with
+                DeepSeek-V2 in 2024, compresses instead of sharing. Each token’s hidden
+                state is projected down to a small latent vector, and only that latent is
+                cached; per-head keys and values are rebuilt from it with up-projection
+                matrices. Because rotary position embedding would get tangled in that
+                rebuild, MLA also caches a small, separate key part that carries the
+                rotation. DeepSeek-V2 caches a 512-element latent plus a 64-element rotary
+                key per token and layer — far less than 128 heads of full keys and values.
+                At inference the up-projections can be folded into neighbouring
+                projections, so decode reads the compact latent directly, trading extra
+                arithmetic for much less memory traffic.
+              </p>
+              <p>
+                <strong>Sliding-window attention</strong> limits how far back a layer
+                looks. With window <code>W</code>, the query at position <code>p</code>
+                attends only to positions <code>p − W + 1</code> through <code>p</code>, so
+                that layer never needs more than <code>W</code> tokens of KV however long
+                the conversation grows. Information still travels further, because each
+                layer’s output already summarizes earlier windows; a stack of
+                <code>L</code> layers reaches back roughly <code>L × W</code> positions.
+                Mistral 7B used a 4,096-token window with a rolling buffer that overwrites
+                its oldest slot; Gemma 2 alternates 4,096-token local layers with global
+                layers that see the full 8,192-token context.
+              </p>
+              <p>
+                Each design changes engine bookkeeping. A paged allocator must know which
+                layers are windowed — those can release blocks that slid out of range —
+                and which are global and must keep everything, as the vLLM figure below
+                shows. Kernels must apply the window in the mask, MLA needs dedicated
+                attention kernels, and a capacity formula that multiplies one per-layer
+                size by <code>L</code> no longer holds for hybrid models.
+              </p>
+            </div>
+
+            <figure id="day-4-diagram" class="svg-diagram" data-search-item="" data-keywords="diagram MHA GQA MQA MLA head sharing KV cache per token">
+              <svg viewBox="0 0 760 270" role="img" aria-labelledby="p1-d4-title">
+                <title id="p1-d4-title">Four attention variants with eight query heads: MHA caches eight key and value heads, GQA caches two groups, MQA caches one, and MLA caches one compressed latent plus a small rotary key</title>
+                <text x="10" y="24">What each attention variant keeps in the KV cache, per token and layer</text>
+                <text x="100" y="52" text-anchor="middle" font-weight="700">MHA</text>
+                <text class="muted" x="100" y="70" text-anchor="middle">8 query · 8 KV heads</text>
+                <text x="280" y="52" text-anchor="middle" font-weight="700">GQA</text>
+                <text class="muted" x="280" y="70" text-anchor="middle">8 query · 2 KV groups</text>
+                <text x="460" y="52" text-anchor="middle" font-weight="700">MQA</text>
+                <text class="muted" x="460" y="70" text-anchor="middle">8 query · 1 KV head</text>
+                <text x="650" y="52" text-anchor="middle" font-weight="700">MLA</text>
+                <text class="muted" x="650" y="70" text-anchor="middle">8 query · 1 latent</text>
+                <g>
+                  <rect class="node" x="30" y="86" width="14" height="20"/><rect class="node" x="48" y="86" width="14" height="20"/><rect class="node" x="66" y="86" width="14" height="20"/><rect class="node" x="84" y="86" width="14" height="20"/><rect class="node" x="102" y="86" width="14" height="20"/><rect class="node" x="120" y="86" width="14" height="20"/><rect class="node" x="138" y="86" width="14" height="20"/><rect class="node" x="156" y="86" width="14" height="20"/>
+                  <path class="edge" d="M37 106 V170 M55 106 V170 M73 106 V170 M91 106 V170 M109 106 V170 M127 106 V170 M145 106 V170 M163 106 V170"/>
+                  <rect class="node-accent" x="30" y="170" width="14" height="20"/><rect class="node-accent" x="48" y="170" width="14" height="20"/><rect class="node-accent" x="66" y="170" width="14" height="20"/><rect class="node-accent" x="84" y="170" width="14" height="20"/><rect class="node-accent" x="102" y="170" width="14" height="20"/><rect class="node-accent" x="120" y="170" width="14" height="20"/><rect class="node-accent" x="138" y="170" width="14" height="20"/><rect class="node-accent" x="156" y="170" width="14" height="20"/>
+                </g>
+                <g>
+                  <rect class="node" x="210" y="86" width="14" height="20"/><rect class="node" x="228" y="86" width="14" height="20"/><rect class="node" x="246" y="86" width="14" height="20"/><rect class="node" x="264" y="86" width="14" height="20"/><rect class="node" x="282" y="86" width="14" height="20"/><rect class="node" x="300" y="86" width="14" height="20"/><rect class="node" x="318" y="86" width="14" height="20"/><rect class="node" x="336" y="86" width="14" height="20"/>
+                  <path class="edge" d="M217 106 L244 170 M235 106 L244 170 M253 106 L244 170 M271 106 L244 170 M289 106 L316 170 M307 106 L316 170 M325 106 L316 170 M343 106 L316 170"/>
+                  <rect class="node-accent" x="237" y="170" width="14" height="20"/><rect class="node-accent" x="309" y="170" width="14" height="20"/>
+                </g>
+                <g>
+                  <rect class="node" x="390" y="86" width="14" height="20"/><rect class="node" x="408" y="86" width="14" height="20"/><rect class="node" x="426" y="86" width="14" height="20"/><rect class="node" x="444" y="86" width="14" height="20"/><rect class="node" x="462" y="86" width="14" height="20"/><rect class="node" x="480" y="86" width="14" height="20"/><rect class="node" x="498" y="86" width="14" height="20"/><rect class="node" x="516" y="86" width="14" height="20"/>
+                  <path class="edge" d="M397 106 L460 170 M415 106 L460 170 M433 106 L460 170 M451 106 L460 170 M469 106 L460 170 M487 106 L460 170 M505 106 L460 170 M523 106 L460 170"/>
+                  <rect class="node-accent" x="453" y="170" width="14" height="20"/>
+                </g>
+                <g>
+                  <rect class="node" x="580" y="86" width="14" height="20"/><rect class="node" x="598" y="86" width="14" height="20"/><rect class="node" x="616" y="86" width="14" height="20"/><rect class="node" x="634" y="86" width="14" height="20"/><rect class="node" x="652" y="86" width="14" height="20"/><rect class="node" x="670" y="86" width="14" height="20"/><rect class="node" x="688" y="86" width="14" height="20"/><rect class="node" x="706" y="86" width="14" height="20"/>
+                  <path class="edge" d="M587 106 L630 170 M605 106 L630 170 M623 106 L630 170 M641 106 L630 170 M659 106 L630 170 M677 106 L630 170 M695 106 L630 170 M713 106 L630 170"/>
+                  <rect class="node-teal" x="590" y="170" width="80" height="20"/>
+                  <text class="muted" x="630" y="184" text-anchor="middle">latent c</text>
+                  <rect class="node-teal" x="678" y="170" width="34" height="20"/>
+                  <text class="muted" x="695" y="184" text-anchor="middle">rope</text>
+                </g>
+                <text class="muted" x="100" y="212" text-anchor="middle">cache: 8 K + 8 V heads</text>
+                <text class="muted" x="100" y="230" text-anchor="middle">baseline size</text>
+                <text class="muted" x="280" y="212" text-anchor="middle">cache: 2 K + 2 V heads</text>
+                <text class="muted" x="280" y="230" text-anchor="middle">¼ of MHA here</text>
+                <text class="muted" x="460" y="212" text-anchor="middle">cache: 1 K + 1 V head</text>
+                <text class="muted" x="460" y="230" text-anchor="middle">⅛ of MHA here</text>
+                <text class="muted" x="650" y="212" text-anchor="middle">cache: latent + rope key</text>
+                <text class="muted" x="650" y="230" text-anchor="middle">K, V rebuilt from latent</text>
+                <text class="muted" x="380" y="258" text-anchor="middle">top row: query heads · bottom row: what is cached for each token</text>
+              </svg>
+              <figcaption>Original diagram. Lines show which cached tensor each query head reads. GQA and MQA share cached heads across queries; MLA caches one compressed latent (plus a small rotary key) from which every head’s keys and values are reconstructed.</figcaption>
+            </figure>
+
+            <h4>Reference diagrams</h4>
+            <div class="ref-gallery" id="day-4-references">
+              <figure class="ref-figure">
+                <img loading="lazy" decoding="async" width="586" height="187" src="https://raw.githubusercontent.com/vllm-project/vllm/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/hybrid_kv_cache_manager/basic_grouping_example.png" alt="Table of KV block IDs for a 112-token request in 16-token ranges: the full-attention group holds blocks 0 to 6 for every range, while two sliding-window groups hold blocks only for the last two ranges (7 and 8, then 9 and 10) and none for earlier tokens.">
+                <figcaption>
+                  <strong>vLLM hybrid KV cache manager — full versus sliding-window allocation.</strong>
+                  With 16-token blocks, a 32-token window, and a 112-token request, full-attention layers need a block for every range, while sliding-window layers keep blocks only for the most recent tokens.
+                  Source: <a href="https://docs.vllm.ai/en/latest/design/hybrid_kv_cache_manager/">vLLM hybrid KV cache manager design</a> ·
+                  <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/hybrid_kv_cache_manager/basic_grouping_example.png">file @ 7b77ed5</a>.
+                  <span class="license">License: Apache-2.0 (vllm-project/vllm)</span>
+                </figcaption>
+              </figure>
+              <div class="ref-link-card">
+                <a href="https://arxiv.org/abs/2405.04434">DeepSeek-V2 paper — Figure 3</a>
+                <small>Simplified side-by-side illustration of MHA, GQA, MQA, and MLA, highlighting which tensors each variant caches during inference.</small>
+              </div>
+            </div>
+
+            <h4>Further reading</h4>
+            <ul class="reading-list">
+              <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 2.2.2 “Transformer Blocks” and 2.2.3 “Attention”</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Describes the embedding layer, the stack of transformer blocks, and the language-modeling head, then explains scaled dot-product attention and the variants used to make it cheaper.</p></li>
+              <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day04">100 Days of Inference — Day 04: Attention</a></strong><span class="reading-meta">elizabetht · GitHub notebook series · 2026</span><p>Builds queries, keys, values, and causal masking from scratch and visualizes how GPT-2’s heads learn different attention patterns.</p></li>
+              <li><strong><a href="https://arxiv.org/abs/2305.13245">GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints</a></strong><span class="reading-meta">Ainslie, Lee-Thorp, de Jong, Zemlyanskiy, Lebrón, Sanghai · EMNLP · 2023</span><p>Introduces grouped-query attention and an uptraining recipe that converts multi-head checkpoints cheaply, landing near multi-head quality at close to multi-query speed. Figure 2 compares the three layouts.</p></li>
+              <li><strong><a href="https://arxiv.org/abs/2405.04434">DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model</a></strong><span class="reading-meta">DeepSeek-AI · arXiv · 2024</span><p>Presents multi-head latent attention, which caches a compressed latent per token plus a decoupled rotary key, shrinking the KV cache dramatically compared with standard attention.</p></li>
+              <li><strong><a href="https://arxiv.org/abs/2310.06825">Mistral 7B</a></strong><span class="reading-meta">Jiang et al. · arXiv · 2023</span><p>A short report that pairs GQA with sliding-window attention and a rolling-buffer cache; its first two figures illustrate the window and the buffer.</p></li>
+            </ul>
           </article>
 
           <article id="day-4-exercises" class="card" data-search-item="" data-keywords="practical exercises bridge">
@@ -1189,6 +1628,129 @@
             <details class="qa-item"><summary>Why can memory limit concurrency?</summary><div class="qa-answer">Every active sequence retains per-layer K/V data that grows with processed token count.</div></details>
           </article>
 
+          <article id="day-5-going-deeper">
+            <h3>Going deeper: KV-cache layouts and KV-cache quantization</h3>
+            <div id="day-5-deep-dive" class="deep-dive" data-search-item="" data-keywords="KV cache layout contiguous paged block NHD HND token-major head-major coalesced FP8 KV cache E4M3 scale INT4 KIVI per-channel per-token quantization dequantize attention kernel">
+              <h4>Where each cached number lives, and how many bits it gets</h4>
+              <p>
+                The memory equation counts elements; an engine must also decide where
+                each element lives. The simplest layout gives every sequence one
+                contiguous tensor per layer, shaped like
+                <code>[batch, kv_heads, max_len, head_dim]</code>. Indexing is trivial,
+                but a maximum length must be reserved up front. Paged layouts instead
+                carve a large pool into fixed-size blocks, often 16 tokens each, and store
+                keys and values indexed by block number, so a sequence’s history becomes
+                a list of block IDs. Inside a block there is still an axis order to pick:
+                token-major (often written NHD — tokens, heads, dimension) keeps a token’s
+                heads together, while head-major (HND) keeps one head’s consecutive tokens
+                together, which suits the per-head reads of decode attention.
+              </p>
+              <p>
+                Layout matters because attention kernels read the cache on every decode
+                step, and GPUs move data fastest when neighbouring threads read
+                neighbouring addresses. Kernels are therefore written for one specific
+                layout, with vector widths and block sizes tuned to it. The vLLM figure
+                below shows how its original PagedAttention kernel splits each token’s key
+                into small vectors that a group of threads loads together. Changing the
+                layout is not a cosmetic refactor; it changes the contract between the
+                allocator and the kernel.
+              </p>
+              <p>
+                <strong>KV quantization</strong> attacks the bytes-per-element term.
+                Storing keys and values in an 8-bit floating-point format such as FP8 E4M3
+                halves cache memory relative to BF16, roughly doubling the tokens that fit
+                and halving decode attention’s cache traffic. A scale factor — per tensor
+                or finer — maps 8-bit values back to the original range, and the kernel
+                either dequantizes on the fly or computes in FP8 where hardware supports
+                it. Going lower is harder: KIVI (2024) observed that keys contain outlier
+                <em>channels</em> while values do not, so it quantizes keys per channel and
+                values per token, reaching about 2 bits while keeping the most recent
+                tokens in full precision.
+              </p>
+              <p>
+                A quantized cache is an accuracy trade, so evaluate it on long-context
+                tasks where small errors accumulate, not only on short benchmarks. Note
+                what it does <em>not</em> shrink: weights, activations, and attention
+                arithmetic are unchanged, and a cache format without a matching fast
+                kernel can fall back to a slower path. In vLLM the feature is a cache
+                dtype setting, and calibrated scales can be loaded from the checkpoint.
+              </p>
+            </div>
+
+            <figure id="day-5-diagram" class="svg-diagram" data-search-item="" data-keywords="diagram contiguous paged KV layout block table FP8 bytes per token">
+              <svg viewBox="0 0 760 270" role="img" aria-labelledby="p1-d5-title">
+                <title id="p1-d5-title">Left: contiguous per-sequence reservations leave unused space, while a paged pool of 16-token blocks assigns blocks to sequences through block tables. Right: bytes per cached token for an 8B-class GQA model are 128 KiB in BF16, 64 KiB in FP8, and about 32 KiB at 4 bits</title>
+                <text x="10" y="24">Same logical cache: two physical layouts and three element sizes</text>
+                <text x="20" y="52">Contiguous: reserve the maximum length</text>
+                <rect class="node" x="20" y="62" width="340" height="28" rx="4"/>
+                <rect class="node-accent" x="20" y="62" width="120" height="28" rx="4"/>
+                <text class="muted" x="80" y="80" text-anchor="middle">A: used</text>
+                <text class="muted" x="250" y="80" text-anchor="middle">reserved but empty</text>
+                <rect class="node" x="20" y="98" width="340" height="28" rx="4"/>
+                <rect class="node-teal" x="20" y="98" width="220" height="28" rx="4"/>
+                <text class="muted" x="130" y="116" text-anchor="middle">B: used</text>
+                <text class="muted" x="300" y="116" text-anchor="middle">empty</text>
+                <text x="20" y="150">Paged: one pool of 16-token blocks</text>
+                <rect class="node-teal" x="20" y="160" width="38" height="28" rx="4"/><text x="39" y="179" text-anchor="middle">B0</text>
+                <rect class="node" x="63" y="160" width="38" height="28" rx="4"/><text class="muted" x="82" y="179" text-anchor="middle">free</text>
+                <rect class="node" x="106" y="160" width="38" height="28" rx="4"/><text class="muted" x="125" y="179" text-anchor="middle">free</text>
+                <rect class="node-accent" x="149" y="160" width="38" height="28" rx="4"/><text x="168" y="179" text-anchor="middle">A0</text>
+                <rect class="node" x="192" y="160" width="38" height="28" rx="4"/><text class="muted" x="211" y="179" text-anchor="middle">free</text>
+                <rect class="node-teal" x="235" y="160" width="38" height="28" rx="4"/><text x="254" y="179" text-anchor="middle">B1</text>
+                <rect class="node-teal" x="278" y="160" width="38" height="28" rx="4"/><text x="297" y="179" text-anchor="middle">B2</text>
+                <rect class="node" x="321" y="160" width="38" height="28" rx="4"/><text class="muted" x="340" y="179" text-anchor="middle">free</text>
+                <rect class="node" x="20" y="194" width="38" height="28" rx="4"/><text class="muted" x="39" y="213" text-anchor="middle">free</text>
+                <rect class="node-accent" x="63" y="194" width="38" height="28" rx="4"/><text x="82" y="213" text-anchor="middle">A1</text>
+                <rect class="node" x="106" y="194" width="38" height="28" rx="4"/><text class="muted" x="125" y="213" text-anchor="middle">free</text>
+                <rect class="node" x="149" y="194" width="38" height="28" rx="4"/><text class="muted" x="168" y="213" text-anchor="middle">free</text>
+                <rect class="node-accent" x="192" y="194" width="38" height="28" rx="4"/><text x="211" y="213" text-anchor="middle">A2</text>
+                <rect class="node" x="235" y="194" width="38" height="28" rx="4"/><text class="muted" x="254" y="213" text-anchor="middle">free</text>
+                <rect class="node-teal" x="278" y="194" width="38" height="28" rx="4"/><text x="297" y="213" text-anchor="middle">B3</text>
+                <rect class="node" x="321" y="194" width="38" height="28" rx="4"/><text class="muted" x="340" y="213" text-anchor="middle">free</text>
+                <text class="muted" x="20" y="244">block table A = [3, 9, 12] · block table B = [0, 5, 6, 14]</text>
+                <path class="edge" d="M385 40 V250"/>
+                <text x="410" y="52">Bytes per cached token, 8B-class GQA model</text>
+                <text class="muted" x="410" y="70">32 layers × 8 KV heads × 128 dims × 2 (K and V)</text>
+                <rect class="node" x="410" y="84" width="320" height="30" rx="4"/>
+                <text x="420" y="104">BF16: 128 KiB</text>
+                <rect class="node-accent" x="410" y="124" width="160" height="30" rx="4"/>
+                <text x="420" y="144">FP8: 64 KiB</text>
+                <rect class="node-teal" x="410" y="164" width="80" height="30" rx="4"/>
+                <text x="500" y="184">4-bit: 32 KiB (+ scales)</text>
+                <text class="muted" x="410" y="220">FP8 fits about twice the tokens in the same memory</text>
+                <text class="muted" x="410" y="238">Below 8 bits, outlier-aware schemes such as KIVI</text>
+              </svg>
+              <figcaption>Original diagram. Block numbers count left to right, top to bottom, so sequence A owns blocks 3, 9, and 12 and sequence B owns 0, 5, 6, and 14. Byte figures use the Day 5 equation for one token with a 32-layer, 8-KV-head, 128-dimension model.</figcaption>
+            </figure>
+
+            <h4>Reference diagrams</h4>
+            <div class="ref-gallery" id="day-5-references">
+              <figure class="ref-figure">
+                <img loading="lazy" decoding="async" width="1264" height="984" src="https://raw.githubusercontent.com/vllm-project/vllm/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/paged_attention/key.png" alt="Diagram of key-cache data for one context and one head in vLLM's PagedAttention kernel: each warp processes a KV block in an outer loop, and each token's key is divided into vectors vec0 to vec31 that a thread group loads in an inner loop over the head size.">
+                <figcaption>
+                  <strong>vLLM PagedAttention kernel — key memory layout.</strong>
+                  For one sequence and one head, warps step through KV blocks, and each token’s key is split into small vectors that a thread group reads together.
+                  Source: <a href="https://docs.vllm.ai/en/latest/design/paged_attention/">vLLM PagedAttention kernel design</a> ·
+                  <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/paged_attention/key.png">file @ 7b77ed5</a>.
+                  <span class="license">License: Apache-2.0 (vllm-project/vllm)</span>
+                </figcaption>
+              </figure>
+              <div class="ref-link-card">
+                <a href="https://docs.flashinfer.ai/tutorials/kv_layout.html">FlashInfer — KV-cache layout tutorial</a>
+                <small>Explains ragged and paged KV storage and the NHD versus HND axis orders, with diagrams of the index arrays engines pass to attention kernels.</small>
+              </div>
+            </div>
+
+            <h4>Further reading</h4>
+            <ul class="reading-list">
+              <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 2.2 “LLM Inference Mechanics”</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Connects token-by-token generation to why keys and values are cached and how that cache grows with context length and concurrency.</p></li>
+              <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day05">100 Days of Inference — Day 05: KV Cache</a></strong><span class="reading-meta">elizabetht · GitHub notebook series · 2026</span><p>Measures the quadratic cost of recomputing attention without a cache, then caches keys and values, computes only the new token, and checks that outputs match.</p></li>
+              <li><strong><a href="https://arxiv.org/abs/2402.02750">KIVI: A Tuning-Free Asymmetric 2bit Quantization for KV Cache</a></strong><span class="reading-meta">Liu et al. · ICML · 2024</span><p>Shows that key outliers cluster in channels while values do not, and pairs per-channel key quantization with per-token value quantization to reach 2-bit caches.</p></li>
+              <li><strong><a href="https://docs.vllm.ai/en/latest/features/quantization/quantized_kvcache.html">Quantized KV Cache</a></strong><span class="reading-meta">vLLM project · vLLM documentation · accessed 2026</span><p>Covers enabling FP8 cache storage, supplying or calibrating scale factors, and the capacity and accuracy effects to expect.</p></li>
+              <li><strong><a href="https://docs.flashinfer.ai/tutorials/kv_layout.html">KV-Cache Layout in FlashInfer</a></strong><span class="reading-meta">FlashInfer project · FlashInfer documentation · accessed 2026</span><p>Defines the ragged and paged formats and the NHD and HND orders its kernels accept — precise vocabulary for reading engine attention code.</p></li>
+            </ul>
+          </article>
+
           <article id="day-5-exercises" class="card" data-search-item="" data-keywords="practical exercises bridge">
             <h3>Practical exercises and bridge beyond Phase 1</h3>
             <ol>
@@ -1372,6 +1934,42 @@
             can trace those effects without losing the tensor shapes, you are ready for
             engine scheduling and memory management.
           </div>
+        </section>
+
+        <section id="sources-and-credits" class="content-section" data-search-group="Credits">
+          <div class="section-heading" data-search-item="" data-keywords="sources credits licenses attribution images figures">
+            <div><p class="eyebrow">Appendix D</p><h2>Sources and credits</h2></div>
+            <p>Every embedded external figure on this page, where it comes from, and the license that permits its use.</p>
+          </div>
+          <div class="table-wrap">
+            <table class="comparison">
+              <thead><tr><th>Where</th><th>Embedded image</th><th>Source (pinned commit)</th><th>License</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><a href="#day-4-references">Day 4</a></td>
+                  <td>vLLM hybrid KV cache manager: block allocation for full and sliding-window layers</td>
+                  <td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/hybrid_kv_cache_manager/basic_grouping_example.png">vllm-project/vllm @ 7b77ed5 — docs/assets/design/hybrid_kv_cache_manager/basic_grouping_example.png</a> (described in the <a href="https://docs.vllm.ai/en/latest/design/hybrid_kv_cache_manager/">vLLM docs</a>)</td>
+                  <td>Apache-2.0</td>
+                </tr>
+                <tr>
+                  <td><a href="#day-5-references">Day 5</a></td>
+                  <td>vLLM PagedAttention kernel: key memory layout</td>
+                  <td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/design/paged_attention/key.png">vllm-project/vllm @ 7b77ed5 — docs/assets/design/paged_attention/key.png</a> (described in the <a href="https://docs.vllm.ai/en/latest/design/paged_attention/">vLLM docs</a>)</td>
+                  <td>Apache-2.0</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            Images are loaded directly from <code>raw.githubusercontent.com</code> at the
+            pinned commit, unmodified, with attribution in each caption. All inline SVG
+            diagrams on this page are original to this guide. Reference cards and
+            reading-list entries only link to external papers, documentation, and
+            articles; their summaries are original paraphrases, so consult the linked
+            sources for the authors’ own words and figures. <em>Inference Engineering</em>
+            (Philip Kiely, Baseten Books, 2026) is cited by chapter only; none of its text
+            or figures are reproduced here.
+          </p>
         </section>
       </main>
     </div>

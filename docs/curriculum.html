@@ -10,7 +10,7 @@
     <meta name="theme-color" content="#3156d3">
     <title>26-Day Curriculum | LLM Inference from Scratch</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%233156d3'/><text x='32' y='40' text-anchor='middle' font-size='24' font-family='sans-serif' font-weight='700' fill='white'>LLM</text></svg>">
-    <link rel="stylesheet" href="styles.css?v=6">
+    <link rel="stylesheet" href="styles.css?v=7">
     <script src="app.js?v=2" defer></script>
   </head>
   <body>
@@ -66,6 +66,9 @@
             <li><a href="#production-checklist">Production checklist</a></li>
             <li><a href="#study-method">Study method</a></li>
             <li><a href="index.html">Systems guide ↗</a></li>
+            <li><a href="engines/index.html">Engines overview ↗</a></li>
+            <li><a href="engines/vllm.html">vLLM deep dive ↗</a></li>
+            <li><a href="engines/sglang.html">SGLang deep dive ↗</a></li>
           </ul>
         </nav>
         <div class="sidebar-note">
@@ -216,6 +219,13 @@
               <br><a class="notes-link" href="notes/phase-2-engines.html#day-12">Read detailed Day 12 notes</a>
             </article>
           </div>
+          <div class="callout" data-search-item data-keywords="vLLM SGLang token lifecycle engine deep dive">
+            <strong>See Days 9–12 in real engines:</strong> the
+            <a href="engines/vllm.html#lifecycle">vLLM token lifecycle</a> and
+            <a href="engines/sglang.html#lifecycle">SGLang token lifecycle</a> animate a
+            request through every process and list the exact source files it triggers.
+            Start with the <a href="engines/index.html">side-by-side engines overview</a>.
+          </div>
         </section>
 
         <section id="phase-three" class="content-section" data-search-group="Days 13-18">
@@ -275,6 +285,12 @@
               <a class="code-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/disaggregated_routing.py">optimizations/disaggregated_routing.py</a>
               <br><a class="notes-link" href="notes/phase-3-optimization.html#day-18">Read detailed Day 18 notes</a>
             </article>
+          </div>
+          <div class="callout" data-search-item data-keywords="speculative decoding prefix caching parallelism disaggregation vLLM SGLang features">
+            <strong>Production implementations:</strong> compare speculation, prefix reuse,
+            parallelism, and disaggregation in the
+            <a href="engines/vllm.html#feature-catalog">vLLM feature catalog</a> and the
+            <a href="engines/sglang.html#feature-catalog">SGLang feature catalog</a>.
           </div>
         </section>
 

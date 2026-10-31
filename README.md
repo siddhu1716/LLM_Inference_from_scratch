@@ -22,8 +22,10 @@ small inputs, explicit state, and tests over production throughput.
 - Study executable versions of online-softmax attention, quantization,
   speculative decoding, LoRA, MoE routing, structured decoding, and
   parallelism plans.
-- Practice **90 inference-engine interview questions** in the searchable
-  GitHub Pages site.
+- Practice **110 inference-engine interview questions**, including 20 on vLLM
+  and SGLang internals, in the searchable GitHub Pages site.
+- Watch animated **vLLM and SGLang token lifecycles** that show every process
+  hop and the exact source files triggered at each step.
 - Follow a **26-day curriculum** derived from the companion
   `100-days-of-inference` repository and the user's *Inference Engineering*
   reading track.
@@ -109,6 +111,8 @@ src/mini_infer/
 tests/               # deterministic unit and integration tests
 examples/            # runnable learning walkthroughs
 docs/                # no-build GitHub Pages site and interview bank
+|-- notes/           # four long-form beginner textbook volumes
+`-- engines/         # vLLM/SGLang deep dives and animated token lifecycles
 ```
 
 Each technique has its own file so it is easy to revisit in isolation.
@@ -161,7 +165,33 @@ The short curriculum cards link to four full beginner textbook volumes:
 
 Together, the four volumes contain approximately **48,000 words**, more than
 130 glossary terms, worked examples, equations, diagrams, answered review
-questions, exercises, decision guides, failure scenarios, and capstones.
+questions, exercises, decision guides, failure scenarios, and capstones. Each
+day also links to attributed reference diagrams and further reading.
+
+## vLLM and SGLang deep dives
+
+The `docs/engines/` pages explain how production engines serve one request:
+
+- **Engines overview:** side-by-side process layouts and a 15-step mapping of
+  equivalent vLLM and SGLang source files.
+- **vLLM deep dive:** API server, AsyncLLM, EngineCore, scheduler, KV cache
+  manager, GPU model runner, sampler, detokenizer, and feature catalog.
+- **SGLang deep dive:** TokenizerManager, scheduler event loops, RadixCache,
+  memory pools, ForwardBatch, ModelRunner, DetokenizerManager, and feature
+  catalog.
+
+Each lifecycle is interactive: play, pause, or step through admission,
+prefill, repeated decode iterations, and completion while watching the streamed
+output and cumulative list of files touched. Source links are pinned to these
+snapshots so the explanations do not drift:
+
+| Engine | Commit | Snapshot date |
+|---|---|---|
+| vLLM | `7b77ed581d92fa14e34ab43344837bb1ca1b4257` | 2026-10-31 |
+| SGLang | `07a85353d6c6be47a268e33a416ad537985ef262` | 2026-10-31 |
+
+External images are embedded only when their licenses permit redistribution;
+other diagrams are linked with attribution.
 
 ## Validation
 

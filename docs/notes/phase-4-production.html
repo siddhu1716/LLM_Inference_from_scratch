@@ -21,7 +21,7 @@
     >
     <title>Days 19-26: Production Inference | LLM Inference from Scratch</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%233156d3'/><text x='32' y='40' text-anchor='middle' font-size='24' font-family='sans-serif' font-weight='700' fill='white'>LLM</text></svg>">
-    <link rel="stylesheet" href="../styles.css?v=6">
+    <link rel="stylesheet" href="../styles.css?v=7">
     <script src="../app.js" defer></script>
     <style>
       .textbook-hero { margin-bottom: 1.5rem; }
@@ -131,6 +131,7 @@
             <li><a href="#deployment-checklist">Deployment checklist</a></li>
             <li><a href="#glossary">Glossary</a></li>
             <li><a href="#capstone">Capstone exercise</a></li>
+            <li><a href="#sources-and-credits">Sources &amp; credits</a></li>
             <li><a href="phase-3-optimization.html">Previous: Phase 3 ↗</a></li>
             <li><a href="../curriculum.html">26-day curriculum ↗</a></li>
           </ul>
@@ -284,6 +285,70 @@
             <li>Write a short JavaScript or spreadsheet simulation in which 32 lanes take two branches with different probabilities. Count active-lane instruction slots to visualize divergence.</li>
             <li>Draw four memory tiers on paper and place model weights, attention tiles, accumulators, and KV pages in the most plausible tier.</li>
           </ol>
+          <div class="deep-dive" data-search-item data-keywords="Tensor Cores MMA warpgroup tile GEMM hierarchy epilogue occupancy registers shared memory resident warps cp.async TMA software pipelining Nsight Compute" id="day19-deep-dive">
+            <h4>Deep dive: how Tensor Cores are fed, and what occupancy really measures</h4>
+            <p>Tensor Cores are matrix engines inside each SM. Instead of every thread performing one fused multiply-add at a time, a warp—or, on Hopper, a warpgroup of four warps—issues a single matrix-multiply-accumulate instruction that consumes a small tile of A and a tile of B and adds their product into an accumulator tile C. Everything in a fast GEMM kernel exists to feed those instructions: thread-block tiles are staged in shared memory, warp tiles in registers, and results leave through an epilogue that can fuse bias, activation, or quantization. The CUTLASS diagram below draws exactly this hierarchy.</p>
+            <p>Shape matters. Tensor-core instructions work on fixed tile shapes and supported data types, so a dimension that is not a multiple of the tile, or a decode step with only a handful of tokens, leaves part of each instruction computing padding. That is one reason batching helps decode: it widens the token dimension so each weight tile fetched from HBM feeds more useful multiply-adds. It is also why a lower precision speeds things up only when the GPU has a tensor-core path for it; otherwise values are converted and computed in a wider type.</p>
+            <p><strong>Occupancy</strong> is resident warps divided by the SM’s maximum. Three budgets cap it: registers (registers per thread × threads), shared memory per block, and limits on resident blocks and threads. Whichever budget runs out first sets the ceiling. In the illustrative diagram, registers would allow 32 warps and slots 48, but shared memory allows only 24, so occupancy can be at most 50%. More resident warps help when warps stall on memory and the scheduler has nothing else ready.</p>
+            <p>Fast tensor-core kernels often run at modest occupancy on purpose. Large tiles need many registers and a lot of shared memory, but they reuse every loaded byte many times, and asynchronous copies (cp.async on Ampere, the Tensor Memory Accelerator on Hopper) hide memory latency through software pipelining instead of through extra warps. Treat occupancy as a diagnostic, not a goal: in Nsight Compute, read achieved occupancy together with tensor-pipe utilization, memory throughput, and stall reasons before changing tile sizes or launch bounds.</p>
+          </div>
+          <figure class="svg-diagram" data-search-item id="day19-diagram">
+            <svg viewBox="0 0 760 300" role="img" aria-labelledby="d19svg-title">
+              <title id="d19svg-title">A Tensor Core consumes an A tile and a B tile and accumulates into a C tile; below, three resource budgets limit occupancy and shared memory binds first</title>
+              <defs><marker id="d19svg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+              <text x="20" y="20" text-anchor="start" class="muted">Tensor Cores multiply whole tiles per instruction</text>
+              <rect class="node" x="20" y="40" width="90" height="60" rx="8"/>
+              <text x="65" y="67" text-anchor="middle" font-weight="700">A tile</text>
+              <text x="65" y="84" text-anchor="middle" class="muted">M × K</text>
+              <text x="125" y="75" text-anchor="middle" font-weight="700">×</text>
+              <rect class="node" x="140" y="40" width="90" height="60" rx="8"/>
+              <text x="185" y="67" text-anchor="middle" font-weight="700">B tile</text>
+              <text x="185" y="84" text-anchor="middle" class="muted">K × N</text>
+              <line class="edge" x1="230" y1="70" x2="262" y2="70" marker-end="url(#d19svg-arrow)"/>
+              <rect class="node-accent" x="262" y="30" width="120" height="80" rx="8"/>
+              <text x="322" y="59" text-anchor="middle" font-weight="700">Tensor Core</text>
+              <text x="322" y="76" text-anchor="middle" class="muted">one warp-level</text>
+              <text x="322" y="92" text-anchor="middle" class="muted">MMA instruction</text>
+              <line class="edge" x1="382" y1="70" x2="410" y2="70" marker-end="url(#d19svg-arrow)"/>
+              <rect class="node-teal" x="410" y="40" width="120" height="60" rx="8"/>
+              <text x="470" y="67" text-anchor="middle" font-weight="700">C += A·B</text>
+              <text x="470" y="84" text-anchor="middle" class="muted">wide accumulator</text>
+              <rect class="node" x="560" y="30" width="188" height="80" rx="8"/>
+              <text x="654" y="59" text-anchor="middle" font-weight="700">Tile hierarchy</text>
+              <text x="654" y="76" text-anchor="middle" class="muted">HBM → shared memory</text>
+              <text x="654" y="92" text-anchor="middle" class="muted">→ registers → MMA</text>
+              <text x="20" y="140" text-anchor="start" font-weight="700">Occupancy = resident warps ÷ max warps per SM (illustrative numbers)</text>
+              <text x="20" y="168" text-anchor="start">Register budget</text>
+              <rect class="node" x="250" y="152" width="256" height="22" rx="4"/>
+              <text x="514" y="167" text-anchor="start" class="muted">32 warps</text>
+              <text x="20" y="204" text-anchor="start">Shared-memory budget</text>
+              <rect class="node-accent" x="250" y="188" width="192" height="22" rx="4"/>
+              <text x="450" y="203" text-anchor="start" class="muted">24 warps ← binding limit</text>
+              <text x="20" y="240" text-anchor="start">Block / thread slots</text>
+              <rect class="node" x="250" y="224" width="384" height="22" rx="4"/>
+              <text x="642" y="239" text-anchor="start" class="muted">48 warps</text>
+              <line class="edge" x1="634" y1="146" x2="634" y2="252" stroke-dasharray="4 4"/>
+              <text x="634" y="268" text-anchor="middle" class="muted">max resident = 48</text>
+              <text x="20" y="290" text-anchor="start" font-weight="700">Achieved ≤ 24 ÷ 48 = 50% — shared memory runs out first</text>
+            </svg>
+            <figcaption>Original diagram with hypothetical numbers (not a specific GPU). Top: the unit of tensor-core work is a tile, not a scalar. Bottom: occupancy is set by whichever per-SM budget runs out first.</figcaption>
+          </figure>
+          <h4 id="day19-reference-diagrams">Reference diagrams</h4>
+          <div class="ref-gallery">
+            <figure class="ref-figure">
+              <img loading="lazy" src="https://raw.githubusercontent.com/NVIDIA/cutlass/e13f5cd4142c43efc37c2f6339923eb4a57afb99/media/images/gemm-hierarchy-with-epilogue.png" alt="CUTLASS GEMM hierarchy: a blocked GEMM in global memory is split into thread-block tiles in shared memory, warp tiles in the register file, and thread tiles executed on CUDA or Tensor Cores, followed by an epilogue tile and functor that write results back to global memory.">
+              <figcaption><strong>CUTLASS hierarchical GEMM with epilogue</strong> — how one matrix multiply is blocked from global memory to shared-memory thread-block tiles, register-resident warp tiles, and Tensor Core thread tiles, then finished by an epilogue. Source: <a href="https://github.com/NVIDIA/cutlass/blob/e13f5cd4142c43efc37c2f6339923eb4a57afb99/media/images/gemm-hierarchy-with-epilogue.png">NVIDIA/cutlass, media/images/gemm-hierarchy-with-epilogue.png @ e13f5cd</a>. <span class="license">License: BSD-3-Clause (repository LICENSE.txt)</span></figcaption>
+            </figure>
+          </div>
+          <h4 id="day19-further-reading">Further reading</h4>
+          <ul class="reading-list" id="day19-reading">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 3.1: GPU Architecture</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Starts from the spec sheet and separates compute from memory and caches. A good companion for turning datasheet numbers into the bandwidth-floor reasoning used in this lesson.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day19">100 Days of Inference — Day 19: GPU architecture: SMs, memory hierarchy, and HBM</a></strong><span class="reading-meta">elizabetht · GitHub notebook and notes · 2026</span><p>A notebook that estimates arithmetic intensity and memory-bound limits for transformer operations without needing a GPU.</p></li>
+            <li><strong><a href="https://docs.nvidia.com/deeplearning/performance/dl-performance-gpu-background/index.html">GPU Performance Background User’s Guide</a></strong><span class="reading-meta">NVIDIA · Deep Learning Performance documentation · current</span><p>Explains SMs, Tensor Cores, arithmetic intensity, and when an operation is math- or memory-limited. It is short and written for practitioners rather than kernel authors.</p></li>
+            <li><strong><a href="https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/">CUDA C++ Best Practices Guide</a></strong><span class="reading-meta">NVIDIA · CUDA documentation · current</span><p>Its execution-configuration chapter explains occupancy, register pressure, and why higher occupancy does not always mean higher performance.</p></li>
+            <li><strong><a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/">CUDA C++ Programming Guide</a></strong><span class="reading-meta">NVIDIA · CUDA documentation · current</span><p>The authoritative description of the thread hierarchy, warps, the memory hierarchy, and per-architecture limits. Use it to replace this lesson’s illustrative numbers with real ones for your GPU.</p></li>
+          </ul>
+
           <div class="bridge-box"><strong>Bridge to Day 20:</strong> architecture gives us the nouns. Next we learn how product generations change those resources—and how to compare devices without turning marketing maxima into promises.</div>
         </article>
 
@@ -303,7 +368,7 @@
             Comparing “a Hopper” with “an Ada” or “a Blackwell” is like comparing a freight locomotive, a delivery van, and a newer family of vehicles using only top speed. The locomotive may carry far more cargo and couple to other locomotives; the van may be easier to buy and fit in a garage; the new family may include both giant datacenter systems and smaller products. The correct question is not “Which generation wins?” It is “Which exact product completes my route, cargo, reliability, and budget objective?”
           </p>
           <p>
-            Hopper datacenter products made FP8-oriented transformer execution and high-speed scale-up central design points. Ada products are widely encountered in workstation or consumer settings and can be excellent for development and models that fit local memory, but generally target a different deployment envelope. Blackwell products extend low-precision and large-system options, yet capability, memory, interconnect, availability, price, and supported software differ by SKU and date. Specifications change with product variants and software releases. This chapter intentionally avoids promising a fixed performance multiplier or repeating unverified figures: consult the current official datasheet and reproduce a workload benchmark.
+            Hopper datacenter products made FP8-oriented transformer execution and high-speed scale-up central design points. Ada spans consumer, workstation, and datacenter products (the L4 and L40S inference cards are Ada-based); it can be excellent for development, video-plus-AI pipelines, and models that fit its memory, but it uses GDDR rather than HBM and lacks the NVLink scale-up fabric of flagship Hopper and Blackwell datacenter GPUs. Blackwell products extend low-precision and large-system options, yet capability, memory, interconnect, availability, price, and supported software differ by SKU and date. Specifications change with product variants and software releases. This chapter intentionally avoids promising a fixed performance multiplier or repeating unverified figures: consult the current official datasheet and reproduce a workload benchmark.
           </p>
 
           <h3>Terminology</h3>
@@ -386,6 +451,60 @@
             <li>Find two official current datasheets and list every condition attached to their headline numbers. Do not copy the numbers into your scorecard until the units and modes match.</li>
             <li>Recalculate the worked example while varying the SLO pass fraction. Find when device B becomes cheaper per good token.</li>
           </ol>
+          <div class="deep-dive" data-search-item data-keywords="comparing GPU generations benchmark ranges variance confidence repeated runs workload sweep precision normalization cost per token per watt reproducibility" id="day20-deep-dive">
+            <h4>Deep dive: comparing GPU generations responsibly—with ranges, not headlines</h4>
+            <p>A single headline multiplier compresses a distribution into one point. Run each configuration several times after warm-up and report a <strong>range</strong>: the median with its min–max or interquartile spread for throughput, and p50/p95/p99 for TTFT and ITL. When two products’ ranges overlap on a workload, the honest conclusion is “no reliable difference for this workload,” not a winner. Narrow ranges are earned by controlling clocks, thermal state, background load, and request ordering.</p>
+            <p>Sweep the workload axis. Newer generations differ most where their new features apply—lower-precision tensor-core paths, larger memory, faster scale-up links—so a short BF16 chat test and a long-context FP8 batch test can rank the same two products in opposite orders. Present a small grid (workload × precision × concurrency) with a range in every cell. Keep the engine version and flags identical where possible, and flag any cell where one device runs a precision the other cannot: that cell measures a precision change, not only a hardware change.</p>
+            <p>Normalize and carry the uncertainty through. Report goodput per GPU, per dollar (with the price source and date), and per watt at the SLO. In the diagram, B delivers 62–74 against A’s 30–38 on long-RAG traffic—between about 1.6× and 2.5× the throughput—while short chat is a tie. If B also costs more per hour, divide using the pessimistic and optimistic corners to get a cost band, not a point. Finally, publish what someone needs to reproduce the result: model and checkpoint hash, engine version and flags, input/output length distribution, concurrency, warm-up, and measurement window.</p>
+          </div>
+          <figure class="svg-diagram" data-search-item id="day20-diagram">
+            <svg viewBox="0 0 760 300" role="img" aria-labelledby="d20svg-title">
+              <title id="d20svg-title">Range-aware comparison of two GPUs on three workloads: overlapping ranges mean no reliable winner, separated ranges support a conclusion</title>
+              <defs><marker id="d20svg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+              <text x="20" y="20" text-anchor="start" font-weight="700">Normalized throughput ranges over repeated runs (illustrative)</text>
+              <text x="20" y="38" text-anchor="start" class="muted">plain bar = GPU A (current fleet), teal bar = GPU B (candidate); each bar spans min–max</text>
+              <text x="20" y="70" text-anchor="start" font-weight="700">Short chat, BF16</text>
+              <text x="20" y="86" text-anchor="start" class="muted">1K in / 200 out</text>
+              <rect class="node" x="480" y="56" width="40" height="16" rx="3"/>
+              <text x="210" y="68" text-anchor="end" class="muted">A</text>
+              <rect class="node-teal" x="495" y="78" width="55" height="16" rx="3"/>
+              <text x="210" y="90" text-anchor="end" class="muted">B</text>
+              <text x="220" y="110" text-anchor="start" class="muted">ranges overlap → no reliable winner</text>
+              <text x="20" y="146" text-anchor="start" font-weight="700">Long RAG, FP8</text>
+              <text x="20" y="162" text-anchor="start" class="muted">16K in / 300 out</text>
+              <rect class="node" x="370" y="132" width="40" height="16" rx="3"/>
+              <text x="210" y="144" text-anchor="end" class="muted">A</text>
+              <rect class="node-teal" x="530" y="154" width="60" height="16" rx="3"/>
+              <text x="210" y="166" text-anchor="end" class="muted">B</text>
+              <text x="220" y="186" text-anchor="start" class="muted">no overlap → B is clearly ahead on this workload</text>
+              <text x="20" y="222" text-anchor="start" font-weight="700">Offline batch</text>
+              <text x="20" y="238" text-anchor="start" class="muted">max throughput</text>
+              <rect class="node" x="570" y="208" width="60" height="16" rx="3"/>
+              <text x="210" y="220" text-anchor="end" class="muted">A</text>
+              <rect class="node-teal" x="580" y="230" width="70" height="16" rx="3"/>
+              <text x="210" y="242" text-anchor="end" class="muted">B</text>
+              <text x="220" y="262" text-anchor="start" class="muted">overlap → run more trials or call it a tie</text>
+              <line class="edge" x1="220" y1="276" x2="720" y2="276"/>
+              <line class="edge" x1="220" y1="272" x2="220" y2="280"/>
+              <text x="220" y="292" text-anchor="middle" class="muted">0</text>
+              <line class="edge" x1="470" y1="272" x2="470" y2="280"/>
+              <text x="470" y="292" text-anchor="middle" class="muted">50</text>
+              <line class="edge" x1="720" y1="272" x2="720" y2="280"/>
+              <text x="720" y="292" text-anchor="middle" class="muted">100</text>
+              <text x="20" y="292" text-anchor="start" class="muted">normalized tokens/s</text>
+            </svg>
+            <figcaption>Original diagram with made-up ranges. The same pair of GPUs can be indistinguishable on one workload and clearly different on another, so a single headline multiplier hides the decision-relevant information.</figcaption>
+          </figure>
+          <h4 id="day20-reference-diagrams">Reference diagrams</h4>
+          <div class="ref-link-card"><a href="https://arxiv.org/abs/1911.02549">MLPerf Inference Benchmark (Reddi et al.) — scenario and LoadGen design</a><small>The benchmark-design sections describe the single-stream, multistream, server, and offline scenarios and how the LoadGen harness issues queries under latency bounds—a model for scenario-specific reporting. Linked, not embedded: paper figures lack an explicit reuse license.</small></div>
+          <h4 id="day20-further-reading">Further reading</h4>
+          <ul class="reading-list" id="day20-reading">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 3.2: GPU Architecture Generations</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Surveys Hopper, Ada Lovelace, Blackwell, Rubin, and Grace/Vera from an inference perspective. Use it for orientation, then verify any number you rely on against current datasheets.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day20">100 Days of Inference — Day 20: GPU generations: Hopper, Ada, Blackwell, Rubin</a></strong><span class="reading-meta">elizabetht · GitHub notebook and notes · 2026</span><p>A notebook that compares generations with simple roofline-style calculations; a good place to practice turning point estimates into ranges.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/1911.02549">MLPerf Inference Benchmark</a></strong><span class="reading-meta">Reddi et al. · ISCA · 2020</span><p>Explains why inference benchmarks need explicit scenarios, quality targets, and latency constraints. Its rules are a useful checklist for designing your own fair comparison.</p></li>
+            <li><strong><a href="https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/">NVIDIA Hopper Architecture In-Depth</a></strong><span class="reading-meta">NVIDIA Technical Blog · 2022</span><p>A vendor walkthrough of Hopper’s Transformer Engine, FP8 support, and memory system. Read it to learn which features a fair comparison must exercise, and treat speedup claims as hypotheses.</p></li>
+          </ul>
+
           <div class="bridge-box"><strong>Bridge to Day 21:</strong> once an exact product is chosen, decide how many are needed, how the model spans them, and whether one physical GPU should be partitioned among workloads.</div>
         </article>
 
@@ -490,6 +609,82 @@
             <li>Draw three placements for six replicas across three hosts. Remove each host in turn and calculate surviving capacity.</li>
             <li>Model TP communication as fixed latency plus bytes/bandwidth. Find the tensor size at which two hypothetical interconnects differ materially.</li>
           </ol>
+          <div class="deep-dive" data-search-item data-keywords="MIG MPS time slicing GPU sharing isolation multi-instance GPU multi-process service device plugin replicas active thread percentage fault isolation" id="day21-deep-dive">
+            <h4>Deep dive: MIG vs. MPS vs. time slicing</h4>
+            <p><strong>MIG</strong> partitions a supported datacenter GPU in hardware. Each GPU instance receives its own share of SMs, L2 cache, memory controllers, and memory capacity, so one tenant cannot consume another’s memory or bandwidth, and faults stay inside their instance. NVIDIA’s MIG user guide lists the supported GPUs and their fixed profiles—up to seven instances on parts such as the A100 and H100. Profiles are discrete shapes, and an instance can be reconfigured only when no work is running on it.</p>
+            <p><strong>MPS</strong> (Multi-Process Service) runs a control daemon that funnels CUDA work from several processes into a shared GPU context, so their kernels can execute concurrently on the same SMs. That raises utilization when each process alone is too small to fill the GPU. Clients can be capped to a share of SMs (the active-thread percentage) and, in recent CUDA versions, to a pinned device-memory limit, but L2 and memory bandwidth stay shared, and a fatal error in one client can disturb others served by the same daemon.</p>
+            <p><strong>Time slicing</strong> is what happens by default when several processes share a GPU: the scheduler gives each context the GPU for a slice, then switches. NVIDIA’s Kubernetes device plugin and GPU Operator can advertise one physical GPU as several schedulable replicas this way. There is no memory isolation—one process can allocate until the others hit out-of-memory errors—and context switches add latency jitter.</p>
+            <p>For LLM serving, remember that an inference engine already batches many requests inside one process, so the default is one engine per GPU or per tensor-parallel group. Choose MIG when several small models or tenants with separate SLOs each fit in a slice and need predictable latency; MPS for cooperative workloads you own, such as many small embedding or reranking processes; and time slicing for development, notebooks, and low-traffic endpoints where jitter is acceptable.</p>
+          </div>
+          <figure class="svg-diagram" data-search-item id="day21-diagram">
+            <svg viewBox="0 0 760 264" role="img" aria-labelledby="d21svg-title">
+              <title id="d21svg-title">Three ways to share one GPU: MIG hardware partitions, MPS concurrent processes in a shared context, and time slicing that alternates contexts</title>
+              <defs><marker id="d21svg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+              <text x="128" y="24" text-anchor="middle" font-weight="700">MIG</text>
+              <rect class="node" x="20" y="36" width="216" height="150" rx="10"/>
+              <text x="380" y="24" text-anchor="middle" font-weight="700">MPS</text>
+              <rect class="node" x="272" y="36" width="216" height="150" rx="10"/>
+              <text x="632" y="24" text-anchor="middle" font-weight="700">Time slicing</text>
+              <rect class="node" x="524" y="36" width="216" height="150" rx="10"/>
+              <rect class="node-teal" x="28" y="48" width="60" height="104" rx="6"/>
+              <text x="58" y="92" text-anchor="middle" font-weight="700">A</text>
+              <text x="58" y="112" text-anchor="middle" class="muted">own SMs</text>
+              <text x="58" y="128" text-anchor="middle" class="muted">own HBM</text>
+              <rect class="node-teal" x="96" y="48" width="60" height="104" rx="6"/>
+              <text x="126" y="92" text-anchor="middle" font-weight="700">B</text>
+              <text x="126" y="112" text-anchor="middle" class="muted">own SMs</text>
+              <text x="126" y="128" text-anchor="middle" class="muted">own HBM</text>
+              <rect class="node-teal" x="164" y="48" width="60" height="104" rx="6"/>
+              <text x="194" y="92" text-anchor="middle" font-weight="700">C</text>
+              <text x="194" y="112" text-anchor="middle" class="muted">own SMs</text>
+              <text x="194" y="128" text-anchor="middle" class="muted">own HBM</text>
+              <text x="128" y="174" text-anchor="middle" class="muted">hard partitions</text>
+              <rect class="node-accent" x="280" y="48" width="200" height="108" rx="6"/>
+              <rect class="node" x="292" y="58" width="176" height="24" rx="4"/>
+              <text x="380" y="75" text-anchor="middle">process A kernels</text>
+              <rect class="node" x="292" y="90" width="176" height="24" rx="4"/>
+              <text x="380" y="107" text-anchor="middle">process B kernels</text>
+              <rect class="node" x="292" y="122" width="176" height="24" rx="4"/>
+              <text x="380" y="139" text-anchor="middle">process C kernels</text>
+              <text x="380" y="174" text-anchor="middle" class="muted">shared SMs, L2, and HBM</text>
+              <rect class="node-teal" x="532" y="64" width="31" height="40" rx="4"/>
+              <text x="547.5" y="89" text-anchor="middle" font-weight="700">A</text>
+              <rect class="node" x="566" y="64" width="31" height="40" rx="4"/>
+              <text x="581.5" y="89" text-anchor="middle" font-weight="700">B</text>
+              <rect class="node-accent" x="600" y="64" width="31" height="40" rx="4"/>
+              <text x="615.5" y="89" text-anchor="middle" font-weight="700">C</text>
+              <rect class="node-teal" x="634" y="64" width="31" height="40" rx="4"/>
+              <text x="649.5" y="89" text-anchor="middle" font-weight="700">A</text>
+              <rect class="node" x="668" y="64" width="31" height="40" rx="4"/>
+              <text x="683.5" y="89" text-anchor="middle" font-weight="700">B</text>
+              <rect class="node-accent" x="702" y="64" width="31" height="40" rx="4"/>
+              <text x="717.5" y="89" text-anchor="middle" font-weight="700">C</text>
+              <line class="edge" x1="532" y1="124" x2="734" y2="124" marker-end="url(#d21svg-arrow)"/>
+              <text x="633" y="142" text-anchor="middle" class="muted">time</text>
+              <text x="632" y="174" text-anchor="middle" class="muted">one context at a time</text>
+              <text x="128" y="210" text-anchor="middle" class="muted">Isolation: strong (hardware)</text>
+              <text x="128" y="230" text-anchor="middle" class="muted">Memory: fixed slice per instance</text>
+              <text x="128" y="250" text-anchor="middle" class="muted">Fits: multi-tenant SLOs</text>
+              <text x="380" y="210" text-anchor="middle" class="muted">Isolation: partial</text>
+              <text x="380" y="230" text-anchor="middle" class="muted">Memory: shared (limits optional)</text>
+              <text x="380" y="250" text-anchor="middle" class="muted">Fits: cooperative small jobs</text>
+              <text x="632" y="210" text-anchor="middle" class="muted">Isolation: weak</text>
+              <text x="632" y="230" text-anchor="middle" class="muted">Memory: no per-tenant limit</text>
+              <text x="632" y="250" text-anchor="middle" class="muted">Fits: dev and light traffic</text>
+            </svg>
+            <figcaption>Original diagram. MIG divides hardware, MPS overlaps processes inside one shared context, and time slicing takes turns. Isolation and predictability fall from left to right; flexibility rises.</figcaption>
+          </figure>
+          <h4 id="day21-reference-diagrams">Reference diagrams</h4>
+          <div class="ref-link-card"><a href="https://docs.nvidia.com/datacenter/tesla/mig-user-guide/">NVIDIA Multi-Instance GPU User Guide — partitioning diagrams and profile tables</a><small>Diagrams show how GPU instances and compute instances divide SMs, memory, and cache, followed by per-GPU tables of supported profiles. Linked, not embedded: NVIDIA documentation images are not openly licensed.</small></div>
+          <h4 id="day21-further-reading">Further reading</h4>
+          <ul class="reading-list" id="day21-reading">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 3.3: Instances</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Distinguishes multi-GPU instances from Multi-Instance GPU partitions and explains when each fits an inference workload.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day21">100 Days of Inference — Day 21: Multi-GPU instances and MIG</a></strong><span class="reading-meta">elizabetht · GitHub notebook and notes · 2026</span><p>A notebook for sizing models against whole GPUs, tensor-parallel groups, and MIG slices, with memory headroom made explicit.</p></li>
+            <li><strong><a href="https://docs.nvidia.com/datacenter/tesla/mig-user-guide/">NVIDIA Multi-Instance GPU User Guide</a></strong><span class="reading-meta">NVIDIA · documentation · current</span><p>The authoritative list of MIG-capable GPUs, profiles, and management commands. Check it before hard-coding any partition plan.</p></li>
+            <li><strong><a href="https://docs.nvidia.com/deploy/mps/">NVIDIA Multi-Process Service (MPS)</a></strong><span class="reading-meta">NVIDIA · documentation · current</span><p>Describes the MPS control daemon, client limits, and the isolation trade-offs of sharing one GPU context among processes.</p></li>
+            <li><strong><a href="https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/gpu-sharing.html">GPU Operator: Time-Slicing GPUs in Kubernetes</a></strong><span class="reading-meta">NVIDIA · GPU Operator documentation · current</span><p>Shows how to advertise one GPU as several Kubernetes resources with time slicing and spells out the lack of memory and fault isolation.</p></li>
+          </ul>
+
           <div class="bridge-box"><strong>Bridge to Day 22:</strong> a placement plan says where the engine runs. Containers make the same engine, dependencies, health behavior, and configuration arrive repeatably on those resources.</div>
         </article>
 
@@ -601,6 +796,72 @@
             <li>Design truth tables for startup, liveness, and readiness during boot, normal serving, overload, dependency outage, draining, and deadlock.</li>
             <li>Threat-model a registry compromise: list signature verification, digest pinning, least privilege, scanning, and rollback controls.</li>
           </ol>
+          <div class="deep-dive" data-search-item data-keywords="container image layers build cache multi-stage digest pinning model weights caching persistent volume init container startup probe readiness probe liveness probe cold start" id="day22-deep-dive">
+            <h4>Deep dive: image layering, weight caching, and health probes</h4>
+            <p><strong>Layers.</strong> A container image is a stack of content-addressed layers, and most Dockerfile instructions that change files add one. Registries and nodes transfer only the layers they are missing, and the build cache can reuse a layer only if it and everything beneath it are unchanged. Order instructions from least to most frequently changed—base OS and CUDA runtime, then Python and engine wheels, then application code and configuration—and use multi-stage builds so compilers and build caches never ship. Pin the base image and the released image by digest so a rebuild cannot silently change the runtime.</p>
+            <p><strong>Weights.</strong> Model weights usually dwarf the engine image, so where they live sets the cold start. Baking them into the image is simple and immutable but turns every model change into a multi-gigabyte push and pull. Downloading at startup from object storage or a model hub keeps images small but repeats the download on every new node and can hit rate limits. A middle path stages weights once onto node-local disk or a shared volume; the vLLM Helm chart diagram below uses a download job that fills a persistent volume while an init container waits. Whichever path you choose, pin a model revision and verify checksums.</p>
+            <p><strong>Probes.</strong> Kubernetes offers three, and LLM servers need all of them. A <em>startup</em> probe gives a slow loader—weights, CUDA graph capture, compilation—time to finish before liveness checks begin. A <em>readiness</em> probe gates traffic: report ready only after the model is loaded and a warm-up request succeeds, and report not-ready during a graceful drain. A <em>liveness</em> probe should detect a wedged process, not a busy one; if it fails under heavy load, Kubernetes restarts healthy-but-busy pods and a restart storm follows. Keep probe handlers cheap rather than running a full generation on every check.</p>
+          </div>
+          <figure class="svg-diagram" data-search-item id="day22-diagram">
+            <svg viewBox="0 0 760 316" role="img" aria-labelledby="d22svg-title">
+              <title id="d22svg-title">Container image layers ordered by change frequency, three places to keep model weights, and the startup, readiness, and liveness probe timeline</title>
+              <defs><marker id="d22svg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+              <text x="127" y="22" text-anchor="middle" font-weight="700">Image layers</text>
+              <rect class="node-accent" x="17" y="34" width="220" height="36" rx="6"/>
+              <text x="127" y="57" text-anchor="middle">App code &amp; config</text>
+              <rect class="node" x="17" y="76" width="220" height="36" rx="6"/>
+              <text x="127" y="99" text-anchor="middle">Engine (vLLM, SGLang…)</text>
+              <rect class="node" x="17" y="118" width="220" height="36" rx="6"/>
+              <text x="127" y="141" text-anchor="middle">Python deps / wheels</text>
+              <rect class="node-teal" x="17" y="160" width="220" height="36" rx="6"/>
+              <text x="127" y="183" text-anchor="middle">Base OS + CUDA runtime</text>
+              <text x="127" y="216" text-anchor="middle" class="muted">changes often at top, rarely at bottom</text>
+              <text x="127" y="232" text-anchor="middle" class="muted">a change rebuilds every layer above it</text>
+              <text x="379" y="22" text-anchor="middle" font-weight="700">Where weights live</text>
+              <rect class="node" x="269" y="34" width="220" height="50" rx="8"/>
+              <text x="379" y="56" text-anchor="middle" font-weight="700">Baked into image</text>
+              <text x="379" y="73" text-anchor="middle" class="muted">simple, but huge pulls</text>
+              <rect class="node-teal" x="269" y="94" width="220" height="50" rx="8"/>
+              <text x="379" y="116" text-anchor="middle" font-weight="700">Node cache / volume</text>
+              <text x="379" y="133" text-anchor="middle" class="muted">fast restarts; pre-stage</text>
+              <rect class="node" x="269" y="154" width="220" height="50" rx="8"/>
+              <text x="379" y="176" text-anchor="middle" font-weight="700">Pull at startup</text>
+              <text x="379" y="193" text-anchor="middle" class="muted">flexible, slow cold start</text>
+              <text x="379" y="226" text-anchor="middle" class="muted">pin a revision; verify checksums</text>
+              <text x="632" y="22" text-anchor="middle" font-weight="700">Probe timeline</text>
+              <rect class="node-accent" x="520" y="40" width="110" height="30" rx="6"/>
+              <text x="575" y="60" text-anchor="middle">startup</text>
+              <rect class="node-teal" x="630" y="80" width="110" height="30" rx="6"/>
+              <text x="685" y="100" text-anchor="middle">readiness</text>
+              <rect class="node" x="630" y="120" width="110" height="30" rx="6"/>
+              <text x="685" y="140" text-anchor="middle">liveness</text>
+              <line class="edge" x1="520" y1="166" x2="742" y2="166" marker-end="url(#d22svg-arrow)"/>
+              <text x="520" y="182" text-anchor="start" class="muted">t = 0</text>
+              <text x="630" y="182" text-anchor="start" class="muted">warm-up done</text>
+              <text x="632" y="206" text-anchor="middle" class="muted">Startup: allow a slow load</text>
+              <text x="632" y="222" text-anchor="middle" class="muted">Readiness: gate traffic</text>
+              <text x="632" y="238" text-anchor="middle" class="muted">Liveness: restart if wedged</text>
+              <rect class="node" x="12" y="262" width="736" height="44" rx="8"/>
+              <text x="380" y="289" text-anchor="middle" font-weight="700">Cold start ≈ missing image layers + weight load + engine warm-up (graphs, compile)</text>
+            </svg>
+            <figcaption>Original diagram. Layer order decides how much a rebuild or pull costs, weight placement decides most of the cold start, and the three probes keep a slow-loading server from being killed or sent traffic too early.</figcaption>
+          </figure>
+          <h4 id="day22-reference-diagrams">Reference diagrams</h4>
+          <div class="ref-gallery">
+            <figure class="ref-figure">
+              <img loading="lazy" src="https://raw.githubusercontent.com/vllm-project/vllm/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/deployment/architecture_helm_deployment.png" alt="vLLM Helm deployment flow inside a Kubernetes namespace: a job downloads model weights and config files from S3 to a persistent volume; in step 1 a pod&#x27;s init container waits for the job to finish; in step 2 the deployment container starts.">
+              <figcaption><strong>vLLM Helm chart deployment flow</strong> — a job copies weights and config from S3 to a persistent volume while the pod’s init container waits; the serving container then starts from the populated volume. Source: <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/deployment/architecture_helm_deployment.png">vllm-project/vllm, docs/assets/deployment/architecture_helm_deployment.png @ 7b77ed5</a>. <span class="license">License: Apache-2.0 (repository LICENSE)</span></figcaption>
+            </figure>
+          </div>
+          <h4 id="day22-further-reading">Further reading</h4>
+          <ul class="reading-list" id="day22-reading">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 7.1: Containerization</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Covers dependency management for inference images and what NVIDIA NIMs package for you. Read it before deciding between a prebuilt microservice and a custom image.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day22">100 Days of Inference — Day 22: Containerization: Docker and NVIDIA NIMs</a></strong><span class="reading-meta">elizabetht · GitHub notebook and notes · 2026</span><p>A notebook that walks through image structure and NIM concepts without requiring a GPU.</p></li>
+            <li><strong><a href="https://kubernetes.io/docs/concepts/configuration/liveness-readiness-startup-probes/">Liveness, Readiness, and Startup Probes</a></strong><span class="reading-meta">Kubernetes · documentation · current</span><p>Defines what each probe controls and how failures are handled. The startup-probe section is the key fix for slow-loading model servers.</p></li>
+            <li><strong><a href="https://docs.docker.com/build/building/multi-stage/">Multi-stage builds</a></strong><span class="reading-meta">Docker · documentation · current</span><p>Shows how to separate build and runtime stages so the shipped image contains only what the server needs. Combine it with careful layer ordering for fast rebuilds.</p></li>
+            <li><strong><a href="https://docs.nvidia.com/nim/large-language-models/latest/introduction.html">NVIDIA NIM for Large Language Models</a></strong><span class="reading-meta">NVIDIA · documentation · current</span><p>Describes NIM’s packaging, model profiles, and health endpoints. Use it to compare what a managed microservice handles with what a custom container must implement.</p></li>
+          </ul>
+
           <div class="bridge-box"><strong>Bridge to Day 23:</strong> reproducible, health-aware replicas are the unit the autoscaler creates and removes. Their startup timeline and drain behavior now become scaling constraints.</div>
         </article>
 
@@ -720,6 +981,67 @@
             <li>Create 1,000 synthetic latency values with a few severe outliers. Calculate mean, p50, p95, and p99; explain which alert catches the incident.</li>
             <li>Model a continuous batch of eight slots with varied output lengths. Refill completed slots and compare occupied slot-steps with static batching.</li>
           </ol>
+          <div class="deep-dive" data-search-item data-keywords="HPA horizontal pod autoscaler custom metrics external metrics Prometheus Adapter KEDA ScaledObject scale to zero queue depth KV cache utilization stabilization window sync period" id="day23-deep-dive">
+            <h4>Deep dive: autoscaling LLM servers with HPA and KEDA custom metrics</h4>
+            <p>The Horizontal Pod Autoscaler compares a metric with a target and computes desiredReplicas = ceil(currentReplicas × currentValue ÷ targetValue), ignoring changes within a tolerance (10% by default). CPU utilization is built in, but it says little about a GPU-bound engine. Feed HPA custom metrics instead: per-pod metrics through the <code>custom.metrics.k8s.io</code> API (for example from Prometheus Adapter) or external metrics through <code>external.metrics.k8s.io</code>. Useful LLM signals are waiting requests per replica, KV-cache utilization, and in-flight requests compared with the load-tested safe concurrency. Latency percentiles are informative but lag, because they move only after queues have formed.</p>
+            <p><strong>KEDA</strong> (Kubernetes Event-Driven Autoscaling) packages this pattern. A ScaledObject lists triggers—a Prometheus query, a queue length, a cron window—and KEDA creates and manages the HPA for scaling between 1 and N replicas, while its own controller handles activation between 0 and 1. That makes scale-to-zero practical for asynchronous or rarely used models. For interactive GPU services, weigh the saving against multi-minute cold starts; many teams keep at least one replica warm and scale to zero only behind a queue.</p>
+            <p>Lag is the main enemy. Each decision waits for the scrape interval, the HPA sync period (15 seconds by default), scheduling, image pull, weight load, and warm-up. Counter it with leading signals such as queue depth, with scheduled scaling for known peaks, and with a warm buffer. Tune the behavior policies: scale up in large steps, scale down slowly (the default scale-down stabilization window is 300 seconds), and keep readiness false until the model is warm so traffic and metrics reflect real capacity.</p>
+          </div>
+          <p class="engine-crosslinks"><strong>Engine pages:</strong> see which queue, KV-cache, and throughput metrics <a href="../engines/vllm.html">vLLM</a> and <a href="../engines/sglang.html">SGLang</a> export for autoscaling, and compare them in the <a href="../engines/index.html">engine index</a>.</p>
+          <figure class="svg-diagram" data-search-item id="day23-diagram">
+            <svg viewBox="0 0 760 292" role="img" aria-labelledby="d23svg-title">
+              <title id="d23svg-title">Custom-metric autoscaling: engine metrics flow through Prometheus to either Prometheus Adapter or KEDA, which drive the HPA and the Deployment's replica count</title>
+              <defs><marker id="d23svg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+              <rect class="node" x="12" y="40" width="150" height="70" rx="8"/>
+              <text x="87" y="64" text-anchor="middle" font-weight="700">Engine pods</text>
+              <text x="87" y="81" text-anchor="middle" class="muted">/metrics: waiting,</text>
+              <text x="87" y="97" text-anchor="middle" class="muted">running, KV usage</text>
+              <rect class="node" x="200" y="40" width="130" height="70" rx="8"/>
+              <text x="265" y="72" text-anchor="middle" font-weight="700">Prometheus</text>
+              <text x="265" y="89" text-anchor="middle" class="muted">scrape + store</text>
+              <rect class="node" x="370" y="10" width="170" height="50" rx="8"/>
+              <text x="455" y="32" text-anchor="middle" font-weight="700">Prometheus Adapter</text>
+              <text x="455" y="49" text-anchor="middle" class="muted">custom.metrics API</text>
+              <rect class="node-accent" x="370" y="90" width="170" height="50" rx="8"/>
+              <text x="455" y="112" text-anchor="middle" font-weight="700">KEDA</text>
+              <text x="455" y="129" text-anchor="middle" class="muted">ScaledObject triggers</text>
+              <rect class="node-teal" x="580" y="40" width="160" height="70" rx="8"/>
+              <text x="660" y="64" text-anchor="middle" font-weight="700">HPA</text>
+              <text x="660" y="81" text-anchor="middle" class="muted">desired = ceil(current ×</text>
+              <text x="660" y="97" text-anchor="middle" class="muted">metric ÷ target)</text>
+              <rect class="node" x="580" y="150" width="160" height="50" rx="8"/>
+              <text x="660" y="172" text-anchor="middle" font-weight="700">Deployment</text>
+              <text x="660" y="189" text-anchor="middle" class="muted">replicas 1…N</text>
+              <line class="edge" x1="162" y1="75" x2="200" y2="75" marker-end="url(#d23svg-arrow)"/>
+              <line class="edge" x1="330" y1="62" x2="370" y2="35" marker-end="url(#d23svg-arrow)"/>
+              <line class="edge" x1="330" y1="90" x2="370" y2="115" marker-end="url(#d23svg-arrow)"/>
+              <line class="edge" x1="540" y1="35" x2="580" y2="62" marker-end="url(#d23svg-arrow)"/>
+              <line class="edge" x1="540" y1="115" x2="580" y2="90" marker-end="url(#d23svg-arrow)"/>
+              <line class="edge" x1="660" y1="110" x2="660" y2="150" marker-end="url(#d23svg-arrow)"/>
+              <line class="edge" x1="455" y1="140" x2="580" y2="172" marker-end="url(#d23svg-arrow)"/>
+              <text x="380" y="160" text-anchor="start" class="muted">KEDA: 0 ↔ 1</text>
+              <path class="edge" d="M 660 200 L 660 226 L 87 226 L 87 112" marker-end="url(#d23svg-arrow)"/>
+              <text x="374" y="218" text-anchor="middle" class="muted">new pods load weights, then report metrics</text>
+              <text x="12" y="258" text-anchor="start" font-weight="700">Example: 4 pods × (12 in-flight ÷ target 8) = 6 → 6 replicas</text>
+              <text x="12" y="278" text-anchor="start" class="muted">HPA skips changes within its tolerance (default 10%) and stabilizes scale-down (default 300 s)</text>
+            </svg>
+            <figcaption>Original diagram. Either path ends in the same HPA arithmetic; KEDA adds trigger plumbing and 0↔1 activation. The feedback loop is slow because new pods must load weights before their metrics mean anything.</figcaption>
+          </figure>
+          <h4 id="day23-reference-diagrams">Reference diagrams</h4>
+          <div class="ref-gallery">
+            <figure class="ref-figure">
+              <img loading="lazy" src="https://raw.githubusercontent.com/kedacore/keda/3e2597733d2b2b71aed10e121485564d289da0d7/images/keda-arch.png" alt="KEDA architecture inside a Kubernetes cluster: a ScaledObject is registered through the API server; KEDA&#x27;s metrics adapter, controller, scaler, and admission webhooks watch an external trigger source; the horizontal pod autoscaler scales the workload from 1 to n, while KEDA itself handles 0 to 1.">
+              <figcaption><strong>KEDA architecture</strong> — a ScaledObject registers triggers; KEDA’s metrics adapter feeds the Horizontal Pod Autoscaler for 1↔n scaling while KEDA’s controller handles 0↔1 activation from an external event source. Source: <a href="https://github.com/kedacore/keda/blob/3e2597733d2b2b71aed10e121485564d289da0d7/images/keda-arch.png">kedacore/keda, images/keda-arch.png @ 3e25977</a>. <span class="license">License: Apache-2.0 (repository LICENSE)</span></figcaption>
+            </figure>
+          </div>
+          <h4 id="day23-further-reading">Further reading</h4>
+          <ul class="reading-list" id="day23-reading">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 7.2: Autoscaling</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Connects concurrency and batch sizing to autoscaling targets, then covers cold starts, scale to zero, and independent component scaling.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day23">100 Days of Inference — Day 23: Autoscaling: concurrency, batching, and cold starts</a></strong><span class="reading-meta">elizabetht · GitHub notebook and notes · 2026</span><p>A notebook that simulates replica counts under bursty demand with realistic cold-start delays.</p></li>
+            <li><strong><a href="https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/">Horizontal Pod Autoscaling</a></strong><span class="reading-meta">Kubernetes · documentation · current</span><p>Gives the scaling formula, tolerance, readiness handling, custom and external metrics, and the behavior field for stabilization and rate limits.</p></li>
+            <li><strong><a href="https://keda.sh/docs/latest/concepts/">KEDA concepts</a></strong><span class="reading-meta">KEDA project (CNCF) · documentation · current</span><p>Explains ScaledObjects, scalers, and activation versus scaling thresholds. Read it to see exactly how KEDA hands off to the HPA.</p></li>
+          </ul>
+
           <div class="bridge-box"><strong>Bridge to Day 24:</strong> the autoscaler decides how many replicas exist. The router and queue decide which work reaches each replica and in what order—often determining the tail more than another replica would.</div>
         </article>
 
@@ -834,6 +1156,69 @@
             <li>Use a spreadsheet to plot an M/M/1 illustrative wait curve <code>W = 1/(μ-λ)</code> as λ approaches service rate μ. State why real LLM service is not truly M/M/1.</li>
             <li>Run a local SSE demo with any tiny web server and <code>curl -N</code>. Add a buffering proxy setting conceptually and explain the effect on visible ITL.</li>
           </ol>
+          <div class="deep-dive" data-search-item data-keywords="power of two choices P2C consistent hashing bounded loads virtual nodes prefix-aware routing cache affinity hot key load balancing" id="day24-deep-dive">
+            <h4>Deep dive: power of two choices, consistent hashing, and prefix-aware routing</h4>
+            <p><strong>Power of two choices.</strong> Sending each request to a uniformly random replica balances load on average but leaves surprisingly long queues. In the classic analysis of n requests placed on n replicas, the busiest replica receives about log n / log log n requests with one random choice, yet only about log log n when each request probes two random replicas and joins the shorter queue—an exponential improvement for one extra probe. Two random probes also tolerate slightly stale load data better than “always pick the least loaded,” which makes many routers stampede onto the same replica when they share an outdated view.</p>
+            <p><strong>Consistent hashing.</strong> Hash both replicas (each placed at many virtual points) and request keys onto a ring, and send each key to the first replica clockwise. When a replica joins or leaves, only the keys in its arc move—about 1/n of them—so most caches stay warm through scaling events. Plain consistent hashing ignores load, so a hot key can overwhelm its owner. Consistent hashing with bounded loads caps every replica at (1 + ε) times the average and passes overflow to the next replica on the ring.</p>
+            <p><strong>Prefix-aware routing</strong> combines the two. Use a hash of the first few KV blocks, the system prompt, or a session ID as the key, so repeated prefixes return to the replica that already holds their KV; then apply a load bound or a two-choice comparison among the top candidates so a viral prompt cannot melt one replica. More precise routers track what each replica actually caches: SGLang’s router keeps an approximate radix tree per worker, and the Gateway API Inference Extension’s endpoint picker scores prefix overlap alongside queue depth and KV-cache load.</p>
+          </div>
+          <p class="engine-crosslinks"><strong>Engine pages:</strong> cache-aware routing options for <a href="../engines/vllm.html">vLLM</a> deployments and the <a href="../engines/sglang.html">SGLang</a> router are summarized on their engine pages and in the <a href="../engines/index.html">engine index</a>.</p>
+          <figure class="svg-diagram" data-search-item id="day24-diagram">
+            <svg viewBox="0 0 760 316" role="img" aria-labelledby="d24svg-title">
+              <title id="d24svg-title">Power of two choices probes two random workers and picks the shorter queue; a consistent-hashing ring maps a prefix hash to the next worker clockwise; prefix-aware routing combines both with a load bound</title>
+              <defs><marker id="d24svg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+              <text x="20" y="16" text-anchor="start" font-weight="700">Power of two choices</text>
+              <rect class="node" x="20" y="40" width="90" height="36" rx="8"/>
+              <text x="65" y="63" text-anchor="middle" font-weight="700">request</text>
+              <rect class="node" x="200" y="24" width="140" height="30" rx="6"/>
+              <text x="270" y="44" text-anchor="middle">W1 · 7 queued</text>
+              <rect class="node-teal" x="200" y="62" width="140" height="30" rx="6"/>
+              <text x="270" y="82" text-anchor="middle">W2 · 3 queued</text>
+              <rect class="node" x="200" y="100" width="140" height="30" rx="6"/>
+              <text x="270" y="120" text-anchor="middle">W3 · 6 queued</text>
+              <rect class="node-accent" x="200" y="138" width="140" height="30" rx="6"/>
+              <text x="270" y="158" text-anchor="middle">W4 · 5 queued</text>
+              <rect class="node" x="200" y="176" width="140" height="30" rx="6"/>
+              <text x="270" y="196" text-anchor="middle">W5 · 8 queued</text>
+              <line class="edge" x1="110" y1="58" x2="200" y2="77" marker-end="url(#d24svg-arrow)"/>
+              <line class="edge" x1="110" y1="58" x2="200" y2="153" marker-end="url(#d24svg-arrow)" stroke-dasharray="5 4"/>
+              <text x="20" y="226" text-anchor="start" class="muted">probe two at random → send to the shorter queue</text>
+              <text x="560" y="16" text-anchor="middle" font-weight="700">Consistent-hashing ring</text>
+              <circle class="edge" cx="560" cy="120" r="80"/>
+              <circle class="node" cx="587.4" cy="44.8" r="14"/>
+              <text x="587.4" y="49.8" text-anchor="middle" font-weight="700">A</text>
+              <circle class="node-teal" cx="635.2" cy="147.4" r="14"/>
+              <text x="635.2" y="152.4" text-anchor="middle" font-weight="700">B</text>
+              <circle class="node" cx="532.6" cy="195.2" r="14"/>
+              <text x="532.6" y="200.2" text-anchor="middle" font-weight="700">C</text>
+              <circle class="node" cx="484.8" cy="92.6" r="14"/>
+              <text x="484.8" y="97.6" text-anchor="middle" font-weight="700">D</text>
+              <rect class="node-accent" x="629.2" y="86.6" width="12" height="12" rx="2"/>
+              <text x="650" y="90" text-anchor="start" class="muted">hash(prefix)</text>
+              <path class="edge" d="M 637.3 99.3 A 80 80 0 0 1 638.8 133.9" marker-end="url(#d24svg-arrow)"/>
+              <text x="560" y="226" text-anchor="middle" class="muted">key → next worker clockwise; ≈1/n of keys move on resize</text>
+              <rect class="node-teal" x="12" y="248" width="736" height="58" rx="8"/>
+              <text x="380" y="274" text-anchor="middle" font-weight="700">Prefix-aware routing: hash the first KV blocks → home worker on the ring</text>
+              <text x="380" y="291" text-anchor="middle" class="muted">if home load &gt; (1 + ε) × average, spill clockwise or use P2C among top candidates</text>
+            </svg>
+            <figcaption>Original diagram. Two probes (solid = chosen, dashed = rejected) avoid long queues cheaply; the ring keeps repeated prefixes on the same worker; a load bound stops a hot prefix from overwhelming its home.</figcaption>
+          </figure>
+          <h4 id="day24-reference-diagrams">Reference diagrams</h4>
+          <div class="ref-gallery">
+            <figure class="ref-figure">
+              <img loading="lazy" src="https://raw.githubusercontent.com/kubernetes-sigs/gateway-api-inference-extension/db75ec81b80f8728835b56cdb445e8ff1fbfd430/site-src/images/request-flow.png" alt="Gateway API Inference Extension request flow: a client sends GET /completions to a Kubernetes Gateway; body-based routing selects an InferencePool by model name; endpoint selection picks the least-loaded model replica with the needed LoRA adapter using model-server load reports; the gateway routes to the chosen replica in the inference pool.">
+              <figcaption><strong>Gateway API Inference Extension request flow</strong> — a gateway first picks an InferencePool from the model name in the request body, then an endpoint picker chooses a replica using load reports and loaded LoRA adapters before routing. Source: <a href="https://github.com/kubernetes-sigs/gateway-api-inference-extension/blob/db75ec81b80f8728835b56cdb445e8ff1fbfd430/site-src/images/request-flow.png">kubernetes-sigs/gateway-api-inference-extension, site-src/images/request-flow.png @ db75ec8</a>. <span class="license">License: Apache-2.0 (repository LICENSE)</span></figcaption>
+            </figure>
+          </div>
+          <h4 id="day24-further-reading">Further reading</h4>
+          <ul class="reading-list" id="day24-reading">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 7.2.3: Routing, Load Balancing, and Queueing</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Explains why LLM requests need routing that understands token load and cache state, and how queueing policy shapes tail latency.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day24">100 Days of Inference — Day 24: Routing, load balancing, and queueing</a></strong><span class="reading-meta">elizabetht · GitHub notebook and notes · 2026</span><p>A notebook that compares routing policies with simulated request lengths and applies Little’s Law to the results.</p></li>
+            <li><strong><a href="https://www.eecs.harvard.edu/~michaelm/postscripts/tpds2001.pdf">The Power of Two Choices in Randomized Load Balancing</a></strong><span class="reading-meta">Michael Mitzenmacher · IEEE Transactions on Parallel and Distributed Systems · 2001</span><p>Proves the dramatic queue-length improvement from sampling two servers instead of one, including results for dynamic arrivals and stale information.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/1608.01350">Consistent Hashing with Bounded Loads</a></strong><span class="reading-meta">Mirrokni, Thorup, Zadimoghaddam · SODA · 2018</span><p>Adds a capacity cap to consistent hashing so no server exceeds a fixed multiple of average load while keys still move rarely. The idea behind many cache-affinity routers with overflow.</p></li>
+            <li><strong><a href="https://gateway-api-inference-extension.sigs.k8s.io/">Gateway API Inference Extension</a></strong><span class="reading-meta">Kubernetes SIGs · documentation · current</span><p>Documents InferencePool and the endpoint picker that scores model servers on queue, KV-cache, adapter, and prefix signals. A concrete reference design for model-aware routing.</p></li>
+          </ul>
+
           <div class="bridge-box"><strong>Bridge to Day 25:</strong> routing across replicas becomes routing across providers and regions. The same eligibility, score, queue, and failover ideas apply, now constrained by supply contracts, data residency, and WAN latency.</div>
         </article>
 
@@ -942,6 +1327,53 @@
             <li>Draw a dependency graph for two clouds. Circle every service shared by both and propose a degraded local operating mode.</li>
             <li>Write routing eligibility rules for EU-resident health data, ordinary EU traffic, and public batch jobs. Test them under each region's failure.</li>
           </ol>
+          <div class="deep-dive" data-search-item data-keywords="capacity markets reserved committed use on-demand spot preemptible interruption notice quota GPU procurement portfolio break-even utilization SkyPilot SkyServe" id="day25-deep-dive">
+            <h4>Deep dive: buying GPU capacity across markets</h4>
+            <p>GPU capacity is sold in several markets with different prices and certainty. <strong>Reservations</strong> or committed-use contracts trade a discount for paying whether or not you use the capacity—often for one to three years at hyperscalers, or as fixed-term cluster contracts at specialized GPU clouds. <strong>On-demand</strong> capacity bills only while it runs but depends on regional availability and account quotas, which for popular GPUs are often the real constraint. <strong>Spot</strong> or preemptible capacity is discounted spare supply that the provider can reclaim; AWS, for example, sends a two-minute interruption notice. Some providers also sell short reservations for a defined future window, and brokers resell capacity across providers.</p>
+            <p>Treat the mix as a portfolio. Commit only to the floor you are confident you will use, cover predictable peaks with on-demand capacity or short reservations, and put interruptible work—batch inference, evaluations, embedding backfills—on spot with checkpointing and retries. A simple break-even: if committed capacity costs an illustrative $2.00 per GPU-hour and on-demand costs $3.20, the commitment is cheaper only when the reserved GPU does useful work more than 2.00 ÷ 3.20 = 62.5% of the hours you pay for.</p>
+            <p>Hourly price is not cost per useful token. A cheaper SKU with lower goodput, or a region where you cannot obtain quota, can cost more per million tokens than the pricier option you can actually run. Hedge by qualifying the same container on at least two SKUs and providers, by letting a placement layer such as SkyPilot and SkyServe choose regions and replace preempted replicas, and by tracking committed-but-idle hours as visible waste before the next negotiation.</p>
+          </div>
+          <figure class="svg-diagram" data-search-item id="day25-diagram">
+            <svg viewBox="0 0 760 312" role="img" aria-labelledby="d25svg-title">
+              <title id="d25svg-title">Capacity portfolio over a day: reserved capacity covers the always-used floor, on-demand covers peaks, spot carries interruptible work, and a demand curve shows interactive load</title>
+              <defs><marker id="d25svg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+              <line class="edge" x1="60" y1="240" x2="600" y2="240"/>
+              <line class="edge" x1="60" y1="30" x2="60" y2="240"/>
+              <text x="20" y="36" text-anchor="start" class="muted">GPUs</text>
+              <rect class="node-teal" x="60" y="170" width="540" height="70" rx="0"/>
+              <rect class="node" x="60" y="110" width="540" height="60" rx="0"/>
+              <rect class="node-accent" x="60" y="70" width="540" height="40" rx="0"/>
+              <path class="edge" d="M 60 205 C 120 205 150 140 200 132 S 280 112 330 118 S 420 182 470 186 S 560 140 600 130" stroke-width="3"/>
+              <text x="612" y="88" text-anchor="start" font-weight="700">Spot</text>
+              <text x="612" y="102" text-anchor="start" class="muted">batch, evals, retries</text>
+              <text x="612" y="136" text-anchor="start" font-weight="700">On-demand</text>
+              <text x="612" y="150" text-anchor="start" class="muted">peaks, within quota</text>
+              <text x="612" y="200" text-anchor="start" font-weight="700">Reserved</text>
+              <text x="612" y="214" text-anchor="start" class="muted">committed floor</text>
+              <text x="60" y="256" text-anchor="middle" class="muted">00:00</text>
+              <text x="330" y="256" text-anchor="middle" class="muted">12:00</text>
+              <text x="600" y="256" text-anchor="middle" class="muted">24:00</text>
+              <text x="60" y="276" text-anchor="start" class="muted">line = interactive demand; bands = how each slice of capacity is bought</text>
+              <text x="60" y="300" text-anchor="start" font-weight="700">A commitment pays off when expected utilization &gt; committed rate ÷ on-demand rate</text>
+            </svg>
+            <figcaption>Original diagram. Interactive demand stays inside reserved plus on-demand capacity; spot capacity is reserved for work that can be interrupted and retried.</figcaption>
+          </figure>
+          <h4 id="day25-reference-diagrams">Reference diagrams</h4>
+          <div class="ref-gallery">
+            <figure class="ref-figure">
+              <img loading="lazy" src="https://raw.githubusercontent.com/skypilot-org/skypilot/815e61a760d2d9fd037fb5680a6f8878b1f9e28f/docs/source/images/sky-serve-architecture.png" alt="SkyServe architecture: a controller VM hosts several services, each with a service controller and a load balancer exchanging ready-replica lists and autoscaling information; the controller health-probes and provisions replicas across AWS and GCP regions, showing ready, provisioning, and failed replicas; users are HTTP-redirected to ready replicas.">
+              <figcaption><strong>SkyServe architecture</strong> — a controller VM runs a service controller and load balancer per service, probes replica health, provisions replicas across clouds and regions, and redirects users to ready replicas. Source: <a href="https://github.com/skypilot-org/skypilot/blob/815e61a760d2d9fd037fb5680a6f8878b1f9e28f/docs/source/images/sky-serve-architecture.png">skypilot-org/skypilot, docs/source/images/sky-serve-architecture.png @ 815e61a</a>. <span class="license">License: Apache-2.0 (repository LICENSE)</span></figcaption>
+            </figure>
+          </div>
+          <h4 id="day25-further-reading">Further reading</h4>
+          <ul class="reading-list" id="day25-reading">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 7.3: Multi-Cloud Capacity Management</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Covers GPU procurement, geo-aware load balancing, reliability, and compliance as one capacity problem rather than four separate ones.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day25">100 Days of Inference — Day 25: Multi-cloud capacity management</a></strong><span class="reading-meta">elizabetht · GitHub notebook and notes · 2026</span><p>A notebook that models a mixed portfolio of committed, on-demand, and spot capacity and tests regional failover headroom.</p></li>
+            <li><strong><a href="https://www.usenix.org/conference/nsdi23/presentation/yang-zongheng">SkyPilot: An Intercloud Broker for Sky Computing</a></strong><span class="reading-meta">Yang et al. · USENIX NSDI · 2023</span><p>Argues for a broker that places jobs across clouds by price and availability. Its motivation section is a clear case for treating capacity as a market.</p></li>
+            <li><strong><a href="https://arxiv.org/abs/2411.01438">SkyServe: Serving AI Models across Regions and Clouds with Spot Instances</a></strong><span class="reading-meta">Mao et al. · arXiv · 2024</span><p>Shows how spreading spot replicas across regions and clouds, with on-demand fallback, can cut serving cost while keeping availability.</p></li>
+            <li><strong><a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-interruptions.html">Spot Instance interruptions</a></strong><span class="reading-meta">Amazon Web Services · EC2 documentation · current</span><p>Explains interruption notices, interruption behaviors, and how to react programmatically. A concrete reference for designing retry-safe spot workloads.</p></li>
+          </ul>
+
           <div class="bridge-box"><strong>Bridge to Day 26:</strong> once capacity exists across failure domains, software and model changes must enter that fleet without breaking streams, quality, latency, or cost. Deployment is controlled risk transfer.</div>
         </article>
 
@@ -1063,6 +1495,63 @@
             <li>Build a tiny local streaming server and add shutdown handling: mark unready, reject new work, count active streams, wait with a deadline, then exit.</li>
             <li>Calculate steady, rolling-surge, and blue-green monthly cost for several deployment frequencies. Include cache-warm penalties and failed canaries.</li>
           </ol>
+          <div class="deep-dive" data-search-item data-keywords="shadow traffic mirroring eval gate regression suite canary rollback cost per million tokens utilization blue-green deployment overhead" id="day26-deep-dive">
+            <h4>Deep dive: eval gates, shadow traffic, and cost per million tokens</h4>
+            <p><strong>Eval gates.</strong> Before any user sees a new model, engine, or configuration, run an offline gate: a fixed regression set of prompts with reference answers or rubrics, task metrics, tool-call and JSON validity, safety checks, and a load test at production concurrency. Decide thresholds before the run—for example, tool-call validity no worse than baseline minus 0.5 points and p95 TTFT no more than 10% worse—and version them with the test set, so a gate cannot be argued away after a disappointing result.</p>
+            <p><strong>Shadow traffic.</strong> Mirroring copies a sample of live requests to the candidate, discards its responses, and compares latency, errors, output length, and judged quality with production. It exercises the real input distribution without user risk, but it costs GPU time, must respect privacy and retention rules, and cannot reproduce side effects—tool calls that change the world must be stubbed. After shadow, a canary sends a small share of real users to the candidate with automated rollback on predeclared signals.</p>
+            <p><strong>Cost per million tokens</strong> = fleet cost per hour ÷ tokens served per hour × 1,000,000. With eight GPUs at an illustrative $2.50 per GPU-hour, the fleet costs $20 per hour; if it sustains 2,500 output tokens per second within the SLO, that is 9 million tokens per hour, or about $2.22 per million. Utilization drives the number: at half the traffic the same fleet costs about $4.44 per million. Include deployment overhead—a blue-green cutover that runs two fleets for an hour adds a full hour of fleet cost—and price input and output tokens separately when their costs differ.</p>
+          </div>
+          <figure class="svg-diagram" data-search-item id="day26-diagram">
+            <svg viewBox="0 0 760 256" role="img" aria-labelledby="d26svg-title">
+              <title id="d26svg-title">Release pipeline: offline evaluation gate, shadow traffic, staged canary with automated rollback, then full rollout, plus the cost-per-million-tokens formula</title>
+              <defs><marker id="d26svg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+              <text x="12" y="24" text-anchor="start" class="muted">Each stage must pass numeric gates decided before the run</text>
+              <rect class="node-accent" x="12" y="40" width="160" height="70" rx="8"/>
+              <text x="92" y="64" text-anchor="middle" font-weight="700">Offline eval gate</text>
+              <text x="92" y="81" text-anchor="middle" class="muted">golden set, task scores,</text>
+              <text x="92" y="97" text-anchor="middle" class="muted">tool/JSON validity, perf</text>
+              <rect class="node" x="202" y="40" width="160" height="70" rx="8"/>
+              <text x="282" y="64" text-anchor="middle" font-weight="700">Shadow traffic</text>
+              <text x="282" y="81" text-anchor="middle" class="muted">mirror live requests,</text>
+              <text x="282" y="97" text-anchor="middle" class="muted">discard replies, compare</text>
+              <rect class="node-teal" x="392" y="40" width="160" height="70" rx="8"/>
+              <text x="472" y="64" text-anchor="middle" font-weight="700">Canary 1→10→50%</text>
+              <text x="472" y="81" text-anchor="middle" class="muted">real users; auto</text>
+              <text x="472" y="97" text-anchor="middle" class="muted">rollback on SLO breach</text>
+              <rect class="node" x="582" y="40" width="160" height="70" rx="8"/>
+              <text x="662" y="64" text-anchor="middle" font-weight="700">Full rollout</text>
+              <text x="662" y="81" text-anchor="middle" class="muted">old fleet drained,</text>
+              <text x="662" y="97" text-anchor="middle" class="muted">then retired</text>
+              <line class="edge" x1="172" y1="75" x2="202" y2="75" marker-end="url(#d26svg-arrow)"/>
+              <line class="edge" x1="362" y1="75" x2="392" y2="75" marker-end="url(#d26svg-arrow)"/>
+              <line class="edge" x1="552" y1="75" x2="582" y2="75" marker-end="url(#d26svg-arrow)"/>
+              <text x="92" y="130" text-anchor="middle" class="muted">fail → fix; no user impact</text>
+              <text x="282" y="130" text-anchor="middle" class="muted">fail → stop; users unaffected</text>
+              <line class="edge" x1="472" y1="110" x2="472" y2="146" marker-end="url(#d26svg-arrow)"/>
+              <rect class="node-accent" x="232" y="146" width="380" height="36" rx="8"/>
+              <text x="422" y="169" text-anchor="middle" font-weight="700">Rollback: previous image + model + config</text>
+              <text x="12" y="212" text-anchor="start" font-weight="700">Cost per 1M tokens = fleet $/hour ÷ (tokens/s × 3,600) × 1,000,000</text>
+              <text x="12" y="230" text-anchor="start" class="muted">Example: 8 GPUs × $2.50/h = $20/h; 2,500 tokens/s at SLO = 9.0M tokens/h → ≈ $2.22 per 1M tokens</text>
+              <text x="12" y="246" text-anchor="start" class="muted">Blue-green doubles the bill while both fleets run; at 50% utilization each token costs twice as much</text>
+            </svg>
+            <figcaption>Original diagram with illustrative prices. Failures before the canary cost nothing in user experience; failures during the canary trigger an automated rollback that restores every versioned artifact together.</figcaption>
+          </figure>
+          <h4 id="day26-reference-diagrams">Reference diagrams</h4>
+          <div class="ref-gallery">
+            <figure class="ref-figure">
+              <img loading="lazy" src="https://raw.githubusercontent.com/argoproj/argo-rollouts/1798597f6ac230dbb6efcfa51c57cbd51d2f5031/docs/concepts-assets/canary-deployments.png" alt="Four-stage canary deployment: initially all live traffic goes through a load balancer to application version 34; then 10% goes to version 35; then 33%; finally 100% of traffic goes to version 35.">
+              <figcaption><strong>Canary deployment stages</strong> — a load balancer shifts live traffic from version 34 to version 35 in steps—10%, then 33%, then 100%. Source: <a href="https://github.com/argoproj/argo-rollouts/blob/1798597f6ac230dbb6efcfa51c57cbd51d2f5031/docs/concepts-assets/canary-deployments.png">argoproj/argo-rollouts, docs/concepts-assets/canary-deployments.png @ 1798597</a>. <span class="license">License: Apache-2.0 (repository LICENSE)</span></figcaption>
+            </figure>
+          </div>
+          <h4 id="day26-further-reading">Further reading</h4>
+          <ul class="reading-list" id="day26-reading">
+            <li><strong><a href="https://www.baseten.co/inference-engineering/">Inference Engineering, Ch. 7.4: Testing and Deployment</a></strong><span class="reading-meta">Philip Kiely · Baseten Books · 2026</span><p>Covers zero-downtime deployment, cost estimation, and observability for inference services—the three topics this lesson ties together.</p></li>
+            <li><strong><a href="https://github.com/elizabetht/100-days-of-inference/tree/main/day26">100 Days of Inference — Day 26: Zero-downtime deployment and cost estimation</a></strong><span class="reading-meta">elizabetht · GitHub notebook and notes · 2026</span><p>A notebook that walks through blue-green and canary rollouts and builds a cost-per-token model you can adapt.</p></li>
+            <li><strong><a href="https://sre.google/workbook/canarying-releases/">Canarying Releases</a></strong><span class="reading-meta">Google · The Site Reliability Workbook · 2018</span><p>Explains how to choose canary population, duration, and metrics, and how to compare canary and control fairly. Directly applicable to model rollouts.</p></li>
+            <li><strong><a href="https://argo-rollouts.readthedocs.io/en/stable/concepts/">Argo Rollouts concepts</a></strong><span class="reading-meta">Argo project · documentation · current</span><p>Describes blue-green and canary strategies on Kubernetes, including analysis steps that can automatically promote or abort a rollout.</p></li>
+            <li><strong><a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/">Pod Lifecycle</a></strong><span class="reading-meta">Kubernetes · documentation · current</span><p>Details pod termination, grace periods, and readiness, which together determine whether in-flight streams survive a rollout.</p></li>
+          </ul>
+
           <div class="bridge-box"><strong>Course bridge:</strong> Days 19-26 form one loop: hardware limits shape capacity; capacity becomes containers and replicas; routing turns replicas into a service; multi-cloud turns service into a resilient fleet; safe deployment changes that fleet without violating its contract.</div>
         </article>
 
@@ -1305,6 +1794,19 @@
           <div class="bridge-box">
             <strong>Completion test:</strong> hand your design to another beginner. They should be able to trace one request from regional eligibility through queue, prefill, streamed tokens, metrics, drain, and failover—and explain every capacity number without needing hidden assumptions.
           </div>
+        </section>
+
+        <section id="sources-and-credits" class="content-section" data-search-group="Credits">
+          <div class="section-heading"><div><p class="eyebrow">Attribution</p><h2>Sources and credits</h2></div><p>Every externally hosted image embedded on this page, with its commit-pinned source and license.</p></div>
+          <ul class="reading-list" id="credits-image-list">
+            <li><strong>Day 19 — CUTLASS GEMM hierarchy with epilogue.</strong> Source: <a href="https://github.com/NVIDIA/cutlass/blob/e13f5cd4142c43efc37c2f6339923eb4a57afb99/media/images/gemm-hierarchy-with-epilogue.png">NVIDIA/cutlass @ e13f5cd</a> (commit-pinned). License: BSD-3-Clause.</li>
+            <li><strong>Day 22 — vLLM Helm chart deployment flow.</strong> Source: <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/assets/deployment/architecture_helm_deployment.png">vllm-project/vllm @ 7b77ed5</a> (commit-pinned). License: Apache-2.0.</li>
+            <li><strong>Day 23 — KEDA architecture.</strong> Source: <a href="https://github.com/kedacore/keda/blob/3e2597733d2b2b71aed10e121485564d289da0d7/images/keda-arch.png">kedacore/keda @ 3e25977</a> (commit-pinned). License: Apache-2.0.</li>
+            <li><strong>Day 24 — Gateway API Inference Extension request flow.</strong> Source: <a href="https://github.com/kubernetes-sigs/gateway-api-inference-extension/blob/db75ec81b80f8728835b56cdb445e8ff1fbfd430/site-src/images/request-flow.png">kubernetes-sigs/gateway-api-inference-extension @ db75ec8</a> (commit-pinned). License: Apache-2.0.</li>
+            <li><strong>Day 25 — SkyServe architecture.</strong> Source: <a href="https://github.com/skypilot-org/skypilot/blob/815e61a760d2d9fd037fb5680a6f8878b1f9e28f/docs/source/images/sky-serve-architecture.png">skypilot-org/skypilot @ 815e61a</a> (commit-pinned). License: Apache-2.0.</li>
+            <li><strong>Day 26 — Canary deployment stages.</strong> Source: <a href="https://github.com/argoproj/argo-rollouts/blob/1798597f6ac230dbb6efcfa51c57cbd51d2f5031/docs/concepts-assets/canary-deployments.png">argoproj/argo-rollouts @ 1798597</a> (commit-pinned). License: Apache-2.0.</li>
+          </ul>
+          <p>All inline SVG diagrams, deep-dive text, and reading-list summaries are original to this textbook. Chapter pointers to <em>Inference Engineering</em> (Philip Kiely, Baseten Books, 2026) and to the <a href="https://github.com/elizabetht/100-days-of-inference">100 Days of Inference</a> notebooks are references only; no text or figures from them are reproduced. Diagrams whose licenses do not clearly permit reuse appear only as link cards. Externally hosted images load from the commit-pinned URLs listed above and remain under their original licenses.</p>
         </section>
 
         <footer class="content-section">
