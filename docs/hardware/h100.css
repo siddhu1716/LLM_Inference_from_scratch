@@ -1,0 +1,92 @@
+.h100-lab {
+  --device-text: #edf4e9;
+  --device-muted: #bed2c7;
+  --device-gold: #f3c67a;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  align-self: center;
+  border: 1px solid #3b5d4e;
+  border-radius: .8rem;
+  background: #112d26;
+  color: var(--device-text);
+  box-shadow: 0 .45rem 1.25rem #163a2f16;
+  color-scheme: dark;
+  font: 400 1rem/1.5 "Segoe UI",system-ui,sans-serif;
+}
+.h100-lab *, .h100-lab *::before { box-sizing: border-box; }
+.h100-lab figcaption {
+  display: flex; align-items: center; gap: .6rem; margin: 0; padding: .72rem 1rem;
+  border-bottom: 1px solid #365448; background: #17372f; color: #e8f3e5;
+  font: 650 .86rem/1.4 ui-monospace,Consolas,monospace;
+}
+.h100-lab figcaption::before {
+  content: ""; display: inline-block; width: .75rem; height: .75rem;
+  background: #9bb999; border: 2px solid #285242; outline: 1px dashed #adc5a0;
+}
+.h100-lab > p, .h100-lab > a { margin: .8rem 1rem; }
+.h100-lab > a { display: inline-block; }
+.h100-lab > img, .h100-screen img { display: block; width: 100%; height: auto; object-fit: contain; }
+.h100-screen { position: relative; background: #102820; }
+.h100-screen .h100-overlay { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.h100-region { fill: #f5ba4d18; stroke: var(--device-gold); stroke-width: 2; stroke-dasharray: 5 2; }
+.h100-glow, .h100-wire { fill: none; stroke-linejoin: round; stroke-linecap: round; }
+.h100-glow { stroke: #0c251bee; stroke-width: 8; }
+.h100-wire { stroke: var(--device-gold); stroke-width: 2.8; }
+.h100-packet { fill: #fff6d9; stroke: #a36a25; stroke-width: 1.4; }
+.h100-workbench { padding: .8rem 1rem .95rem; border-top: 1px solid #395448; }
+.h100-selector { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .4rem .8rem; }
+.h100-selector label { display: flex; align-items: center; gap: .5rem; font: 600 .78rem/1.3 ui-monospace,Consolas,monospace; color: var(--device-muted); }
+.h100-selector select, .h100-controls button {
+  appearance: auto; width: auto; min-width: 0; margin: 0; border: 1px solid #779388;
+  border-radius: .35rem; background: #1e4136; color: var(--device-text); cursor: pointer;
+  font: 600 .85rem/1.3 "Segoe UI",system-ui,sans-serif; text-transform: none;
+}
+.h100-selector select { padding: .32rem .4rem; }
+.h100-count { color: var(--device-gold); font: 600 .84rem/1.4 ui-monospace,Consolas,monospace; }
+.h100-explanation { min-height: 5.6rem; margin: .66rem 0 .55rem; }
+.h100-explanation strong { display: block; color: var(--device-text); font: 670 1.08rem/1.25 "Segoe UI",system-ui,sans-serif; letter-spacing: -.018em; }
+.h100-lab .h100-explanation p { max-width: 60ch; margin: .22rem 0 0; color: var(--device-muted); font: 400 .95rem/1.45 "Segoe UI",system-ui,sans-serif; }
+.h100-controls { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; }
+.h100-controls button { min-width: 2.1rem; min-height: 2.08rem; padding: .15rem .47rem; }
+.h100-controls button[data-action="play"] { min-width: 4.4rem; border-color: var(--device-gold); background: var(--device-gold); color: #213127; }
+.h100-controls button:not([data-action="play"]) { font-size: 1.25rem; line-height: .95; }
+.h100-controls button:disabled { border-color: #456559; color: #8aa498; cursor: default; }
+.h100-lab a { color: #c6ecd7; font-weight: 600; text-decoration: underline; text-underline-offset: .2em; }
+.h100-controls a { margin-left: auto; font-size: .86rem; }
+.h100-lab :focus-visible { outline: 3px solid #ffdc88; outline-offset: 2px; }
+.hardware-lesson .hero-inner { grid-template-columns: .92fr 1.08fr; }
+.hardware-lesson .spec-rack { display: grid; grid-template-columns: repeat(3,1fr); gap: .6rem; margin: 1.2rem 0; }
+.spec-rack > div { border-top: 3px solid var(--teal); background: var(--pale); padding: .8rem; }
+.spec-rack dt { font-size: .9rem; color: var(--muted); }
+.spec-rack dd { margin: .1rem 0 0; font: 600 1.25rem var(--mono); }
+.hardware-lesson .note-capsule { border-left: .25rem solid var(--gold); padding: .4rem 1rem; background: var(--surface); }
+.h100-photo { margin: .85rem 0 0; }
+.h100-photo img { display: block; width: min(100%,625px); height: auto; margin: auto; background: white; color: #17372f; border: 1px solid var(--line); border-radius: .4rem; }
+.h100-photo figcaption, .warp-figure figcaption span { display: block; margin-top: .55rem; color: var(--muted); font-size: .95rem; }
+.warp-figure { margin: 1.15rem 0; padding: clamp(.85rem,2.4vw,1.4rem); border: 1px solid var(--line); border-top: 4px solid var(--teal); border-radius: .65rem; background: var(--surface); }
+.warp-figure figcaption strong { display: block; font-size: 1.22rem; }
+.warp-figure figcaption span { margin: .2rem 0 .75rem; }
+.cta-bracket { padding: .7rem; border: 1px dashed var(--teal); border-radius: .35rem; }
+.cta-bracket > b { display: inline-block; margin-bottom: .4rem; font: 650 .9rem/1.4 var(--mono); color: var(--teal); }
+.warp-row { display: grid; grid-template-columns: 7.7rem minmax(0,1fr); align-items: center; gap: .5rem; padding: .32rem 0; }
+.warp-row > span:first-child { font-size: .92rem; font-weight: 650; }
+.warp-row small { font-size: .79rem; color: var(--muted); font-weight: 500; display: block; }
+.lane-strip { display: grid; grid-template-columns: repeat(32,minmax(0,1fr)); gap: clamp(1px,.2vw,3px); height: 1rem; }
+.lane-strip i { display: block; background: var(--teal); border-radius: 1px; }
+.lane-strip i:nth-child(8n + 1) { background: #b87a2f; }
+.warp-figure > p { margin: .75rem 0 0; font-size: .98rem; }
+@media (max-width: 43rem) {
+  .warp-row { grid-template-columns: 1fr; gap: .16rem; }
+  .warp-row small { display: inline; margin-left: .3rem; }
+  .lane-strip { height: .8rem; }
+}
+@media (max-width: 56rem) { .hardware-lesson .hero-inner { grid-template-columns: 1fr; } }
+@media (max-width: 43rem) { .h100-explanation { min-height: 5.4rem; } }
+@media (max-width: 27rem) {
+  .hardware-lesson .spec-rack { grid-template-columns: repeat(2,1fr); }
+  .h100-controls a { margin-left: .15rem; }
+  .h100-explanation { min-height: 6.8rem; }
+}
+@media print { .h100-selector, .h100-controls { display: none; } }

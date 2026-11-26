@@ -10,12 +10,13 @@
     <meta name="theme-color" content="#112c2a">
     <title>vLLM Deep Dive · Token Lifecycle | LLM Inference from Scratch</title>
     <link rel="icon" href="../assets/mark.svg">
-    <link rel="stylesheet" href="../styles.css?v=8">
-    <link rel="stylesheet" href="lifecycle.css?v=3">
+    <link rel="stylesheet" href="../styles.css?v=9">
+    <link rel="stylesheet" href="lifecycle.css?v=4">
     <script src="../theme.js" defer></script>
     <script src="request-lab.js?v=1" defer></script>
-    <script src="../app.js?v=3" defer></script>
-    <script src="lifecycle.js?v=1" defer></script>
+    <script src="../app.js?v=4" defer></script>
+    <script src="lifecycle.js?v=2" defer></script>
+    <script src="../notes/scroll-regions.js" defer></script>
     <style>
       #main-content p code,
       #main-content li code,
@@ -161,6 +162,7 @@
           <a href="vllm.html" aria-current="page">vLLM</a>
           <a href="sglang.html">SGLang</a>
           <a href="memory.html">KV memory lab</a>
+          <a href="plow.html">Plow</a>
         </nav>
         <section id="vllm-overview" class="hero engine-cover" data-search-group="vLLM overview" data-search-item data-keywords="vLLM overview V1 engine token lifecycle commit pinned deep dive">
           <div class="engine-cover-text">
@@ -3517,7 +3519,7 @@ request A at the end      = 67 blocks = 134 MiB</div>
             so production deployments usually put a gateway in front.
           </p>
           <div class="deep-dive">
-            <h4>Tool calling and reasoning on the chat route</h4>
+            <h3>Tool calling and reasoning on the chat route</h3>
             <p>
               Two parser families post-process generated text into OpenAI-shaped fields. With
               <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/entrypoints/common/cli_args.py#L123"><code>--enable-auto-tool-choice</code></a>
@@ -4596,8 +4598,8 @@ curl -N http://localhost:8000/v1/chat/completions \
           </ul>
         </section>
 
+        <a class="back-to-top" href="#vllm-overview" aria-label="Back to top">↑</a>
       </main>
     </div>
-    <a class="back-to-top" href="#vllm-overview" aria-label="Back to top">↑</a>
   </body>
 </html>

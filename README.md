@@ -6,9 +6,13 @@ SGLang, model architectures, and distributed inference.
 
 **[Open the live field guide](https://siddhu1716.github.io/LLM_Inference_from_scratch/)** · [26-day curriculum](https://siddhu1716.github.io/LLM_Inference_from_scratch/curriculum.html) · [Run the Python model](#quickstart)
 
-[![Inference from Scratch field guide showing the GPU schematic and six learning paths](docs/assets/screenshots/field-guide.png)](https://siddhu1716.github.io/LLM_Inference_from_scratch/)
+[![Inference from Scratch field guide showing the NVIDIA H100 SXM5 data path and learning paths](docs/assets/screenshots/field-guide.png)](https://siddhu1716.github.io/LLM_Inference_from_scratch/)
 
 ## Inside the labs
+
+**What happens on an H100?** Step from host DRAM across PCIe to HBM3, follow a tile through the GPU’s shared L2, and see where thread blocks and warps execute. The lab also shows how cooperating thread blocks exchange data. [Explore the H100](https://siddhu1716.github.io/LLM_Inference_from_scratch/hardware/)
+
+**When does a compiled model plan help?** Follow a Gemma request through Plow’s compiler and runtime, then compare its published measurements with vLLM and inspect the features that matter for an SGLang baseline. [Read the Plow comparison](https://siddhu1716.github.io/LLM_Inference_from_scratch/engines/plow.html)
 
 **Where does one token live?** Two prompts share six leading IDs. In the four-token,
 whole-block vLLM example, the first four positions are reusable. At position 6, table entry

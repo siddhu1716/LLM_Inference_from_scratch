@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#112c2a">
+  <meta name="description" content="Follow weights, activation tiles and KV memory on an NVIDIA H100 SXM5. Explore host transfers, warp execution, cluster shared memory and peer GPU collectives.">
+  <title>Inside an NVIDIA H100 SXM5 · Inference from Scratch</title>
+  <link rel="icon" href="../assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../systems/systems.css">
+  <link rel="stylesheet" href="h100.css">
+  <script src="../theme.js" defer></script>
+  <script src="../systems/chapters.js" defer></script>
+  <script src="h100.js" defer></script>
+</head>
+<body class="hardware-lesson">
+  <a class="skip" href="#content">Skip to guide</a>
+  <header class="site-header"><div class="wrap header-inner">
+    <a class="brand" href="../index.html"><img src="../assets/mark.svg" alt="" width="32" height="32">Inference from Scratch</a>
+    <nav aria-label="Site"><a href="../models/index.html">Model internals</a><a href="../engines/memory.html">Engine memory</a><a href="../systems/fabric.html">GPU communication</a><button class="theme-switch" type="button" data-theme-toggle aria-label="Change color theme"><span data-theme-icon aria-hidden="true">◐</span></button></nav>
+  </div></header>
+  <main id="content">
+    <div class="hero"><div class="wrap hero-inner">
+      <div><p class="kicker">GPU architecture</p><h1>Inside an<br>H100 SXM5</h1><p class="lede">A token passes through many kernels. Follow one weight tile from host memory to a GPU, then watch how threads, neighboring blocks and peer GPUs exchange results.</p>
+        <a class="action" href="#board">Identify the hardware</a>
+      </div>
+      <figure id="explorer" class="h100-lab" data-h100-lab aria-label="Interactive NVIDIA H100 SXM5 data path">
+        <figcaption>NVIDIA H100 SXM5 · memory to compute</figcaption>
+        <img src="h100-board.svg" width="560" height="258" alt="H100 SXM5 logical module with five HBM3 stacks surrounding its GPU die">
+        <p>Host DRAM → PCIe → HBM3 → L2 → SM. A thread block stages operands, issues matrix instructions and stores its result. Later sections describe global-memory exchange, cluster DSM and NVLink.</p>
+        <a href="#communication">Read the communication paths</a>
+      </figure>
+    </div></div>
+    <div class="wrap guide-grid">
+      <aside><nav class="chapters" aria-label="In this guide"><h2>In this guide</h2>
+        <a href="#board">Identify the module</a><a href="#memory">Follow a weight tile</a><a href="#warps">Blocks, warps and SMs</a>
+        <a href="#communication">Four exchange paths</a><a href="#inference">Connect to inference</a>
+      </nav></aside>
+      <article>
+        <section id="board"><p class="kicker">Physical device</p><h2>Recognize the module</h2>
+          <p>The interactive board represents the <strong>80 GB H100 SXM5</strong> in a conventional PCIe-hosted HGX H100 server. SXM is the module form factor. HBM3 is the device's stacked high-bandwidth memory. The CPU keeps its own DRAM. The PCIe host link and the NVLink paths between GPUs serve different endpoints.</p>
+          <div class="worked"><h3>See the actual H100 SXM5</h3><p>NVIDIA's Figure 1 shows the assembled SXM5 module and package. Compare the physical component placement with the teaching diagram above, which groups execution units by function and highlights individual transfers.</p>
+            <figure class="h100-photo">
+              <img src="https://developer-blogs.nvidia.com/wp-content/uploads/2022/03/SXM5-White-4-NEW-FINAL-625x291.jpg" width="625" height="291" loading="lazy" decoding="async" alt="NVIDIA H100 SXM5 module with its square processor package mounted on the larger circuit board.">
+              <figcaption>H100 SXM5 module. Image by NVIDIA, Figure 1 of its Hopper architecture overview. <a href="https://developer-blogs.nvidia.com/wp-content/uploads/2022/03/SXM5-White-4-NEW-FINAL-625x291.jpg">Open original image</a> · <a href="https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/">Read the source article</a></figcaption>
+            </figure>
+          </div>
+          <dl class="spec-rack"><div><dt>HBM3 capacity</dt><dd>80 GB</dd></div><div><dt>HBM3 stacks</dt><dd>5</dd></div><div><dt>Shared L2</dt><dd>50 MB</dd></div><div><dt>Active SMs</dt><dd>132</dd></div><div><dt>Tensor Cores</dt><dd>528</dd></div><div><dt>Threads per warp</dt><dd>32</dd></div></dl>
+          <p>The shipping SXM5 configuration has eight GPU processing clusters, 66 texture processing clusters and two streaming multiprocessors (SMs) per texture processing cluster. Four fourth-generation Tensor Cores per SM give 528 total. The maximum full-GH100 design has 144 SMs. The diagram's small tile cells are symbolic. They do not specify the physical routing or enabled-unit placement of a particular chip. <a href="https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/">NVIDIA's H100 and full-GH100 configurations</a></p>
+          <p>NVIDIA lists 3.35 TB/s of peak device-memory bandwidth for the 80 GB SXM. Its 900 GB/s NVLink figure is aggregate bidirectional peer bandwidth. PCIe Gen5 ×16 has approximately 64 GB/s per direction before protocol overhead. These product figures express different transfers and cannot be added to estimate token throughput. <a href="https://www.nvidia.com/en-us/data-center/h100/">H100 specifications</a> · <a href="https://developer.nvidia.com/blog/?p=46100">HGX H100 host and NVSwitch topology</a></p>
+        </section>
+        <section id="memory"><p class="kicker">Data movement</p><h2>Follow one weight tile</h2>
+          <ol class="sequence">
+            <li><strong>Load the checkpoint</strong><p>In this path a CPU-side loader reads checkpoint shards, prepares the selected device tensors and transfers them across PCIe. A pinned host buffer can support asynchronous DMA. The host must respect the buffer's lifetime until the operation finishes. Other systems can use direct storage paths or different host interconnects.</p></li>
+            <li><strong>Keep the weights resident</strong><p>The allocator reserves device addresses for the weights, runtime workspaces and KV cache. With a fully resident model, later decode steps reuse the weights in GPU memory. The new token ID, small control messages, and streamed output cost far less host traffic than reloading a model each token. Offloaded deployments have a different path.</p></li>
+            <li><strong>Read a tile</strong><p>A projection kernel loads weight and activation tiles from global addresses. A cache hit can satisfy a load without going out to HBM. A miss can bring a cache line through L2 from HBM. The kernel, address pattern and cache policy govern L1 behavior. Coalesced accesses group nearby addresses from a warp into fewer memory transactions.</p></li>
+            <li><strong>Stage and reuse operands</strong><p>Shared memory is explicitly managed scratch space for a block. Registers hold per-thread values and accumulators. A tiled kernel can load a chunk once and reuse it across many products. Hopper's Tensor Memory Accelerator can issue asynchronous multidimensional transfers into shared memory in suitable kernels. A consumer waits for the transfer barrier before reading the tile.</p></li>
+            <li><strong>Write the output</strong><p>The block computes its output tile and stores it to global addresses or passes a fused intermediate to the next operation on chip. A store may remain cached. The visibility and ordering needed by later work follow CUDA's memory and stream rules. The animation compresses this into one highlighted route. <a href="https://docs.nvidia.com/cuda/hopper-tuning-guide/index.html">Hopper memory and tuning guide</a></p></li>
+          </ol>
+          <p class="note-capsule"><strong>Engine page vs. physical memory.</strong> A vLLM or SGLang KV allocator maps a request's token positions to cache locations inside large tensors. A GPU kernel ultimately reads device addresses. Cache lines, HBM transactions and engine KV block boundaries have different sizes and lifetimes. <a href="../engines/memory.html">Follow the engine's KV address mapping</a></p>
+        </section>
+        <section id="warps"><p class="kicker">Execution hierarchy</p><h2>Who executes a tile?</h2>
+          <div class="flow" aria-label="CUDA execution hierarchy"><div><small>Kernel launch</small><b>Grid of thread blocks</b></div><span aria-hidden="true">→</span><div><small>One resident block</small><b>Assigned to an SM</b></div><span aria-hidden="true">→</span><div><small>SIMT execution</small><b>32-thread warps</b></div></div>
+          <figure class="warp-figure">
+            <figcaption><strong>One SM schedules a 128-thread block</strong><span>Each row is a 32-lane warp. Gold marks the first lane of each group of eight to help you count.</span></figcaption>
+            <div class="cta-bracket"><b>Thread block (CTA) · 128 threads</b>
+              <div class="warp-row"><span>Warp 0 <small>Threads 0–31</small></span><span class="lane-strip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+              <div class="warp-row"><span>Warp 1 <small>Threads 32–63</small></span><span class="lane-strip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+              <div class="warp-row"><span>Warp 2 <small>Threads 64–95</small></span><span class="lane-strip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+              <div class="warp-row"><span>Warp 3 <small>Threads 96–127</small></span><span class="lane-strip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+            </div>
+            <p>With a compatible Hopper kernel, these four contiguous warps can cooperate as one 128-thread warp group on a warp-group matrix instruction. Ordinary warp instructions still group 32 threads.</p>
+          </figure>
+          <p>A block's threads execute on one SM and share its resources for the lifetime of the block. A 256-thread block contains eight warps. More than one block can reside on a single SM when register, shared-memory and thread limits permit it. On H100 the upper limit is 64 concurrent warps per SM. Resident warps can be waiting on dependencies. An SM scheduler selects eligible work.</p>
+          <p>Regular instructions use execution pipelines for loads, arithmetic and other operations. Matrix instructions can engage Tensor Cores with specific operand shapes and types. Hopper's <code>wgmma.mma_async</code> coordinates a warp group of four warps, or 128 threads, on supported kernels. The kernel can interleave tile preparation and computation. It must wait for async results before using their accumulators. <a href="https://docs.nvidia.com/cuda/cuda-programming-guide/01-introduction/programming-model.html">CUDA programming model</a> · <a href="https://docs.nvidia.com/cuda/hopper-tuning-guide/index.html">Hopper occupancy limits</a> · <a href="https://docs.nvidia.com/cuda/pdf/ptx_isa_9.1.pdf">PTX warp-group matrix instructions</a></p>
+          <div class="worked"><h3>Count bytes and work for a toy tile</h3>
+            <p>For C = A × B, multiply a 16 × 16 BF16 tile of A by a 16 × 16 BF16 tile of B. Each input contains 256 two-byte values, so the two inputs occupy 1,024 bytes. The tile produces 256 outputs with 16 multiply-adds each, or <strong>8,192 floating-point operations</strong> when a multiply and add count separately. A separate FP32 store of C adds 1,024 output bytes.</p><p>This is arithmetic accounting for one mathematical tile. Real kernels can reuse A or B across tiles, accumulate across a longer K dimension and fuse the store. It establishes neither a specific hardware instruction nor an achieved throughput.</p>
+          </div>
+        </section>
+        <section id="communication"><p class="kicker">Data exchange</p><h2>Choose the correct scope</h2>
+          <dl class="exchange-list">
+            <div><dt>Within one block <span>Ordinary shared memory</span></dt><dd>One warp writes a shared tile and another warp in the same block reads it. A block-wide barrier such as <code>__syncthreads()</code> can order that producer–consumer exchange when participating threads reach it correctly. Other blocks separately allocate their own shared storage.</dd></div>
+            <div><dt>Across arbitrary SMs <span>Global memory plus ordering</span></dt><dd>Kernel A writes a partial tensor. Kernel B in the same stream runs after A finishes and can read those addresses, possibly from L2. Different streams need an explicit dependency such as an event. Concurrent producer/consumer designs require a valid synchronization protocol and suitable memory scope. Calling a block barrier cannot synchronize a whole grid. An ordinary launch cannot rely on all blocks being resident simultaneously.</dd></div>
+            <div><dt>Within a Hopper cluster <span>Distributed shared memory (DSM)</span></dt><dd>A cluster launch guarantees its blocks are co-scheduled within one GPC. A block can map another participating block's shared-memory segment and perform a remote access. A barrier establishes that the peer storage is initialized. Another synchronization point can ensure the remote accesses complete before block exit. The reachable storage belongs to the cluster's resident blocks. <a href="https://docs.nvidia.com/cuda/hopper-tuning-guide/index.html">Hopper thread-block clusters and DSM</a></dd></div>
+            <div><dt>Across peer GPUs <span>NVLink, NVSwitch and collectives</span></dt><dd>Each GPU has private device memory and its own SMs. In the eight-GPU HGX H100 platform, NVLink connects GPUs through NVSwitch. A tensor-parallel output projection may require a sum all-reduce of rank-local partial vectors. NCCL chooses transport and collective algorithms for the topology. PCIe or a network may carry traffic on other systems. Slow ranks can delay all participants. <a href="https://developer.nvidia.com/blog/?p=46100">HGX physical topology</a> · <a href="../systems/fabric.html#token-messages">Work through a per-token reduction</a></dd></div>
+          </dl>
+          <p><a href="#explorer">Replay a communication path on the H100</a></p>
+        </section>
+        <section id="inference"><p class="kicker">Inference workload</p><h2>Connect the board to a token</h2>
+          <p><strong>Prefill.</strong> Many known prompt positions can share a matrix multiply and reuse weights. The projection and FFN kernels can keep Tensor Cores busy. Attention kernels traverse the prompt with a causal mask, can tile the score calculation, and write per-layer KV. Very long contexts can make the attention portion dominate.</p>
+          <p><strong>Decode.</strong> A single request adds one new position per ordinary forward step. Its queries read earlier KV, its projections read the weights, and it appends new KV for that position. At a small batch size, memory traffic can dominate. Continuous batching lets one weight tile serve more sequences in the same iteration. The actual bottleneck depends on batch, context, precision and kernels. <a href="../models/index.html">Inspect embeddings, attention and FFN</a> · <a href="../systems/index.html#optimization">Diagnose a serving bottleneck</a></p>
+          <details class="explain"><summary>Estimate an optimistic decode bandwidth floor</summary><p>Suppose a hypothetical decoder reads 16 GB of weights from HBM for one isolated single-sequence forward step. At the product's 3.35 TB/s peak, bytes ÷ bandwidth gives about <strong>4.78 ms</strong> for that assumed transfer. Include KV traffic, kernel execution, scheduling, communication, and imperfect use of bandwidth when comparing against a measured token gap. If the weights are reused across a batch, this floor describes that batch's weight-read time. <a href="https://www.nvidia.com/en-us/data-center/h100/">NVIDIA H100 bandwidth specification</a></p></details>
+          <p><a href="../engines/index.html">Follow a request in vLLM and SGLang</a> · <a href="../systems/fabric.html#link-lab">Estimate traffic between serving groups</a></p>
+        </section>
+      </article>
+    </div>
+  </main>
+  <footer><div class="wrap"><a class="brand" href="../index.html">Inference from Scratch</a><a href="#content">Back to top</a></div></footer>
+</body>
+</html>

@@ -941,6 +941,7 @@ h1 {
 }
 
 .back-to-top {
+  visibility: hidden;
   position: fixed;
   z-index: 50;
   right: 1rem;
@@ -961,6 +962,7 @@ h1 {
 }
 
 .back-to-top.visible {
+  visibility: visible;
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
@@ -1034,6 +1036,13 @@ h1 {
     transition: transform 180ms ease;
   }
 
+  .menu-scrim:not([hidden]) {
+    position: fixed;
+    inset: 4.25rem 0 0;
+    z-index: 80;
+    background: rgb(12 29 28 / .42);
+  }
+
   .nav-open .sidebar {
     visibility: visible;
     transform: translateX(0);
@@ -1063,6 +1072,14 @@ h1 {
   .search-key {
   pointer-events: none;
     display: none;
+  }
+
+  .topbar .search-wrap { position: static; }
+  .topbar .search-wrap label { display: none; }
+  .topbar .search-wrap input { padding-left: .8rem; }
+  .topbar .search-results {
+    inset: calc(100% + .25rem) .65rem auto;
+    max-height: min(65dvh, 30rem);
   }
 
   .search-wrap input {

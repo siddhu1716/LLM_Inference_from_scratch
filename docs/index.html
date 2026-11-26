@@ -10,11 +10,14 @@
     <meta name="theme-color" content="#112c2a">
     <title>LLM Inference from Scratch | Engineering Field Guide</title>
     <link rel="icon" href="assets/mark.svg">
-    <link rel="stylesheet" href="styles.css?v=8">
+    <link rel="stylesheet" href="styles.css?v=9">
     <link rel="stylesheet" href="atlas.css">
     <script src="theme.js" defer></script>
-    <script src="app.js?v=3" defer></script>
+    <script src="app.js?v=4" defer></script>
+    <link rel="stylesheet" href="hardware/h100.css">
     <script src="replay.js" defer></script>
+    <script src="hardware/h100.js" defer></script>
+    <script src="notes/scroll-regions.js" defer></script>
     <noscript><style>.topbar .search-wrap,.top-actions button{display:none} @media(max-width:56rem){.sidebar{position:static;visibility:visible;transform:none;max-height:none;width:auto;border:0;box-shadow:none}.layout{display:block}}</style></noscript>
   </head>
   <body class="atlas-home">
@@ -97,9 +100,11 @@
             <p class="sidebar-title">Inference engines</p><ul class="nav-list"><li><a href="engines/index.html#request-lab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-compare"/></svg><span>Compare engines</span></a></li>
               <li><a href="engines/memory.html#address-lab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-grid"/></svg><span>KV address explorer</span></a></li>
               <li><a href="engines/vllm.html#request-lab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-chip"/></svg><span>vLLM walkthrough</span></a></li>
-              <li><a href="engines/sglang.html#request-lab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-network"/></svg><span>SGLang walkthrough</span></a></li></ul>
+              <li><a href="engines/sglang.html#request-lab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-network"/></svg><span>SGLang walkthrough</span></a></li>
+              <li><a href="engines/plow.html"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-code"/></svg><span>Plow compiler &amp; runtime</span></a></li></ul>
             <p class="sidebar-title">Systems</p><ul class="nav-list"><li><a href="systems/index.html#optimization"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-optimize"/></svg><span>Optimization</span></a></li>
               <li><a href="systems/index.html#topologies"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-network"/></svg><span>Distributed inference</span></a></li>
+              <li><a href="hardware/index.html"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-chip"/></svg><span>Inside an NVIDIA H100</span></a></li>
               <li><a href="systems/fabric.html"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-flow"/></svg><span>GPU communication</span></a></li>
               <li><a href="systems/index.html#capacity"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-grid"/></svg><span>Capacity calculator</span></a></li></ul>
             <p class="sidebar-title">Reference</p><ul class="nav-list"><li><a href="#request-diagram"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-layers"/></svg><span>Request diagram</span></a></li>
@@ -136,10 +141,11 @@
             <div class="hero-actions"><a class="button" href="#request-replay"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-play"/></svg> Trace a request</a><a class="button button-secondary" href="curriculum.html">Browse curriculum</a></div>
             <div class="atlas-byline">By <a href="https://shivanampalli.netlify.app/">Shiva Nampalli</a><span aria-hidden="true">·</span><a href="https://www.linkedin.com/in/shiva-nampalli/">LinkedIn</a><span aria-hidden="true">·</span><a href="https://github.com/siddhu1716">GitHub profile</a></div>
           </div>
-          <figure class="gpu-figure">
-            <figcaption><span><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-chip"/></svg> GPU execution</span><small>Schematic</small></figcaption>
-            <img src="assets/gpu-schematic.svg" width="480" height="284" alt="A compute die reads model weights and cached keys and values from GPU memory.">
-            <div class="gpu-caption"><i aria-hidden="true"></i> Weights stay resident. The KV cache grows with the sequence.</div>
+          <figure class="h100-lab" data-h100-lab aria-label="Interactive NVIDIA H100 SXM5 data path">
+            <figcaption>NVIDIA H100 SXM5 · memory to compute</figcaption>
+            <img src="hardware/h100-board.svg" alt="H100 SXM5 module with five HBM3 stacks surrounding the GPU die" width="560" height="258">
+            <p>Follow a weight tile from host DRAM over PCIe to HBM3, then through L2 to the streaming multiprocessors that compute with it.</p>
+            <a href="hardware/index.html">Explore the H100 data path</a>
           </figure>
         </section>
 
@@ -1648,6 +1654,7 @@ release(state.kv)</code></pre>
             <p>
               Decode performs many small, repeated operations. CPU scheduling and
               kernel boundaries can become visible in every token’s critical path.
+              <a href="hardware/index.html">Trace a weight tile through an NVIDIA H100</a>.
             </p>
           </div>
 
@@ -3292,10 +3299,10 @@ release(state.kv)</code></pre>
             See the <a href="#limitations">implementation scope</a> for the features implemented in Python and the features modeled at teaching scale.
           </p>
         </footer>
+        <a class="back-to-top" href="#overview" aria-label="Back to top">↑</a>
       </main>
     </div>
 
-    <a class="back-to-top" href="#overview" aria-label="Back to top">↑</a>
     <noscript>
       <p class="empty-state">
         JavaScript is disabled. All guide content and answers remain available;

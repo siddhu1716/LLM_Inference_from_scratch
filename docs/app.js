@@ -23,7 +23,17 @@
       .normalize("NFKD")
       .replace(/[\u0300-\u036f]/g, "");
 
+  const main = document.querySelector("main");
+  const scrim = document.createElement("div");
+  scrim.className = "menu-scrim";
+  scrim.hidden = true;
+  scrim.setAttribute("aria-hidden", "true");
+  if (menuButton && sidebar) body.append(scrim);
+
   const setMenu = (open) => {
+    scrim.hidden = !open;
+    if (main) main.inert = open;
+    if (backToTop) backToTop.inert = open;
     body.classList.toggle("nav-open", open);
     menuButton?.setAttribute("aria-expanded", String(open));
     menuButton?.setAttribute("aria-label", open ? "Close section navigation" : "Open section navigation");
@@ -41,11 +51,27 @@
   closeMenuOnDesktop(desktopNavigation);
 
   menuButton?.addEventListener("click", () => setMenu(!body.classList.contains("nav-open")));
+  scrim.addEventListener("click", () => {
+    setMenu(false);
+    menuButton?.focus();
+  });
+
+  const focusAnchor = (target) => {
+    if (!target) return;
+    const node = target.matches("details") ? target.querySelector("summary") : target;
+    if (!node) return;
+    if (!node.matches("a, button, input, summary, [tabindex]")) node.tabIndex = -1;
+    node.focus({ preventScroll: true });
+  };
+
   sidebar?.addEventListener("click", (event) => {
-    if (event.target.closest("a")) {
+    const link = event.target.closest("a");
+    if (link && body.classList.contains("nav-open")) {
       setMenu(false);
+      if (link.pathname === location.pathname) focusAnchor(document.getElementById(link.hash.slice(1)));
     }
   });
+  document.querySelector(".skip-link")?.addEventListener("click", () => setMenu(false));
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       if (body.classList.contains("nav-open")) menuButton?.focus();
@@ -61,6 +87,8 @@
 
   // These destinations join the local, full-text chapter index across static pages.
   const destinations = [
+    ["Inside an NVIDIA H100", "hardware/index.html", "Hopper SXM5 GPU host DRAM PCIe DMA HBM3 L2 shared memory SM streaming multiprocessors warps lanes thread block clusters DSM tensor cores TMA NVLink"],
+    ["Plow compiler and runtime", "engines/plow.html", "Gemma inference compiler AOT packet language on-device warps plowc plowrt persistent kernel benchmark vLLM SGLang"],
     ["Token laboratory", "index.html#request-replay", "Python model replay logits tokenizer sampled bytes greedy prefill decode"],
     ["Model architectures", "models/index.html", "dense decoder GQA MoE mixture experts DeepSeek V3 MLA R1 distilled"],
     ["Translate a KV address", "engines/memory.html#address-lab", "block table hash vllm sglang request index pool slot mapping req_to_token"],
@@ -158,7 +186,15 @@
   };
 
   siteSearch?.addEventListener("input", showSearchResults);
-  siteSearch?.addEventListener("focus", showSearchResults);
+  siteSearch?.addEventListener("focus", () => {
+    if (body.classList.contains("nav-open")) setMenu(false);
+    showSearchResults();
+  });
+  const searchWrap = siteSearch?.closest(".search-wrap");
+  searchWrap?.addEventListener("focusout", (event) => {
+    if (searchResults && !searchWrap.contains(event.relatedTarget)) searchResults.hidden = true;
+  });
+
   siteSearch?.addEventListener("keydown", (event) => {
     if (!searchResults || searchResults.hidden) return;
     const first = searchResults.querySelector("a");
@@ -188,6 +224,7 @@
     }
     searchResults.hidden = true;
     siteSearch.value = "";
+    focusAnchor(target);
   });
   document.addEventListener("click", (event) => {
     if (searchResults && !event.target.closest(".search-wrap")) {
@@ -292,6 +329,7 @@
 
   backToTop?.addEventListener("click", (event) => {
     event.preventDefault();
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    focusAnchor(main);
+    window.scrollTo({ top: 0 });
   });
 })();

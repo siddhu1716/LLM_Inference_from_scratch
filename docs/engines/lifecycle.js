@@ -187,7 +187,7 @@
       this.viewport.append(this.board);
       body.append(this.viewport);
 
-      const side = el("aside", "lc-side");
+      const side = el("div", "lc-side");
       this.stream = el("div", "lc-stream");
       const streamHead = el("div", "lc-stream-head");
       streamHead.append(el("strong", "", "Client sees"));

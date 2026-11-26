@@ -10,12 +10,13 @@
     <meta name="theme-color" content="#112c2a">
     <title>SGLang Deep Dive · Token Lifecycle | LLM Inference from Scratch</title>
     <link rel="icon" href="../assets/mark.svg">
-    <link rel="stylesheet" href="../styles.css?v=8">
-    <link rel="stylesheet" href="lifecycle.css?v=3">
+    <link rel="stylesheet" href="../styles.css?v=9">
+    <link rel="stylesheet" href="lifecycle.css?v=4">
     <script src="../theme.js" defer></script>
     <script src="request-lab.js?v=1" defer></script>
-    <script src="../app.js?v=3" defer></script>
-    <script src="lifecycle.js?v=1" defer></script>
+    <script src="../app.js?v=4" defer></script>
+    <script src="lifecycle.js?v=2" defer></script>
+    <script src="../notes/scroll-regions.js" defer></script>
     <style>
       #main-content p code,
       #main-content li code,
@@ -170,6 +171,7 @@
           <a href="vllm.html">vLLM</a>
           <a href="sglang.html" aria-current="page">SGLang</a>
           <a href="memory.html">KV memory lab</a>
+          <a href="plow.html">Plow</a>
         </nav>
         <section id="sglang-overview" class="hero engine-cover" data-search-group="SGLang overview" data-search-item data-keywords="SGLang overview SRT runtime token lifecycle commit pinned deep dive RadixAttention overlap scheduler">
           <div class="engine-cover-text">
@@ -1074,7 +1076,7 @@
           <div class="table-wrap">
             <table class="comparison">
               <thead>
-                <tr><th scope="col"></th><th scope="col">Extend (prefill)</th><th scope="col">Decode</th></tr>
+                <tr><th scope="col">Work per step</th><th scope="col">Extend (prefill)</th><th scope="col">Decode</th></tr>
               </thead>
               <tbody>
                 <tr><th scope="row">New tokens per request</th><td>prompt length − cached prefix, capped by the chunk budget</td><td>1 (more with speculative decoding)</td></tr>
@@ -4215,8 +4217,8 @@ print(state["grade"])</code></pre>
   </p>
 </section>
 
+        <a class="back-to-top" href="#sglang-overview" aria-label="Back to top">↑</a>
       </main>
     </div>
-    <a class="back-to-top" href="#sglang-overview" aria-label="Back to top">↑</a>
   </body>
 </html>

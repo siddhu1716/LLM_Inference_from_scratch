@@ -294,7 +294,7 @@
   height: 1.45rem;
   place-items: center;
   border-radius: 50%;
-  background: var(--lane);
+  background: color-mix(in srgb, var(--lane) 70%, #122b27);
   color: #ffffff;
   font-size: 0.72rem;
   font-weight: 800;
@@ -900,7 +900,7 @@
 .memory-header, .memory-guide { width: min(76rem, calc(100% - 2.5rem)); margin-inline: auto; }
 .memory-header, .memory-header nav { display: flex; align-items: center; gap: 1rem; }
 .memory-header { min-height: 4rem; justify-content: space-between; flex-wrap: wrap; padding-block: 0.4rem; }
-.memory-header nav a { color: var(--ink-soft); font-size: 0.92rem; text-decoration: none; }
+.memory-header nav a { color: inherit; font-size: 0.92rem; text-decoration: none; }
 .memory-header nav a:hover { text-decoration: underline; }
 .memory-guide { padding-block: 1.5rem 5rem; }
 .memory-chapters { display: flex; flex-wrap: wrap; gap: 0.5rem 1.35rem; margin-block: 1.1rem; padding: 0.8rem 0; border-block: 1px solid var(--line); }

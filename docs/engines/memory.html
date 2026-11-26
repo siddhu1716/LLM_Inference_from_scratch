@@ -7,10 +7,11 @@
   <meta name="description" content="Trace token positions to GPU KV slots in vLLM and SGLang, compare prefix matching and physical allocation, and follow HiCache transfers.">
   <title>KV memory, address by address · Inference from Scratch</title>
   <link rel="icon" href="../assets/mark.svg">
-  <link rel="stylesheet" href="../styles.css?v=8">
-  <link rel="stylesheet" href="lifecycle.css?v=3">
+  <link rel="stylesheet" href="../styles.css?v=9">
+  <link rel="stylesheet" href="lifecycle.css?v=4">
   <script src="../theme.js" defer></script>
   <script src="memory.js" defer></script>
+  <script src="../notes/scroll-regions.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to guide</a>
@@ -21,6 +22,7 @@
   <main id="main-content" class="memory-guide">
     <nav class="engine-switcher" aria-label="Engine guides">
       <a href="index.html">Compare engines</a><a href="vllm.html">vLLM</a><a href="sglang.html">SGLang</a><a href="memory.html" aria-current="page">KV memory lab</a>
+      <a href="plow.html">Plow</a>
     </nav>
     <section class="hero engine-cover" id="memory-overview">
       <div class="engine-cover-text">

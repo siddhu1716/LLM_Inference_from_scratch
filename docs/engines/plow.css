@@ -1,0 +1,90 @@
+.plow-guide .engine-topology a {
+  color: #f7d394;
+}
+
+.plow-chart {
+  margin: 1.5rem 0;
+  padding: clamp(1rem, 2.8vw, 1.8rem);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+}
+
+.plow-chart figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  align-items: baseline;
+  justify-content: space-between;
+  color: var(--ink);
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.plow-chart figcaption span {
+  color: var(--ink-soft);
+  font: 0.87rem var(--font-mono);
+}
+
+.plow-bars {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem 2rem;
+}
+
+.plow-bars h3 {
+  margin: 1.2rem 0 0.45rem;
+  font-size: 1rem;
+}
+
+.bar-track {
+  display: grid;
+  grid-template-columns: 3rem 1fr 3.3rem;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2rem;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
+.bar-track i {
+  background: linear-gradient(to right, var(--teal) var(--value), var(--line) var(--value));
+  height: 0.7rem;
+  border-radius: 0.15rem;
+}
+
+.bar-track.other i {
+  background: linear-gradient(to right, var(--warning) var(--value), var(--line) var(--value));
+}
+
+.bar-track b {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.plow-scroll {
+  overflow-x: auto;
+  margin: 1.15rem 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+}
+
+.plow-scroll:focus-visible {
+  outline: 3px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.plow-guide .plow-scroll table {
+  min-width: 38rem;
+}
+
+.plow-scroll th:first-child { width: 21%; }
+.plow-scroll th:nth-child(2) { width: 35%; }
+.plow-scroll th[scope="row"] { font-weight: 650; }
+.plow-scroll th, .plow-scroll td { line-height: 1.55; }
+
+@media (max-width: 44rem) {
+  .plow-bars { grid-template-columns: minmax(0, 1fr); }
+}
