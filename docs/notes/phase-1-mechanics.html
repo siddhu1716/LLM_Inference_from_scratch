@@ -7,11 +7,13 @@
       name="description"
       content="A beginner-friendly textbook for Days 1-5 of LLM inference: tensors, tokenization, embeddings, logits, transformer attention, RoPE, GQA, prefill, decode, and KV caching."
     />
-    <meta name="theme-color" content="#3156d3" />
+    <meta name="theme-color" content="#112c2a" />
     <title>Days 1-5: Model Mechanics | LLM Inference from Scratch</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%233156d3'/%3E%3Ctext x='32' y='40' text-anchor='middle' font-size='24' font-family='sans-serif' font-weight='700' fill='white'%3EP1%3C/text%3E%3C/svg%3E" />
-    <link rel="stylesheet" href="../styles.css?v=7" />
-    <script src="../app.js?v=2" defer=""></script>
+    <link rel="icon" href="../assets/mark.svg">
+    <link rel="stylesheet" href="../styles.css?v=8" />
+    <script src="../theme.js" defer></script>
+    <script src="../app.js?v=3" defer=""></script>
+    <noscript><style>.topbar .search-wrap,.top-actions button{display:none} @media(max-width:56rem){.sidebar{position:static;visibility:visible;transform:none;max-height:none;width:auto;border:0;box-shadow:none}.layout{display:block}}</style></noscript>
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -36,6 +38,7 @@
           <ul id="search-results" class="search-results" aria-label="Search results" hidden=""></ul>
         </div>
         <div class="top-actions">
+          <a class="header-repo" href="https://github.com/siddhu1716/LLM_Inference_from_scratch" aria-label="Project source on GitHub"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="7" cy="5" r="2.5"/><circle cx="7" cy="19" r="2.5"/><circle cx="17" cy="7" r="2.5"/><path d="M7 8v8.5M17 10a7 7 0 0 1-7 7H7"/></svg> GitHub</a>
           <button class="icon-button theme-button" type="button" data-theme-toggle="" aria-label="Change color theme">
             <span data-theme-icon="" aria-hidden="true">◐</span>
           </button>
@@ -73,6 +76,8 @@
             <li><a href="phase-2-engines.html">Next: Phase 2 ↗</a></li>
             <li><a href="../curriculum.html">26-day curriculum ↗</a></li>
             <li><a href="../index.html">Systems guide ↗</a></li>
+            <li><a href="../systems/index.html">Distributed inference lab</a></li>
+            <li><a href="../reading/index.html">Reading library</a></li>
           </ul>
         </nav>
         <div class="sidebar-note">
@@ -1441,7 +1446,8 @@
 
         <section id="day-5" class="content-section" data-search-group="Day 5" data-search-item="" data-keywords="KV cache keys values prefill decode memory bytes per token start_pos recomputation">
           <div class="phase-banner">
-            <div><span class="phase-number">Day 05</span><h2>The KV cache trades memory for avoided recomputation</h2></div>
+            <div><span class="phase-number">Day 05</span><h2>The KV cache trades memory for avoided recomputation</h2>
+          <p><a href="../models/index.html#compare">Compare the KV shapes of actual model checkpoints</a></p></div>
             <p>Compute past keys and values once; let each new query read them again.</p>
           </div>
 

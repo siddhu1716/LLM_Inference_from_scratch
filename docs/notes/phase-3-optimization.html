@@ -12,13 +12,14 @@
       content="LLM inference, quantization, FP8, INT4, GPTQ, AWQ, SmoothQuant, speculative decoding, prefix caching, tensor parallelism, disaggregated serving"
     >
     <meta name="author" content="LLM Inference from Scratch">
-    <meta name="theme-color" content="#3156d3">
+    <meta name="theme-color" content="#112c2a">
     <meta property="og:type" content="article">
     <meta property="og:title" content="Phase 3 Optimization Textbook | LLM Inference from Scratch">
     <meta property="og:description" content="Six detailed lessons that connect numerical compression to distributed LLM serving.">
     <title>Days 13–18: Optimization Textbook | LLM Inference from Scratch</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%233156d3'/><text x='32' y='40' text-anchor='middle' font-size='24' font-family='sans-serif' font-weight='700' fill='white'>P3</text></svg>">
-    <link rel="stylesheet" href="../styles.css?v=7">
+    <link rel="icon" href="../assets/mark.svg">
+    <link rel="stylesheet" href="../styles.css?v=8">
+    <script src="../theme.js" defer></script>
     <script src="../app.js" defer></script>
     <style>
       .textbook-hero h1 { max-width: 16ch; }
@@ -57,6 +58,7 @@
         .system-node:not(:last-child)::after { display: none; }
       }
     </style>
+    <noscript><style>.topbar .search-wrap,.top-actions button{display:none} @media(max-width:56rem){.sidebar{position:static;visibility:visible;transform:none;max-height:none;width:auto;border:0;box-shadow:none}.layout{display:block}}</style></noscript>
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -73,6 +75,7 @@
           <ul id="search-results" class="search-results" aria-label="Search results" hidden></ul>
         </div>
         <div class="top-actions">
+          <a class="header-repo" href="https://github.com/siddhu1716/LLM_Inference_from_scratch" aria-label="Project source on GitHub"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="7" cy="5" r="2.5"/><circle cx="7" cy="19" r="2.5"/><circle cx="17" cy="7" r="2.5"/><path d="M7 8v8.5M17 10a7 7 0 0 1-7 7H7"/></svg> GitHub</a>
           <button class="icon-button theme-button" type="button" data-theme-toggle aria-label="Change color theme"><span data-theme-icon aria-hidden="true">◐</span></button>
           <button class="icon-button menu-button" type="button" data-menu-toggle aria-label="Open section navigation" aria-controls="section-navigation" aria-expanded="false"><span aria-hidden="true">☰</span></button>
         </div>
@@ -99,6 +102,8 @@
             <li><a href="phase-2-engines.html">Previous: Phase 2 ↗</a></li>
             <li><a href="phase-4-production.html">Next: Phase 4 ↗</a></li>
             <li><a href="../curriculum.html">26-day curriculum ↗</a></li>
+            <li><a href="../systems/index.html">Distributed inference lab</a></li>
+            <li><a href="../reading/index.html">Reading library</a></li>
           </ul>
         </nav>
         <div class="sidebar-note"><strong>Reading promise</strong><br>Every optimization is connected to correctness, hardware, and an observable serving metric. “Smaller” and “faster” are never assumed to mean the same thing.</div>
@@ -187,8 +192,8 @@
 
           <h3>Code connection and decision guide</h3>
           <p>The learning implementation stores one INT8 scale for a matrix and uses grouped INT4 with packed nibbles. Read the validation checks as part of the algorithm: empty tensors, group sizes, scale counts, signed nibble recovery, and clipping all matter.</p>
-          <a class="source-link" href="../../src/mini_infer/optimizations/int8_quantization.py">mini_infer/optimizations/int8_quantization.py</a>
-          <a class="source-link" href="../../src/mini_infer/optimizations/int4_quantization.py">mini_infer/optimizations/int4_quantization.py</a>
+          <a class="source-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/int8_quantization.py">mini_infer/optimizations/int8_quantization.py</a>
+          <a class="source-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/int4_quantization.py">mini_infer/optimizations/int4_quantization.py</a>
           <div class="card decision"><h4>Choose deliberately</h4><ul><li>Use BF16/FP16 for a quality baseline and when kernels dominate engineering cost.</li><li>Try FP8 for native recent accelerators and W8A8-style throughput.</li><li>Try INT8 when portability and predictable accuracy matter.</li><li>Try grouped INT4 when model fit or decode bandwidth is the hard limit.</li><li>Consider NVFP4 only when the serving stack and hardware support its actual kernels.</li></ul></div>
           <div class="card mistakes"><h4>Common mistakes</h4><ul><li>Counting codes but forgetting scale, zero-point, alignment, and padding bytes.</li><li>Assuming an INT4 file means INT4 multiplication or a 4× speedup.</li><li>Using one global scale in the presence of outliers.</li><li>Comparing quality with different prompts, tokenizers, or sampling seeds.</li><li>Ignoring accumulation dtype and overflow.</li><li>Quoting peak hardware FLOPS for a bandwidth-bound decode workload.</li></ul></div>
 
@@ -405,8 +410,8 @@
 
           <h3>Code connection and decision guide</h3>
           <p>The project’s grouped INT4 and symmetric INT8 modules are deliberately small foundations rather than full GPTQ/AWQ/SmoothQuant implementations. Use them to observe how a PTQ algorithm ultimately must emit concrete codes, scales, group size, packing order, and reconstruction rules. The curriculum notebook experiments sit conceptually above these primitives.</p>
-          <a class="source-link" href="../../src/mini_infer/optimizations/int4_quantization.py">grouped INT4 primitive</a>
-          <a class="source-link" href="../../src/mini_infer/optimizations/int8_quantization.py">symmetric INT8 primitive</a>
+          <a class="source-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/int4_quantization.py">grouped INT4 primitive</a>
+          <a class="source-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/int8_quantization.py">symmetric INT8 primitive</a>
           <div class="card decision"><h4>Decision guide</h4><ul><li>Start with RTN only as a baseline or at forgiving precision.</li><li>Choose GPTQ when offline time is acceptable and proven kernels/checkpoints exist for weight-only INT4.</li><li>Choose AWQ for practical W4A16 deployment with activation-aware quality and strong runtime support.</li><li>Choose SmoothQuant when W8A8 hardware acceleration is the goal and activation outliers are the obstacle.</li><li>Keep sensitive layers, embeddings, or output heads at higher precision if evaluation justifies the mixed policy.</li></ul></div>
           <div class="card mistakes"><h4>Common mistakes</h4><ul><li>Calibrating only on short, easy, single-language prompts.</li><li>Calling XᵀX “the exact model Hessian” rather than a layer-local approximation.</li><li>Applying a scale without its inverse companion, changing the function before quantization.</li><li>Assuming an algorithm name guarantees a compatible checkpoint layout.</li><li>Optimizing layer MSE while ignoring generation and product quality.</li><li>Benchmarking a dequantize-then-FP16 fallback as if it were a native low-bit kernel.</li></ul></div>
 
@@ -537,8 +542,8 @@
 
           <h3>Code connection and decision guide</h3>
           <p><code>speculative_decode_step</code> normalizes distributions, verifies left to right, samples the positive residual at rejection, and samples a bonus after full acceptance. <code>NGramProposer</code> demonstrates a zero-model candidate source. They are inspectable correctness models, not fused production kernels.</p>
-          <a class="source-link" href="../../src/mini_infer/optimizations/speculative_decoding.py">mini_infer/optimizations/speculative_decoding.py</a>
-          <a class="source-link" href="../../src/mini_infer/optimizations/ngram_proposer.py">mini_infer/optimizations/ngram_proposer.py</a>
+          <a class="source-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/speculative_decoding.py">mini_infer/optimizations/speculative_decoding.py</a>
+          <a class="source-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/ngram_proposer.py">mini_infer/optimizations/ngram_proposer.py</a>
           <div class="card decision"><h4>Decision guide</h4><ul><li>Use n-gram proposals for copy-heavy RAG, code, and repeated templates.</li><li>Use draft-target when a compatible small model has high agreement and spare memory is available.</li><li>Consider Medusa/MTP heads when model modification and tree-verification support are practical.</li><li>Consider EAGLE when a target-specific draft artifact and mature runtime integration exist.</li><li>Disable or shorten speculation dynamically for low acceptance, high server load, or compute-saturated batches.</li></ul></div>
           <div class="card mistakes"><h4>Common mistakes</h4><ul><li>Keeping tokens merely because target probability exceeds a threshold.</li><li>Resampling from p rather than the positive residual after rejection.</li><li>Using logits conditioned on a rejected draft tail.</li><li>Applying different temperature or masks to draft and target distributions.</li><li>Reporting accepted tokens without end-to-end latency and throughput.</li><li>Calling “same quality” the same as distributional exactness.</li></ul></div>
 
@@ -684,8 +689,8 @@
           <p>Prefix caching primarily improves time to first token and reduces prefill compute. It may increase throughput by freeing compute, but decode time after the divergent suffix remains. A “hit rate” by request is misleading: one hit may save ten tokens and another ten thousand. Track cached tokens, prefill FLOPs avoided, byte residency, lookup latency, eviction churn, and P50/P95/P99 TTFT. Hardware shifts the tier boundary: fast coherent CPU–GPU links make host offload attractive; slow PCIe or oversubscribed networks favor recomputation.</p>
 
           <h3>Code connection and decision guide</h3>
-          <a class="source-link" href="../../src/mini_infer/engine/prefix_cache.py">mini_infer/engine/prefix_cache.py</a>
-          <a class="source-link" href="../../src/mini_infer/optimizations/kv_cache_estimator.py">mini_infer/optimizations/kv_cache_estimator.py</a>
+          <a class="source-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/prefix_cache.py">mini_infer/engine/prefix_cache.py</a>
+          <a class="source-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/kv_cache_estimator.py">mini_infer/optimizations/kv_cache_estimator.py</a>
           <p>Trace <code>insert</code>, <code>longest_prefix</code>, <code>release</code>, and <code>evict_one</code>. The implementation refuses to evict when every entry is pinned, turning memory pressure into an explicit signal rather than corrupting active state. The estimator makes the K/V factor and GQA-sensitive head count visible.</p>
           <div class="card decision"><h4>Decision guide</h4><ul><li>First canonicalize prompts: stable system text and tools before variable user content.</li><li>Use token/block identity, not raw string similarity.</li><li>Route with locality plus load, not affinity alone.</li><li>Keep hot shared prefixes in HBM when saved prefill value exceeds capacity cost.</li><li>Offload only when effective fetch plus queue time beats re-prefill.</li><li>Partition identity and policy by model, adapter, tenant, and security boundary.</li></ul></div>
           <div class="card mistakes"><h4>Common mistakes</h4><ul><li>Inserting timestamps or request IDs near the beginning of a prompt.</li><li>Counting character equality instead of token equality.</li><li>Ignoring cache-key dimensions such as LoRA or model revision.</li><li>Evicting pinned blocks that active requests still reference.</li><li>Optimizing hit rate while making queue imbalance worse.</li><li>Assuming remote cache always beats recomputation.</li></ul></div>
@@ -703,7 +708,7 @@
           <ol class="exercise-list"><li>Reorder a prompt containing system rules, tool schemas, current time, user profile, and user query to maximize stable prefix length without changing semantics.</li><li>Use the KV formula for L=80, Hkv=8, Dhead=128, T=32K, e=2. Compare transfer on 32, 100, and 900 GB/s links.</li><li>Design a worker score using overlap tokens, prefill rate, queue length, and memory pressure. Test two hypothetical workers.</li><li>Extend the learning cache design from entry capacity to byte capacity and state which metadata is needed.</li></ol>
           <div class="deep-dive" data-search-item data-keywords="hash block prefix caching radix tree RadixAttention chained hash full blocks KV offload CPU DRAM NVMe remote KV store LMCache Mooncake cache-aware routing approximate tree SGLang router" id="day16-deep-dive">
             <h4>Deep dive: hash-block versus radix prefix caching, offload tiers, and cache-aware routing</h4>
-            <p><strong>Hash blocks.</strong> vLLM divides each sequence’s KV into fixed-size blocks. A full block receives a hash computed from its own tokens <em>and the hash of the block before it</em>, plus extra keys such as a LoRA adapter ID or multimodal input hashes. Because the parent hash is folded in, two equal keys imply two equal prefixes, so lookup is just one dictionary probe per block in order. Only full blocks are cacheable. Freed blocks keep their hash while they wait in the eviction queue, so a prefix that returns soon can be revived without recomputation.</p>
+            <p><strong>Hash blocks.</strong> vLLM divides each sequence’s KV into fixed-size blocks. A full block receives a hash computed from its own tokens <em>and the hash of the block before it</em>, plus extra keys such as a LoRA adapter ID or multimodal input hashes. Because the parent hash is folded in, two equal keys imply two equal prefixes, so lookup is just one dictionary probe per block in order. In this example the hash unit equals the physical block size, so matches end at full-block boundaries. Compatible vLLM cache managers can use finer hash units and copy a matched partial block before writing to it. Freed blocks keep their hash while they wait in the eviction queue, so a prefix that returns soon can be revived without recomputation.</p>
             <p><strong>Radix trees.</strong> SGLang’s RadixAttention keeps a tree whose edges are token runs and whose nodes point at KV memory. Matching walks down to the longest shared prefix at token granularity; inserting splits an edge where two requests diverge; eviction removes least-recently-used leaves that no running request references. The tree makes sharing structure explicit—many chats branching from one system prompt—while hash blocks are simpler to distribute across processes and align naturally with paged allocators. Both are exact; they differ in bookkeeping and granularity.</p>
             <p><strong>Offload tiers.</strong> When HBM fills, eviction normally means recomputing later. Offloading keeps evicted blocks in CPU DRAM, local NVMe, or a shared remote store such as LMCache or Mooncake Store. Each step down adds capacity and latency, so the fetch-versus-re-prefill race from earlier in this chapter decides whether a tier pays off for a given prefix length. A shared tier has a bonus: one replica can reuse a prefix that another replica computed.</p>
             <p><strong>Cache-aware routing.</strong> Caches live on replicas, so the router largely decides the hit rate. SGLang’s router keeps an approximate radix tree of recently routed prompts for each worker and prefers the worker with the longest match unless load imbalance passes a threshold. KV-aware routers in projects such as NVIDIA Dynamo and the Kubernetes Gateway API Inference Extension follow the same idea: estimate overlap, then trade it against queue depth and memory pressure.</p>
@@ -726,7 +731,7 @@
               <text x="316" y="69" text-anchor="middle" class="muted">h2=H(h1,t8–t11)</text>
               <line class="edge" x1="124" y1="55" x2="136" y2="55" marker-end="url(#d16svg-arrow)"/>
               <line class="edge" x1="248" y1="55" x2="260" y2="55" marker-end="url(#d16svg-arrow)"/>
-              <text x="12" y="100" text-anchor="start" class="muted">Only full blocks are hashed; a partial tail is recomputed.</text>
+              <text x="12" y="100" text-anchor="start" class="muted">Here the hash unit is one physical block.</text>
               <text x="12" y="116" text-anchor="start" class="muted">Lookup = one hash-table probe per block, in order.</text>
               <text x="12" y="132" text-anchor="start" class="muted">Parent hash inside each key: equal key ⇒ equal whole prefix.</text>
               <rect class="node-teal" x="400" y="32" width="130" height="32" rx="8"/>
@@ -795,7 +800,8 @@
         </section>
 
         <section id="day-17" class="content-section chapter" data-search-group="Day 17">
-          <div class="section-heading"><div><p class="eyebrow">Day 17 · Scale-out</p><h2>Parallelism: divide work, then pay to reconnect it</h2></div><p>Tensor, pipeline, data, expert, and context parallelism split different dimensions. Every split creates a communication pattern and a latency/throughput consequence.</p></div>
+          <div class="section-heading"><div><p class="eyebrow">Day 17 · Scale-out</p><h2>Parallelism: divide work, then pay to reconnect it</h2>
+          <p><a href="../systems/fabric.html#token-messages">Trace a token through the parallel ranks</a></p></div><p>Tensor, pipeline, data, expert, and context parallelism split different dimensions. Every split creates a communication pattern and a latency/throughput consequence.</p></div>
           <p class="chapter-lead">Imagine producing a newspaper. Several printers can each print complete independent editions (data parallelism). Specialists can print different color layers of the same page and combine them (tensor parallelism). Stations can perform layout, printing, folding, and packing in a line (pipeline parallelism). Separate desks can handle sports, finance, and culture articles selected by a router (expert parallelism). A very wide poster can be divided into panels whose boundary information must be exchanged (context parallelism). “Use more workers” is incomplete until we say what is divided and how results reunite.</p>
 
           <h3>First principles: fit, latency, and throughput are different goals</h3>
@@ -852,7 +858,7 @@
           <p>Topology is part of the algorithm. “Eight GPUs” could mean eight devices behind one high-speed fabric, two four-GPU islands crossing PCIe, or eight hosts on a congested network. Place chatty TP groups on fastest links; place lower-frequency PP boundaries across nodes; keep expert communication within high-bisection groups when possible; and replicate with DP across failure domains. Hardware-aware rank mapping often matters as much as the degree values.</p>
 
           <h3>Code connection and decision guide</h3>
-          <a class="source-link" href="../../src/mini_infer/optimizations/parallel_planning.py">mini_infer/optimizations/parallel_planning.py</a>
+          <a class="source-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/parallel_planning.py">mini_infer/optimizations/parallel_planning.py</a>
           <p>The planner makes five axes explicit, verifies divisibility, computes world size as their product, assigns pipeline layer ranges, and optionally assigns context ranges. It does not simulate collectives or speedup. That separation is healthy: a partition plan is necessary, not sufficient, evidence of performance.</p>
           <div class="table-wrap"><table class="comparison"><thead><tr><th>Need</th><th>First axis to consider</th><th>Main cost</th><th>Primary metric</th></tr></thead><tbody>
             <tr><td>Model does not fit one device</td><td>TP within node; PP across nodes</td><td>Collectives or stage transfer</td><td>Feasibility, latency</td></tr>
@@ -961,7 +967,8 @@
         </section>
 
         <section id="day-18" class="content-section chapter" data-search-group="Day 18">
-          <div class="section-heading"><div><p class="eyebrow">Day 18 · Specialization</p><h2>Prefill/decode disaggregation: move state between optimized pools</h2></div><p>Prefill favors parallel arithmetic; decode repeatedly streams weights and KV. Separate pools isolate interference, but the KV handoff becomes a first-class distributed operation.</p></div>
+          <div class="section-heading"><div><p class="eyebrow">Day 18 · Specialization</p><h2>Prefill/decode disaggregation: move state between optimized pools</h2>
+          <p><a href="../systems/fabric.html#afd">Compare a phase handoff with an attention/FFN split</a></p></div><p>Prefill favors parallel arithmetic; decode repeatedly streams weights and KV. Separate pools isolate interference, but the KV handoff becomes a first-class distributed operation.</p></div>
           <p class="chapter-lead">A parcel service uses a sorting hub for a huge burst of parallel scanning, then local vans for incremental doorstep delivery. Asking every van to run a sorting warehouse wastes equipment; asking one warehouse to drive every route creates queues. Disaggregated inference assigns prompt processing to prefill workers and token-by-token generation to decode workers. The handoff—the KV cache plus request metadata—is the parcel transfer whose size, route, and timing decide whether specialization helps.</p>
 
           <h3>First principles: two arithmetic regimes</h3>
@@ -984,7 +991,7 @@
             <div class="system-node"><strong>4 · Transfer</strong>Move KV directly or through a tier; send block metadata.</div>
             <div class="system-node"><strong>5 · Decode</strong>Confirm ownership, continue positions, sample, and stream.</div>
           </div>
-          <p>The router should select a decode worker before or during prefill so memory can be reserved and transfer can overlap tail computation where supported. The handoff needs request ID, sequence length, block table, model/shard identity, KV dtype/layout, positions, and completion signaling. The receiver must not decode from partially transferred blocks. Retries need idempotent ownership rules: after a timeout, the system must know whether to reuse received blocks, discard them, or re-prefill.</p>
+          <p>The router should select a decode worker before or during prefill so memory can be reserved and transfer can overlap tail computation where supported. The handoff needs request identity, model and shard identity, sequence length and positions, compatible KV layout, a mapping between source and destination storage, and completion signaling. Physical block and slot IDs are local to their owning pools. The receiver must not decode from partially transferred blocks. Retries need idempotent ownership rules: after a timeout, the system must know whether to reuse received blocks, discard them, or re-prefill.</p>
           <p>KV layouts must be compatible. If prefill uses TP=8 and decode TP=2, the cache may need redistribution, not a simple byte copy. Head ownership, layer partitioning, page size, alignment, dtype, and tensor layout determine which source rank sends to which destination rank. A transport library can coordinate GPU-direct movement over NVLink, PCIe, or RDMA, but it cannot remove the volume or topology constraints.</p>
 
           <h3>The transfer equation and break-even condition</h3>
@@ -1010,8 +1017,8 @@
           <p>Measure TTFT, ITL, end-to-end latency, transfer duration and bandwidth, source/destination queue time, KV bytes, allocation failures, prefill/decode utilization, and SLO goodput. A high link utilization is not inherently good if transfers delay decode collectives. Compare against a tuned colocated baseline at the same traffic and quality. Model isolated microbenchmarks do not capture queueing interference—the principal reason to disaggregate.</p>
 
           <h3>Code connection and decision guide</h3>
-          <a class="source-link" href="../../src/mini_infer/optimizations/disaggregated_routing.py">mini_infer/optimizations/disaggregated_routing.py</a>
-          <a class="source-link" href="../../src/mini_infer/optimizations/kv_cache_estimator.py">mini_infer/optimizations/kv_cache_estimator.py</a>
+          <a class="source-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/disaggregated_routing.py">mini_infer/optimizations/disaggregated_routing.py</a>
+          <a class="source-link" href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/kv_cache_estimator.py">mini_infer/optimizations/kv_cache_estimator.py</a>
           <p><code>PrefillDecodeRouter</code> keeps distinct pools, chooses the least-loaded worker with deterministic tie-breaking, and records which prefill worker supplied each request. Its module docstring correctly warns that this models routing decisions, not a distributed runtime or a promised speedup. Combine it with the estimator to price the missing handoff.</p>
           <div class="card decision"><h4>Decision guide</h4><ul><li>Prefer colocated serving for modest traffic, short prompts, or slow/contended interconnects.</li><li>Consider disaggregation when long prefills disrupt decode SLOs at sustained scale.</li><li>Compute KV bytes and achieved transfer time for real model geometry and topology.</li><li>Plan destination memory, TP-layout conversion, retry ownership, and backpressure before rollout.</li><li>Choose pool ratios from input/output token demand distributions, not request counts alone.</li><li>Canary against equal-cost colocated capacity and optimize SLO goodput, not peak utilization.</li></ul></div>
           <div class="card mistakes"><h4>Common mistakes</h4><ul><li>Calling prefill always compute-bound and decode always bandwidth-bound without profiling shapes.</li><li>Using link peak instead of achieved end-to-end transfer bandwidth.</li><li>Ignoring KV redistribution when source and destination sharding differ.</li><li>Finishing prefill without reserving decode KV capacity.</li><li>Comparing mean latency while tail ITL or TTFT worsens.</li><li>Omitting failure ownership, cancellation, and security of transferred user state.</li></ul></div>

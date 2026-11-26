@@ -7,12 +7,15 @@
       name="description"
       content="Compare how one token travels through vLLM and SGLang: processes, source files, schedulers, KV caches, model runners, samplers, streaming, and features, pinned to exact commits."
     >
-    <meta name="theme-color" content="#3156d3">
+    <meta name="theme-color" content="#112c2a">
     <title>Engines Overview: vLLM vs SGLang | LLM Inference from Scratch</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%233156d3'/><text x='32' y='40' text-anchor='middle' font-size='22' font-family='sans-serif' font-weight='700' fill='white'>ENG</text></svg>">
-    <link rel="stylesheet" href="../styles.css?v=7">
-    <link rel="stylesheet" href="lifecycle.css?v=1">
-    <script src="../app.js?v=2" defer></script>
+    <link rel="icon" href="../assets/mark.svg">
+    <link rel="stylesheet" href="../styles.css?v=8">
+    <link rel="stylesheet" href="lifecycle.css?v=3">
+    <script src="../theme.js" defer></script>
+    <script src="request-lab.js?v=1" defer></script>
+    <script src="../app.js?v=3" defer></script>
+    <noscript><style>.topbar .search-wrap,.top-actions button{display:none} @media(max-width:56rem){.sidebar{position:static;visibility:visible;transform:none;max-height:none;width:auto;border:0;box-shadow:none}.layout{display:block}}</style></noscript>
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -36,6 +39,7 @@
           <ul id="search-results" class="search-results" aria-label="Search results" hidden></ul>
         </div>
         <div class="top-actions">
+          <a class="header-repo" href="https://github.com/siddhu1716/LLM_Inference_from_scratch" aria-label="Project source on GitHub"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="7" cy="5" r="2.5"/><circle cx="7" cy="19" r="2.5"/><circle cx="17" cy="7" r="2.5"/><path d="M7 8v8.5M17 10a7 7 0 0 1-7 7H7"/></svg> GitHub</a>
           <button class="icon-button theme-button" type="button" data-theme-toggle aria-label="Change color theme">
             <span data-theme-icon aria-hidden="true">◐</span>
           </button>
@@ -59,6 +63,8 @@
         <nav>
           <ul class="nav-list">
             <li><a href="#engines-overview" aria-current="true">Overview</a></li>
+            <li><a href="#request-lab">Request lab</a></li>
+            <li><a href="memory.html#address-lab">KV address inspector</a></li>
             <li><a href="#pinned-sources">Pinned sources</a></li>
             <li><a href="#process-layout">Process layout</a></li>
             <li><a href="#token-path">One token, two paths</a></li>
@@ -81,24 +87,68 @@
       </aside>
 
       <main id="main-content">
-        <section id="engines-overview" class="hero curriculum-hero" data-search-group="Engines overview" data-search-item data-keywords="vLLM SGLang comparison overview token lifecycle">
-          <p class="eyebrow">Engine internals</p>
-          <h1>One token, two production engines.</h1>
-          <p class="hero-copy">
-            vLLM and SGLang both turn an OpenAI-style request into streamed tokens
-            using continuous batching, reusable KV cache, CUDA graphs, and
-            optimized attention kernels. They divide the work differently. This page
-            is the map; the two deep dives animate every step and show the exact source
-            files a token triggers.
-          </p>
-          <div class="hero-actions">
-            <a class="button" href="vllm.html#lifecycle">Watch the vLLM lifecycle</a>
-            <a class="button button-secondary" href="sglang.html#lifecycle">Watch the SGLang lifecycle</a>
+        <nav class="engine-switcher" aria-label="Engine guides">
+          <a href="index.html" aria-current="page">Compare engines</a>
+          <a href="vllm.html">vLLM</a>
+          <a href="sglang.html">SGLang</a>
+          <a href="memory.html">KV memory lab</a>
+        </nav>
+        <section id="engines-overview" class="hero engine-cover curriculum-hero" data-search-group="Engines overview" data-search-item data-keywords="vLLM SGLang comparison overview token lifecycle">
+          <div class="engine-cover-text">
+            <p class="eyebrow">Engine internals</p>
+            <h1>One request, two inference engines.</h1>
+            <p class="hero-copy">Trace the same chat through vLLM and SGLang. Switch engines at any step to see who schedules the work, where cached tokens live and how the reply reaches the client.</p>
+            <div class="hero-actions">
+              <a class="button" href="#request-lab">Compare a request</a>
+              <a class="button button-secondary" href="vllm.html#lifecycle">vLLM source trace</a>
+              <a class="button button-secondary" href="sglang.html#lifecycle">SGLang source trace</a>
+            </div>
+            <details class="engine-snapshot">
+              <summary>Pinned source versions</summary>
+              <div class="engine-hero-meta">
+                <a href="https://github.com/vllm-project/vllm/tree/7b77ed581d92fa14e34ab43344837bb1ca1b4257">vLLM @ 7b77ed5</a>
+                <a href="https://github.com/sgl-project/sglang/tree/07a85353d6c6be47a268e33a416ad537985ef262">SGLang @ 07a8535</a>
+                <span>snapshots from 2026-10-31</span>
+              </div>
+            </details>
           </div>
-          <div class="engine-hero-meta">
-            <a href="https://github.com/vllm-project/vllm/tree/7b77ed581d92fa14e34ab43344837bb1ca1b4257">vLLM @ 7b77ed5</a>
-            <a href="https://github.com/sgl-project/sglang/tree/07a85353d6c6be47a268e33a416ad537985ef262">SGLang @ 07a8535</a>
-            <span>snapshots from 2026-10-31</span>
+          <figure class="engine-topology">
+            <figcaption>Shared request flow</figcaption>
+            <ol>
+              <li><strong>API server</strong><span>Receive messages and tokenize the prompt</span>
+                <small>token IDs</small>
+              </li>
+              <li><strong>Scheduler</strong><span>Choose requests and assign KV space</span>
+                <small>batch and KV locations</small>
+              </li>
+              <li><strong>GPU</strong><span>Prefill, then decode one token at a time</span>
+              </li>
+            </ol>
+            <p>Sampled IDs return to the serving layer for streaming.</p>
+          </figure>
+        </section>
+
+        <section id="request-lab" class="content-section request-lab-section" data-search-group="Request lab" data-search-item data-keywords="engine comparison request lab beginner trace cold warm cache cancellation TTFT prefill decode lifecycle">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Request lab</p>
+              <h2>Follow one reply.</h2>
+            </div>
+            <p>One chat prompt, 40 input tokens and room for three output tokens. Try the same request with a cold cache and with a shared prefix.</p>
+          </div>
+          <div class="request-lab" data-request-lab="vllm" hidden></div>
+          <noscript><p>Tokenize the chat, find reusable KV, process the remaining prompt and sample &ldquo;Blue&rdquo;. Two decode passes add &ldquo; sky&rdquo; and &ldquo;.&rdquo;. The engine streams &ldquo;Blue sky.&rdquo; and releases the request. Read the full <a href="vllm.html#file-trace">vLLM trace</a> or <a href="sglang.html#file-trace">SGLang trace</a> for each hand-off.</p></noscript>
+          <p class="lab-footnote">This is an illustrated request with example tokens. The counts follow one request through ordinary decoding on a single GPU. <a href="../index.html#request-diagram">Open the editable request diagram</a>, then <a href="../systems/index.html#capacity">estimate how many concurrent requests fit on one GPU</a>.</p>
+          <div class="lab-exercises">
+            <details>
+              <summary>Why does the warm run compute ten positions for a three-token reply?</summary>
+              <p>The first 32 prompt IDs match earlier work with compatible model and cache settings. Prefill computes the remaining eight positions and supplies scores for the first output. Each of the next two decode passes computes one position. That makes 8 + 1 + 1 = 10, compared with 40 + 1 + 1 = 42 on the cold run. The saved positions still contribute to attention through cached KV.</p>
+            </details>
+            <details>
+              <summary>How can I trace a scheduler step in Python?</summary>
+              <p>From a checkout with the package installed, run <code>python examples/engine_walkthrough.py</code>. Follow the request named <code>first</code> through prefill and two decode passes. The teaching callback increments the last token ID, so you can predict the three outputs as 3, 4 and 5. The example prints the request states, token events and final metrics.</p>
+              <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/examples/engine_walkthrough.py">Open the runnable example</a>
+            </details>
           </div>
         </section>
 
@@ -355,7 +405,7 @@
               A full block’s identity depends on its tokens and on the identity of the
               blocks before it, so two requests that share an entire prefix produce the
               same chain of block identities. The KV cache manager looks up that chain to
-              find already-computed blocks before allocating new ones.
+              find already-computed blocks before allocating new ones. Backend constraints and hybrid groups can change the effective block size and hit alignment. <a href="memory.html#prefix-reuse">Compare prefix matching with address translation</a>.
             </p>
             <p>
               SGLang organizes reusable prefixes as a radix tree. Each path from the root

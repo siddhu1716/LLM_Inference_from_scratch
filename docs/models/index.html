@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#112c2a">
+  <meta name="description" content="Trace a token through dense decoders, grouped-query attention, routed experts and DeepSeek latent attention. Compare real model configurations and their inference footprints.">
+  <title>Model architecture atlas · Inference from Scratch</title>
+  <link rel="icon" href="../assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../systems/systems.css"><link rel="stylesheet" href="models.css">
+  <script src="../theme.js" defer></script><script src="../systems/chapters.js" defer></script><script src="models.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#content">Skip to model architectures</a>
+  <header class="site-header"><div class="wrap header-inner">
+    <a class="brand" href="../index.html"><img src="../assets/mark.svg" alt="" width="32" height="32">Inference from Scratch</a>
+    <nav aria-label="Site"><a href="../index.html#request-replay">Token lab</a><a href="../engines/index.html">Engine guides</a><a href="../systems/index.html">Systems lab</a><button class="theme-switch" type="button" data-theme-toggle aria-label="Change color theme"><span data-theme-icon aria-hidden="true">◐</span></button></nav>
+  </div></header>
+  <main id="content">
+    <div class="hero"><div class="wrap hero-inner">
+      <div><p class="kicker">Model internals</p><h1>Model architecture atlas</h1>
+        <p class="lede">Two models can answer the same prompt while storing different tensors and calling different experts. Follow one token through their layers, then work out what the server must keep in memory.</p>
+        <a class="action" href="#compare">Compare checkpoints</a></div>
+      <figure class="hero-diagram atlas-figure">
+        <div class="diagram-head"><span>Inside a decoder layer</span><span>One token position</span></div>
+        <ol class="signal"><li><b>Hidden state</b><span>One vector enters the layer</span></li><li><b>Attention</b><span>Read the available prefix history</span></li><li><b>Feed-forward network</b><span>Apply dense weights or route to experts</span></li><li><b>Updated state</b><span>Pass one vector to the next layer</span></li></ol>
+        <figcaption>Normalization and residual additions surround the two transformations.</figcaption>
+      </figure>
+    </div></div>
+    <div class="wrap guide-grid">
+      <aside><nav class="chapters" aria-label="In this guide"><h2>In this guide</h2><a href="#decoder">One token in a decoder</a><a href="#compare">Compare cache shapes</a><a href="#moe">Route through experts</a><a href="#mla">Unpack DeepSeek MLA</a><a href="#r1">Full R1 and its distills</a><a href="#visualizer">Explore V3 in 2D and 3D</a><a href="#other">Other sequence models</a><a href="#serving">Connect to the engine</a></nav></aside>
+      <article>
+        <section id="decoder">
+          <p class="kicker">Dense decoder</p><h2>Follow one position</h2>
+          <p>Give a decoder the prompt “Tea is”. For this example assume two token IDs. Prefill computes both positions in each layer under a causal mask. The final position’s logits give a distribution over the vocabulary. Suppose the sampler chooses “hot”. On the next step the decoder receives that token and consults the history built for “Tea is”. Actual token boundaries depend on the checkpoint’s tokenizer.</p>
+          <ol class="sequence"><li><strong>Embed the ID</strong><p>A learned table maps each ID to a row with <i>d</i> numbers. For the Llama-8B distill, one row contains 4,096 values. A batch of one two-token prompt starts with a hidden tensor of shape [1, 2, 4,096].</p></li>
+            <li><strong>Read earlier positions</strong><p>Within each layer, normalization and learned projections produce queries, keys and values. RoPE rotates query and key coordinates to represent position. Attention weights mix values from the permitted positions. A residual connection adds the result back to the input.</p></li>
+            <li><strong>Transform each position</strong><p>A dense feed-forward network applies the same learned matrices independently at every position. Gated networks combine two intermediate projections before mapping back to <i>d</i>. A second residual addition carries the updated vector onward.</p></li>
+            <li><strong>Predict again</strong><p>After the last layer, final normalization and a vocabulary projection turn the last hidden vector into logits. The sampler chooses an ID. That new ID gains cache entries when it is fed back through the model.</p></li></ol>
+          <div class="worked"><h3>Count query heads and KV heads separately</h3><p>At one Llama-8B distill layer and one decode position, the query has shape [1, 1, 32, 128]. New keys and values each have shape [1, 1, 8, 128]. Four query heads share each KV head. This grouped-query attention (GQA) design preserves 32 distinct queries while reducing persistent KV storage.</p><p class="refs"><a href="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/blob/6a6f4aa4197940add57724a7707d069478df56b1/config.json">Llama distill dimensions</a> · <a href="https://arxiv.org/abs/2305.13245">GQA paper</a> · <a href="../notes/phase-1-mechanics.html#day-4">Layer-by-layer notes</a></p></div>
+        </section>
+        <section id="compare">
+          <p class="kicker">Cache shape explorer</p><h2>Budget the history for two checkpoints</h2>
+          <p>Model weights are shared by requests on a replica. Attention history belongs to individual token paths. Hold the number of cached positions fixed to compare the effect of layer count, head sharing and latent compression.</p>
+          <div class="lab">
+            <div class="lab-head"><h3>Logical attention-cache payload</h3><span class="mono">BF16 · 2 bytes per value</span></div>
+            <div class="inputs model-inputs" id="model-inputs" hidden>
+              <label>First checkpoint<select id="model-a"><option value="llama" selected>R1-Distill-Llama-8B</option><option value="qwen">R1-Distill-Qwen-1.5B</option><option value="mix">Mixtral-8x7B-v0.1</option><option value="v3">DeepSeek-V3</option><option value="r1">DeepSeek-R1 (full)</option></select></label>
+              <label>Second checkpoint<select id="model-b"><option value="llama">R1-Distill-Llama-8B</option><option value="qwen">R1-Distill-Qwen-1.5B</option><option value="mix">Mixtral-8x7B-v0.1</option><option value="v3" selected>DeepSeek-V3</option><option value="r1">DeepSeek-R1 (full)</option></select></label>
+              <label>Cached tokens per sequence<select id="context"><option>512</option><option selected>4096</option><option>8192</option><option>32768</option></select></label>
+              <label>Independent sequences<select id="sequences"><option selected>1</option><option>4</option><option>16</option><option>64</option></select></label>
+            </div>
+            <div class="pair">
+              <div class="output-model" data-result="a">
+            <p class="kicker" data-field="family">Dense · GQA</p><h4 data-field="name">R1-Distill-Llama-8B</h4>
+            <p class="equation" data-field="expression">32 layers × 2 tensors × 8 KV heads × 128 values × 2 B</p>
+            <dl><div><dt>Per cached token</dt><dd data-field="token">128 KiB</dd></div><div><dt>Across the batch</dt><dd data-field="batch">512 MiB</dd></div></dl>
+            <a data-field="config" href="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/blob/6a6f4aa4197940add57724a7707d069478df56b1/config.json">Checkpoint configuration</a>
+          </div>
+              <div class="output-model" data-result="b">
+            <p class="kicker" data-field="family">Dense + MoE · MLA</p><h4 data-field="name">DeepSeek-V3</h4>
+            <p class="equation" data-field="expression">61 layers × (512 latent + 64 rotary) values × 2 B</p>
+            <dl><div><dt>Per cached token</dt><dd data-field="token">68.625 KiB</dd></div><div><dt>Across the batch</dt><dd data-field="batch">274.5 MiB</dd></div></dl>
+            <a data-field="config" href="https://huggingface.co/deepseek-ai/DeepSeek-V3/blob/e815299b0bcbac849fa540c768ef21845365c9eb/config.json">Checkpoint configuration</a>
+          </div>
+            </div>
+            <p id="comparison" class="status" role="status" aria-live="polite">With 4,096 positions in one sequence, Llama-8B distill retains 512 MiB and V3 retains 274.5 MiB.</p>
+            <details class="explain"><summary>Assumptions and units</summary><p>All sequences have the same number of resident positions, with no shared prefix or sliding-window eviction. All backbone layers use their published dimensions. MLA uses the absorbed, compressed cache in the DeepSeek reference implementation. Count the tensors once across the logical model. Device-specific copies, weights, MTP modules, allocator rounding, metadata, temporary buffers and transfer staging have separate budgets. A KiB is 1,024 bytes and a MiB is 1,048,576 bytes. Engine cache formats and placement can change the actual allocation.</p></details>
+          </div>
+          <details class="explain"><summary>Inspect all five source configurations</summary>
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Checkpoint dimensions, horizontally scrollable">
+            <table><caption>Backbone cache dimensions</caption><thead><tr><th scope="col">Checkpoint</th><th scope="col">Layers</th><th scope="col">Query heads</th><th scope="col">Per-layer cache at one position</th></tr></thead>
+            <tbody>
+<tr data-key="llama" data-family="Dense · GQA" data-layers="32" data-kv-heads="8" data-head-dim="128"><th scope="row"><a href="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/blob/6a6f4aa4197940add57724a7707d069478df56b1/config.json">R1-Distill-Llama-8B</a></th><td>32</td><td>32</td><td>2 × 8 KV heads × 128 values</td></tr>
+<tr data-key="qwen" data-family="Dense · GQA" data-layers="28" data-kv-heads="2" data-head-dim="128"><th scope="row"><a href="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B/blob/ad9f0ae0864d7fbcd1cd905e3c6c5b069cc8b562/config.json">R1-Distill-Qwen-1.5B</a></th><td>28</td><td>12</td><td>2 × 2 KV heads × 128 values</td></tr>
+<tr data-key="mix" data-family="Top-2 MoE · GQA" data-layers="32" data-kv-heads="8" data-head-dim="128"><th scope="row"><a href="https://huggingface.co/mistralai/Mixtral-8x7B-v0.1/blob/fc7ac94680e38d7348cfa806e51218e6273104b0/config.json">Mixtral-8x7B-v0.1</a></th><td>32</td><td>32</td><td>2 × 8 KV heads × 128 values</td></tr>
+<tr data-key="v3" data-family="Dense + MoE · MLA" data-layers="61" data-latent="512" data-rotary="64"><th scope="row"><a href="https://huggingface.co/deepseek-ai/DeepSeek-V3/blob/e815299b0bcbac849fa540c768ef21845365c9eb/config.json">DeepSeek-V3</a></th><td>61</td><td>128</td><td>512 latent + 64 rotary values</td></tr>
+<tr data-key="r1" data-family="Dense + MoE · MLA" data-layers="61" data-latent="512" data-rotary="64"><th scope="row"><a href="https://huggingface.co/deepseek-ai/DeepSeek-R1/blob/56d4cbbb4d29f4355bab4b9a39ccb717a14ad5ad/config.json">DeepSeek-R1 (full)</a></th><td>61</td><td>128</td><td>512 latent + 64 rotary values</td></tr>
+            </tbody></table></div>
+          </details>
+        </section>
+        <section id="moe">
+          <p class="kicker">Sparse feed-forward layers</p><h2>Route the token through a subset of weights</h2>
+          <p>In a mixture of experts (MoE), the feed-forward layer contains multiple networks called experts. A learned gate scores them for each hidden vector. Mixtral-8x7B selects two of eight experts per token per layer. Attention still reads grouped KV heads. Mixtral and the Llama-8B distill consequently have the same logical BF16 cache shape in the explorer, even though their weight budgets differ.</p>
+          <figure class="map"><div class="route-flow"><div><b>Gate</b><span>Score all experts</span></div><i aria-hidden="true">→</i><div><b>Dispatch</b><span>Send token rows to the chosen experts</span></div><i aria-hidden="true">→</i><div><b>Compute</b><span>Each expert applies its feed-forward network</span></div><i aria-hidden="true">→</i><div><b>Combine</b><span>Weight and sum the returned vectors</span></div></div>
+          <figcaption>When selected experts live on other devices, dispatch and combine require communication. The attention KV cache stays with its attention workers.</figcaption></figure>
+          <div class="worked"><h3>Work a four-expert example</h3><p>Suppose a gate gives E0, E1, E2 and E3 probabilities [0.60, 0.10, 0.25, 0.05]. Top-2 selects E0 and E2. Renormalize their weights to 0.60/0.85 and 0.25/0.85. If one coordinate of their outputs is 2 and 8, the corresponding mixture coordinate is (0.60 × 2 + 0.25 × 8)/0.85 ≈ 3.76. Different tokens can choose overlapping experts, so one worker may receive a disproportionate share of a batch.</p></div>
+          <p>Mixtral’s paper reports about 47B total and 13B active parameters per token. The active count describes a compute path. Serving all routes still needs access to the other weights. Expert parallelism distributes those weights and introduces dispatch traffic. Routing also varies by layer and token.</p>
+          <p class="refs"><a href="https://arxiv.org/abs/2401.04088">Mixtral paper</a> · <a href="https://huggingface.co/mistralai/Mixtral-8x7B-v0.1/blob/fc7ac94680e38d7348cfa806e51218e6273104b0/config.json">Mixtral config</a> · <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/moe_routing.py">Local routing simulator source</a> · <a href="../systems/fabric.html#link-lab">Communication lab</a></p>
+        </section>
+        <section id="mla">
+          <p class="kicker">Multi-head latent attention</p><h2>Read the cache that DeepSeek actually stores</h2>
+          <p>The original DeepSeek-V3 backbone has a width of 7,168 and 61 layers with 128 attention heads. Its first three feed-forward layers are dense. Each of the remaining 58 uses one shared expert plus eight selected from 256 routed experts. The attention mechanism in all 61 layers is MLA.</p>
+          <figure class="map"><div class="lanes"><div class="lane"><b>Content path</b><span>Hidden vector</span><i aria-hidden="true">→</i><span>Learned compression and normalization</span><i aria-hidden="true">→</i><strong>512 latent values</strong></div><div class="lane"><b>Position path</b><span>Hidden vector</span><i aria-hidden="true">→</i><span>Key projection and rotary position</span><i aria-hidden="true">→</i><strong>64 rotary values</strong></div></div><figcaption>For each cached token and layer, the reference absorbed path retains both vectors. A new query scores the content and positional parts and aggregates the cached content.</figcaption></figure>
+          <p>Conventional attention can cache a key and a value for every KV head. MLA learns a common compressed representation. Matrix absorption moves the content-key up-projection into the query computation, and lets the value up-projection act after the weighted sum. A separate rotated key carries position information. The reference implementation offers both expanded and absorbed execution paths.</p>
+          <div class="worked"><h3>Check the unit at every step</h3><p>One layer retains (512 + 64) × 2 = 1,152 bytes per position in BF16. Across 61 layers that is 70,272 bytes, or 68.625 KiB per position. At 4,096 positions a single sequence needs 274.5 MiB of logical attention state. The 1,536-dimensional query latent serves the current computation and is excluded from this persistent cache.</p></div>
+          <details class="explain"><summary>Inside V3’s group-limited expert choice</summary><p>The 256 routed experts are organized into eight groups of 32. In the released reference gate, an expert bias adjusts the scores used to select routes. Each group is scored by its two strongest adjusted scores. Four groups remain eligible, then eight experts are selected. Combination weights come from the selected experts’ original affinities, followed by normalization and a scale. The shared expert contributes separately. These choices manage traffic and encourage balance. Actual worker loads still depend on the inputs and expert placement.</p></details>
+          <details class="explain"><summary>Why the V3 release also lists 685B parameters</summary><p>The published bundle includes roughly 14B parameters for a multi-token prediction (MTP) module alongside the 671B backbone. MTP supplies an additional training signal and can propose future tokens for speculative decoding in a supporting runtime. Verification determines which proposals are accepted. When planning capacity, check which modules the engine loads and how it stores their state. <a href="https://huggingface.co/deepseek-ai/DeepSeek-V3">DeepSeek-V3 release notes</a> · <a href="../index.html#speculation">Speculative decoding walkthrough</a></p></details>
+          <p class="refs"><a href="https://arxiv.org/abs/2412.19437">DeepSeek-V3 technical report</a> · <a href="https://arxiv.org/abs/2405.04434">MLA derivation in DeepSeek-V2</a> · <a href="https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py">Reference MLA and Gate code</a> · <a href="https://huggingface.co/deepseek-ai/DeepSeek-V3/blob/e815299b0bcbac849fa540c768ef21845365c9eb/config.json">V3 config</a></p>
+        </section>
+        <section id="r1">
+          <p class="kicker">Checkpoint identity</p><h2>Read the full R1 name before sizing a server</h2>
+          <p>The original full DeepSeek-R1 was developed from DeepSeek-V3-Base. It keeps the 671B-total, 37B-active backbone, including MLA and routed experts. Distillation used examples generated by the teacher to train smaller students. Each student executes its own base architecture when serving a prompt.</p>
+          <div class="lineage"><div><h3>Full R1</h3><p>61 layers, MLA, three dense feed-forward layers followed by 58 MoE layers. Budget storage for the full checkpoint, a compressed attention history and communication between expert workers when sharded.</p><a href="https://huggingface.co/deepseek-ai/DeepSeek-R1/blob/56d4cbbb4d29f4355bab4b9a39ccb717a14ad5ad/config.json">Full R1 config</a></div>
+          <div><h3>Qwen distills</h3><p>The original release includes 1.5B, 7B, 14B and 32B students. For the 1.5B student, 12 query heads share two KV heads across 28 dense decoder layers. Its BF16 cache is 28 KiB per position.</p><a href="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B/blob/ad9f0ae0864d7fbcd1cd905e3c6c5b069cc8b562/config.json">Qwen-1.5B distill config</a></div>
+          <div><h3>Llama distills</h3><p>The 8B and 70B students use Llama-family dense architectures. The 8B student uses Llama 3.1’s 32-layer shape. The 70B student derives from Llama 3.3 70B Instruct and needs its own capacity calculation.</p><a href="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/blob/6a6f4aa4197940add57724a7707d069478df56b1/config.json">Llama-8B distill config</a></div></div>
+          <div class="worked"><h3>Separate checkpoint weights from KV storage</h3><p>If you represented the 671 billion backbone parameters in BF16, the weight payload alone would be about 1.34 TB in decimal units (671 billion × 2 bytes). Only a subset participates in one token’s computation. A quantized deployment has a different payload and may add scales, padding and other state. The cache explorer above accounts for a different allocation that grows with the workload.</p></div>
+          <p>Long reasoning completions add decode steps and retained positions on either architecture. Ask for expected prompt length, output length and concurrency when comparing a small student with its teacher. Load the tokenizer, chat template, generation settings and stop IDs associated with the exact checkpoint.</p>
+          <p class="refs"><a href="https://huggingface.co/deepseek-ai/DeepSeek-R1">Original model card and student mapping</a> · <a href="https://arxiv.org/abs/2501.12948">DeepSeek-R1 paper</a></p>
+        </section>
+        <section id="visualizer">
+          <p class="kicker">Guided companion</p><h2>Inspect DeepSeek-V3 in 2D and 3D</h2>
+          <p>Shiva Nampalli’s DeepSeek Visualizer follows a scripted “The capital of France is” example through 17 steps. The tensor cells, expert scores and next-token probability are deterministic teaching values. Use the reported dimensions to check the cache calculation above.</p>
+          <ol class="sequence"><li><strong>Open the 2D architecture</strong><p>Step through the embedding and MLA stages. Compare one of the first three layers with a later MoE layer in the layer explorer. Locate the shared expert and the routed branch.</p></li><li><strong>Switch to the 3D tensor view</strong><p>Select a tensor or matrix cell and inspect its shape. Find the KV latent and rotary key, then identify the activation that exists only for the current query.</p></li><li><strong>Open the MACs report</strong><p>One multiply-accumulate is counted as two floating-point operations. A compute estimate helps identify expensive matrix products. To predict latency, also measure memory bandwidth, batch shape and cross-device traffic.</p></li></ol>
+          <p class="companion"><a class="action" href="https://siddhu1716.github.io/deepseek_visualizer/?view=2d">Open 2D walkthrough</a><a class="secondary-action" href="https://siddhu1716.github.io/deepseek_visualizer/?view=3d">Open 3D tensor view</a></p><p class="refs"><a href="https://github.com/siddhu1716/deepseek_visualizer/tree/e763c8e9e8db37429e17b85fa52a9f5f16431456">Inspected visualizer source and feature guide</a></p>
+        </section>
+        <section id="other"><p class="kicker">Other sequence models</p><h2>Check what a new architecture carries forward</h2>
+          <div class="cases"><details open><summary>Sliding-window and global attention · Gemma 2</summary><p>Gemma 2 alternates local and global attention layers. If the runtime evicts stale entries in the local layers, each of those layers can retain only its window. Global layers still grow with the full sequence. Sum each layer’s retained positions separately before applying a byte-per-position estimate. <a href="https://arxiv.org/abs/2408.00118">Gemma 2 report</a></p></details>
+          <details><summary>Recurrent state-space layers · Mamba</summary><p>A selective state-space layer updates a per-sequence recurrent state and convolution history. At decode time its state shape is fixed for a given layer, even as more tokens arrive. A hybrid model with attention layers still needs those layers’ KV histories. Track state with the formula for each layer type. <a href="https://arxiv.org/abs/2312.00752">Mamba paper</a></p></details>
+          <details><summary>Encoder–decoder models · T5</summary><p>The encoder processes the whole source sequence once. Decoder self-attention reads previously generated positions, while cross-attention reads representations from the source. There are two length variables: the source length fixes the cross-attention memory and the generated length grows the decoder history. <a href="https://arxiv.org/abs/1910.10683">T5 paper</a></p></details></div>
+        </section>
+        <section id="serving"><p class="kicker">Runtime connection</p><h2>Translate shapes into serving decisions</h2>
+          <ul class="decision-list"><li><b>Weights exceed one device.</b> Separate total checkpoint bytes from active arithmetic. Tensor sharding, pipeline stages and expert placement put different kinds of traffic on the fabric. <a href="../systems/index.html#topologies">Explore GPU layouts</a>.</li>
+          <li><b>Short chats fit, long chats fail.</b> Calculate attention-state bytes for the actual architecture and count resident positions across concurrent requests. Compare that payload with physical cache blocks, metadata and free capacity. <a href="../engines/memory.html">Follow the engine memory lifecycle</a>.</li>
+          <li><b>Theoretical savings miss the latency target.</b> Inspect prefill and decode separately, then measure attention kernels, weight reads, dispatch and queueing at representative load. <a href="../systems/index.html#measurement">Build a serving measurement</a>.</li>
+          <li><b>You want to trace the arithmetic locally.</b> Inspect this repository’s small grouped-query attention implementation, then step through a real toy-model request. The shipped Python decoder and the separate expert-routing simulator model individual mechanisms. <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/backends/python/attention.py">Python attention source</a> · <a href="../index.html#request-replay">Token replay lab</a>.</li></ul>
+        </section>
+      </article>
+    </div>
+  </main>
+  <footer><div class="wrap"><a href="../index.html">Inference from Scratch</a><a href="#content">Back to top</a></div></footer>
+</body></html>

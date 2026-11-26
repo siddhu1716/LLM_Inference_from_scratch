@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#112c2a">
+  <meta name="description" content="Size a KV cache, compare GPU topologies, trace a prefill handoff, and measure inference serving under load.">
+  <title>Distributed inference lab · Inference from Scratch</title>
+  <link rel="icon" href="../assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="systems.css">
+  <script src="../theme.js" defer></script>
+  <script src="systems.js" defer></script>
+  <script src="chapters.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#content">Skip to guide</a>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="../index.html"><img src="../assets/mark.svg" alt="" width="32" height="32">Inference from Scratch</a>
+      <nav aria-label="Site"><a href="../curriculum.html">Curriculum</a><a href="../engines/index.html">Engine guides</a> <a href="../reading/index.html">Reading library</a> <button class="theme-switch" type="button" data-theme-toggle aria-label="Change color theme"><span data-theme-icon aria-hidden="true">◐</span></button></nav>
+    </div>
+  </header>
+  <main id="content">
+    <div class="hero">
+      <div class="wrap hero-inner">
+        <div>
+          <p class="kicker">Systems field guide</p>
+          <h1>Distributed<br>inference lab</h1>
+          <p class="lede">A chat model fits on one GPU. Eight readers open long conversations. Where does the memory go, and when would a second GPU help?</p>
+          <a class="action" href="#capacity">Size the first GPU</a>
+          <a class="secondary-action" href="fabric.html">Trace distributed messages</a>
+        </div>
+        <figure class="hero-diagram" aria-label="Example of two replicas. A router sends each request to one replica. Two GPUs within each replica share a model.">
+          <div class="diagram-head"><span>Serving topology</span><span>DP 2 × TP 2</span></div>
+          <div class="route-source">Request router</div>
+          <div class="fork" aria-hidden="true"></div>
+          <div class="replicas">
+            <div><b>Replica A</b><span class="chip-pair"><i>GPU 0</i><i>GPU 1</i></span></div>
+            <div><b>Replica B</b><span class="chip-pair"><i>GPU 2</i><i>GPU 3</i></span></div>
+          </div>
+          <figcaption>One request stays with one replica. Both GPUs in that replica help compute each token.</figcaption>
+        </figure>
+      </div>
+    </div>
+    <div class="wrap guide-grid">
+      <aside><nav class="chapters" aria-label="In this guide">
+        <h2>In this guide</h2>
+        <a href="#capacity">Memory budget</a><a href="#optimization">Single-GPU tuning</a>
+        <a href="#topologies">GPU topologies</a><a href="#disaggregation">Prefill handoff</a>
+        <a href="#measurement">Serving measurements</a><a href="#practice">Run the code</a>
+      </nav></aside>
+      <article>
+        <section id="capacity">
+          <p class="kicker">Memory budget</p>
+          <h2>What has to fit?</h2>
+          <p>The model's <strong>weights</strong> stay on the device across requests. Each active sequence also needs a <strong>key–value cache</strong> (KV) holding attention history for its tokens. The runtime needs room for temporary results, graph buffers and other allocations. Budget all three before increasing concurrency.</p>
+          <p>Consider a hypothetical dense decoder with 8 billion parameters. At two bytes per weight it needs 16 billion bytes, or <strong>14.90 GiB</strong>. Each cached token in our example uses 128 KiB across all layers. With 4,096 cached tokens, one conversation needs another 0.50 GiB.</p>
+          <div class="lab">
+            <div class="lab-head"><h3>GPU memory worksheet</h3><span class="mono">Single device</span></div>
+            <p>Try doubling the context from 4,096 to 8,192 tokens. Watch the KV allocation and the number of concurrent sequences the budget can support.</p>
+            <noscript><p>The worked example below uses eight 4,096-token sequences on one 24 GiB GPU. Enable JavaScript to edit it.</p></noscript>
+            <form id="capacity-form" hidden>
+              <div class="inputs">
+                <label>Device memory (GiB)<input name="memory" type="number" min="1" max="8192" step="any" required value="24"></label>
+                <label>Runtime reserve (GiB)<input name="reserve" type="number" min="0" max="8192" step="any" required value="4"></label>
+                <label>Cached tokens per sequence<input name="tokens" type="number" min="1" max="4194304" step="1" required value="4096"></label>
+                <label>Concurrent sequences<input name="sequences" type="number" min="1" max="1048576" step="1" required value="8"></label>
+              </div>
+              <details class="model-controls">
+                <summary>Change model dimensions and precision</summary>
+                <div class="inputs">
+                  <label>Parameters (billions)<input name="parameters" type="number" min="0.001" max="10000" step="any" required value="8"></label>
+                  <label>Weight storage<select name="weightBytes"><option value="2">16 bits per weight</option><option value="1">8 bits per weight</option><option value="0.5">4 bits per weight</option></select></label>
+                  <label>Transformer layers<input name="layers" type="number" min="1" max="1024" step="1" required value="32"></label>
+                  <label>KV heads per layer<input name="heads" type="number" min="1" max="1024" step="1" required value="8"></label>
+                  <label>Dimensions per head<input name="dimension" type="number" min="1" max="4096" step="1" required value="128"></label>
+                  <label>KV element storage<select name="kvBytes"><option value="2">2 bytes (e.g. BF16)</option><option value="1">1 byte (e.g. FP8)</option><option value="4">4 bytes (FP32)</option></select></label>
+                </div>
+              </details>
+              <button class="reset" type="reset">Restore worked example</button>
+            </form>
+            <div id="memory-results">
+              <div class="budget-bar" aria-hidden="true"><i id="bar-weights" style="flex-grow:14.9"></i><i id="bar-kv" style="flex-grow:4"></i><i id="bar-reserve" style="flex-grow:4"></i><i id="bar-free" style="flex-grow:1.1"></i></div>
+              <dl class="readout">
+                <div><dt>Weights</dt><dd id="out-weights">14.90 GiB</dd></div>
+                <div><dt>KV total</dt><dd id="out-kv">4.00 GiB</dd></div>
+                <div><dt>Reserve</dt><dd id="out-reserve">4.00 GiB</dd></div>
+                <div><dt id="gap-label">Headroom</dt><dd id="out-gap">1.10 GiB</dd></div>
+              </dl>
+            </div>
+            <p id="capacity-status" class="status" role="status" aria-live="polite">The estimate fits. At 128 KiB per token and 0.50 GiB per sequence, the memory budget holds up to 10 such sequences.</p>
+          </div>
+          <details class="explain"><summary>Derive the result and check its assumptions</summary>
+            <p class="formula">KV bytes/token = 2 × layers × KV heads × head dimension × bytes/element</p>
+            <p>The leading 2 counts keys and values. Use KV heads from the model configuration. With grouped-query attention, several query heads share each KV head. For 32 layers, 8 KV heads, 128 dimensions and two-byte elements, this gives 131,072 bytes. Multiply by the <em>sum of cached tokens</em> across sequences. This example assumes equal lengths and full attention in every layer.</p>
+            <p>The worksheet models dense, unsharded weights and private, uncompressed KV. The reserve is your estimate for runtime overhead. Block rounding, quantization scales, replicated tensors, alignment, prefix sharing, sliding windows and latent-attention caches can change the measured result. A GiB is 2³⁰ bytes. Confirm headroom against your actual engine allocations.</p>
+            <p><a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/kv_cache_estimator.py">Read the repository's KV estimator</a></p>
+          </details>
+        </section>
+
+        <section id="optimization">
+          <p class="kicker">Single-GPU tuning</p>
+          <h2>Follow the expensive operation</h2>
+          <p>Prefill evaluates the known prompt positions together and produces the logits for the first output token. Each subsequent decode step consumes the most recently sampled token. It reads the relevant history and appends fresh KV. A long prefill can keep the arithmetic units busy. A small decode batch often spends more time moving weights and KV through device memory.</p>
+          <div class="cases">
+            <details open><summary>Requests queue behind long prompts</summary>
+              <p><strong>Continuous batching</strong> lets finished sequences leave and waiting requests enter at scheduling boundaries. <strong>Chunked prefill</strong> gives a long prompt a slice of the iteration's token budget so short decode steps can also run. A smaller slice can smooth token gaps while lengthening the wait for a long prompt's first token. Sweep the budget using the same prompt mix. Record time to first token and p95 inter-token latency. <a href="https://docs.vllm.ai/en/stable/configuration/optimization/">vLLM tuning guide</a></p>
+            </details>
+            <details><summary>Many prompts begin with the same document</summary>
+              <p>Arrange the stable document before the changing question. A <strong>prefix cache</strong> can reuse KV for matching leading token sequences when model and cache settings agree. Two articles with similar meaning may tokenize differently and miss immediately. Compare cold and warm runs, matched prompt tokens and eviction rates. Reuse reduces prompt processing while output tokens still require decoding. <a href="https://docs.vllm.ai/en/stable/features/automatic_prefix_caching/">Automatic prefix caching</a></p>
+            </details>
+            <details><summary>Weights or growing KV exhaust memory</summary>
+              <p>First separate weight memory from per-request KV using the worksheet. Weight quantization reduces the persistent footprint. Weight-only quantization leaves KV precision independently configurable. Availability of suitable kernels and scale metadata affects speed and size. Compare held-out accuracy with the same prompts and decoding settings. For KV pressure, cap active tokens or use compatible KV quantization. Paged allocation lets a sequence grow by blocks, with possible waste in each partly filled final block. <a href="../notes/phase-3-optimization.html#day-14">Quantization notes</a> · <a href="https://arxiv.org/abs/2309.06180">PagedAttention paper</a></p>
+            </details>
+            <details><summary>Attention spills large intermediates to memory</summary>
+              <p>For standard full attention over a long prompt, explicitly writing the score matrix costs memory proportional to sequence length squared. FlashAttention processes tiles and maintains an online normalization so the full score matrix can stay out of high-bandwidth memory. Full attention still evaluates the causal query–key pairs. Compare memory traffic and wall time at several prompt lengths. <a href="https://arxiv.org/abs/2205.14135">FlashAttention paper</a></p>
+            </details>
+            <details><summary>One conversation emits tokens slowly</summary>
+              <p>With <strong>speculative decoding</strong>, a cheaper proposer drafts several tokens and the target model scores them together. A matching accept/reject procedure preserves the target sampling distribution. When drafts frequently diverge or verification competes with other work, the extra computation can erase the gain. Measure accepted tokens per verification, wall time, and output throughput under load. <a href="https://proceedings.mlr.press/v202/leviathan23a.html">Speculative decoding paper</a> · <a href="../notes/phase-3-optimization.html#day-15">Worked sampling example</a></p>
+            </details>
+            <details><summary>The GPU timeline has gaps between short kernels</summary>
+              <p>Trace the CPU launch thread and its GPU stream together. For recurring shapes, CUDA Graph replay can reduce repeated launch work. Capture requires compatible execution paths and may reserve extra memory. Compare warmed-up decode latency, capture coverage and the KV budget with graph replay enabled and disabled. <a href="../notes/phase-2-engines.html#day-07">Kernel and graph notes</a> · <a href="https://docs.nvidia.com/nsight-systems/UserGuide/index.html">Nsight Systems guide</a></p>
+            </details>
+          </div>
+        </section>
+        <section id="topologies">
+          <p class="kicker">GPU topologies</p>
+          <h2>What crosses the link?</h2>
+          <p>A <strong>rank</strong> is a participating process, usually assigned to a GPU. A <strong>replica</strong> is a complete model-serving group and may contain several ranks. Trace one request to see which ranks must exchange data before the next token is ready.</p>
+          <p><a href="fabric.html#token-messages">Work through the exact sends, sums, expert routes and return messages for one token step.</a></p>
+          <fieldset class="switches" id="strategy-control" hidden><legend>Explore a parallel strategy</legend>
+            <label><input type="radio" name="strategy" value="tp" checked><span>Tensor</span></label>
+            <label><input type="radio" name="strategy" value="pp"><span>Pipeline</span></label>
+            <label><input type="radio" name="strategy" value="dp"><span>Data</span></label>
+            <label><input type="radio" name="strategy" value="ep"><span>Expert</span></label>
+            <label><input type="radio" name="strategy" value="cp"><span>Context</span></label>
+          </fieldset>
+          <div class="strategy" data-strategy="tp">
+            <h3>Tensor parallelism</h3><p>Several GPUs compute pieces of the same layer for the same batch.</p>
+            <div class="flow" aria-label="Tensor-parallel layer">
+              <div><small>Input</small><b>Hidden state</b></div><span aria-hidden="true">→</span>
+              <div class="split"><b>GPU 0 · matrix shard A</b><b>GPU 1 · matrix shard B</b></div><span aria-hidden="true">→</span>
+              <div><small>Collective</small><b>Combine partials</b></div>
+            </div>
+            <p>In a row-sharded output projection, each rank computes a partial sum for the same output. An all-reduce can sum the partials and make the complete result available to all participants. Repeating collectives in the token loop makes link latency matter. Try TP when a model exceeds one GPU's memory and the GPUs share a fast link.</p>
+          </div>
+          <div class="strategy" data-strategy="pp">
+            <h3>Pipeline parallelism</h3><p>Assign consecutive groups of layers to different GPUs or nodes.</p>
+            <div class="flow" aria-label="Pipeline-parallel forward pass"><div><small>Stage A</small><b>Layers 0–15</b></div><span aria-hidden="true">→</span><div><small>Boundary</small><b>Hidden state</b></div><span aria-hidden="true">→</span><div><small>Stage B</small><b>Layers 16–31</b></div></div>
+            <p>For a 32-layer model, stage A sends an activation tensor after layer 15 to stage B. Independent microbatches can occupy different stages at once. A lone request still traverses both stages before sampling. Uneven stage times leave bubbles. Time each stage before choosing the split.</p>
+          </div>
+          <div class="strategy" data-strategy="dp">
+            <h3>Data parallelism</h3><p>Build additional serving groups and distribute independent requests among them.</p>
+            <div class="flow" aria-label="Data-parallel routing"><div><small>Router</small><b>Two conversations</b></div><span aria-hidden="true">→</span><div class="split"><b>Chat A · replica 0</b><b>Chat B · replica 1</b></div></div>
+            <p>With two independent dense replicas, each stores a complete model and its own KV. The router can send a new chat to the shorter queue. Sending a follow-up to the same replica may reuse the conversation prefix. Measure queue length alongside cached tokens to balance locality against overload. One replica must fit a complete serving group.</p>
+          </div>
+          <div class="strategy" data-strategy="ep">
+            <h3>Expert parallelism</h3><p>Divide a mixture-of-experts layer by which expert weights each rank owns.</p>
+            <div class="flow" aria-label="An expert routing step"><div><small>Gate</small><b>Select experts</b></div><span aria-hidden="true">→</span><div class="split"><b>Rank 0 · experts 0–3</b><b>Rank 1 · experts 4–7</b></div><span aria-hidden="true">→</span><div><small>Return</small><b>Weighted sum</b></div></div>
+            <p>For a top-two gate, a token assigned to experts 2 and 6 needs both ranks. Dispatch sends hidden states to their expert owners. Combine returns outputs to their originating positions. Skewed routing can leave the busiest rank on the critical path. Inspect expert token counts, collective time and imbalance. Engine implementations may reuse the same ranks for attention and expert groups. <a href="https://docs.vllm.ai/en/stable/serving/expert_parallel_deployment/">vLLM expert parallel deployment</a></p>
+          </div>
+          <div class="strategy" data-strategy="cp">
+            <h3>Context parallelism</h3><p>Partition a long sequence's token positions across ranks.</p>
+            <div class="flow" aria-label="Full-attention context partitions"><div class="split"><b>Rank 0 · positions 0–2047</b><b>Rank 1 · positions 2048–4095</b></div><span aria-hidden="true">→</span><div><small>Attention</small><b>Exchange KV or partial results</b></div></div>
+            <p>A query at position 3,000 in full causal attention needs earlier history held by both ranks. Implementations communicate KV or combine partial attention results with the correct softmax normalization. The partition can reduce per-rank context pressure. Its payoff depends on sequence length, placement, and the supported attention implementation. <a href="../notes/phase-3-optimization.html#day-17">Context partition notes</a></p>
+          </div>
+          <div class="worked">
+            <h3>Place four GPUs on two nodes</h3>
+            <p>Suppose a model needs 60 GiB for weights. Each node has two 40 GiB GPUs on a fast local fabric, and each replica needs 12 GiB of runtime and KV space in total. With even sharding, two local TP ranks each need about (60 + 12) ÷ 2 = <strong>36 GiB</strong>. Put one replica on each node and route requests between them. Each reply requires only local TP communication.</p>
+            <p>If the total grows above 80 GiB, that replica no longer fits on one node. A candidate with TP 2 inside each node and PP 2 across nodes spreads one model over all four GPUs. Hidden states now cross nodes at the stage boundary. Measure individual rank memory, stage balance and tail latency on the actual interconnect. <a href="https://docs.vllm.ai/en/stable/serving/parallelism_scaling/">vLLM parallelism and scaling</a></p>
+          </div>
+        </section>
+
+        <section id="disaggregation">
+          <p class="kicker">Prefill handoff</p>
+          <h2>Move a conversation between pools</h2>
+          <p>Tensor and pipeline parallelism partition a model's calculation. <strong>Prefill/decode disaggregation</strong> assigns two phases in the life of the same request to separately sized worker pools. Long prompts can be processed away from workers streaming existing replies.</p>
+          <p><a href="fabric.html#pd">Follow the cache handoff and its failure path</a> · <a href="fabric.html#afd">Trace attention–FFN dispatch and combine</a> · <a href="fabric.html#link-lab">Estimate link traffic</a></p>
+          <ol class="sequence">
+            <li><strong>Route and reserve</strong><p>The serving layer pairs a prefill worker with a decode destination. The system must identify the request and reserve enough destination space before the incoming cache can be installed.</p></li>
+            <li><strong>Evaluate the prompt</strong><p>The prefill group builds the prompt KV. Its last prompt position also yields the logits for the first generated token.</p></li>
+            <li><strong>Transfer the KV and continuation state</strong><p>A connector copies the necessary KV blocks and communicates which sequence, token positions and destination slots they belong to. Depending on the engine, transfer can overlap portions of prompt execution.</p></li>
+            <li><strong>Resume, stream and reclaim</strong><p>The decode worker consumes the sampled token with the transferred context, then repeats until the stop condition. The service must release transfer reservations and local blocks on completion, cancellation or a failed handoff.</p></li>
+          </ol>
+          <div class="worked">
+            <h3>Estimate the price of the handoff</h3>
+            <p>Our 4,096-token prompt has 0.50 GiB of KV. A dedicated link delivering 25 GiB/s needs <strong>at least 20 ms</strong> to move that payload in isolation. Queueing, software setup, layout conversion and competing transfers can raise the cost. Measure time until the decode worker is ready, along with the gap between the first and second streamed tokens.</p>
+            <p>If long prefills disturb ongoing decodes, compare disaggregation with a colocated, chunked-prefill baseline. A saturated connector or an empty decode pool can reverse the result. Compare requests meeting <em>both</em> latency targets per GPU. <a href="https://www.usenix.org/conference/osdi24/presentation/zhong-yinmin">DistServe study</a> · <a href="https://github.com/sgl-project/sglang/blob/main/docs/docs/advanced_features/pd_disaggregation.mdx">SGLang disaggregation guide</a></p>
+          </div>
+        </section>
+        <section id="measurement">
+          <p class="kicker">Serving measurements</p>
+          <h2>Prove the change helped</h2>
+          <p>Give the serving system a workload and a target before changing a knob. For example, replay a mix of short chats and document questions, with a target first token within 1 s and average time per subsequent token within 50 ms for each qualifying request.</p>
+          <div class="trace">
+            <h3>Read one client trace</h3>
+            <ol><li><time>0 ms</time>Sent</li><li><time>320 ms</time>Token 1</li><li><time>360 ms</time>Token 2</li><li><time>420 ms</time>Token 3</li></ol>
+            <p><strong>TTFT</strong> is 320 ms. The two <strong>inter-token gaps</strong> are 40 and 60 ms. Average <strong>time per output token</strong> after the first is (420 − 320) ÷ 2 = 50 ms. A one-token reply has no such average. If the server bundles tokens, timestamped chunks measure delivery gaps. <a href="https://docs.vllm.ai/en/stable/benchmarking/cli/">vLLM benchmark definitions</a></p>
+          </div>
+          <ol class="runbook">
+            <li><strong>Record the workload.</strong> Pin the model revision, engine version, device layout, precision and sampling settings. Record input and output length distributions, shared-prefix frequency and the arrival pattern. Separate startup, cold-cache and warm-cache trials.</li>
+            <li><strong>Find the load limit.</strong> Sweep offered requests per second, then replay a burst. Record completed requests, errors, cancellations, queue time and p50/p95/p99 latency. Serving 90 qualifying requests in 30 seconds gives 3 requests/s of goodput under your stated targets.</li>
+            <li><strong>Attribute the delay.</strong> If time to first token rises, split queue wait from prompt processing. For decode stalls, inspect active tokens, free KV blocks, preemptions, per-stage work, and communication time. Place scheduler events and GPU kernels on the same timeline. <a href="https://docs.nvidia.com/nsight-systems/UserGuide/index.html">Nsight Systems reference</a></li>
+            <li><strong>Test one explanation.</strong> Repeat the trace with exactly one change. Compare output quality for precision changes. For distributed changes, compare goodput per GPU and actual time in collectives. Report run-to-run variability and rejected requests with the throughput figure.</li>
+          </ol>
+          <details class="explain"><summary>Diagnose three failure signatures</summary>
+            <ul>
+              <li><strong>Out of memory during startup.</strong> Identify whether loading weights, capturing graphs or allocating KV failed. Check the largest rank. A second data-parallel replica has the same per-replica fit requirement.</li>
+              <li><strong>Requests slow down as conversations grow.</strong> Plot live tokens and preemptions while holding the arrival rate fixed. Recompute after cache eviction can consume time that would otherwise serve new work. Retry with a smaller concurrent token budget.</li>
+              <li><strong>One node stalls the whole group.</strong> Compare the same collective across ranks and inspect which rank arrived late. A slow upstream kernel, an imbalanced expert or a congested link can look similar in the aggregate. For a failed worker, drain its serving group and bound retries to avoid adding traffic to an overloaded queue.</li>
+            </ul>
+          </details>
+        </section>
+        <section id="practice">
+          <p class="kicker">Run the code</p><h2>Connect the estimates to Python</h2>
+          <p>From the repository root, install the package and run the reference experiments. They use small inputs so you can inspect each result on a CPU.</p>
+          <pre><code>python -m pip install -e .
+python examples/optimization_walkthrough.py</code></pre>
+          <details class="explain"><summary>Reproduce the memory worksheet and the four-rank plan</summary>
+            <p>After installing the package, start <code>python</code> and enter this example. The first line of output should be <code>131072 4.0</code>, giving bytes per cached token and total GiB. The following tuples identify the global, replica and tensor ranks for two two-GPU replicas.</p>
+            <pre><code>from mini_infer.optimizations.kv_cache_estimator import estimate_kv_cache
+from mini_infer.optimizations.parallel_planning import ParallelismConfig, plan_parallelism
+
+cache = estimate_kv_cache(
+    num_layers=32, num_kv_heads=8, head_dim=128,
+    sequence_length=4096, batch_size=8, bytes_per_element=2,
+)
+print(cache.bytes_per_token_per_sequence, cache.total_gib)
+
+plan = plan_parallelism(
+    num_layers=32, hidden_size=4096, num_attention_heads=32,
+    num_experts=1, config=ParallelismConfig(data=2, tensor=2),
+)
+print([(r.rank, r.data_rank, r.tensor_rank) for r in plan.ranks])</code></pre>
+            <p>Ranks 0 and 1 process one replica together. Ranks 2 and 3 serve the other replica. Try changing the config to <code>ParallelismConfig(pipeline=2, tensor=2)</code> and printing <code>r.layer_range</code> for each rank. The two groups now own successive halves of one model.</p>
+          </details>
+          <ul class="references">
+            <li><strong>Quantization and verification</strong><span>Inspect packed weights, tiled attention and accepted draft tokens.</span><a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/examples/optimization_walkthrough.py">Optimization walkthrough</a></li>
+            <li><strong>GPU placement</strong><span>Map rank coordinates to layer and context ranges. This toy planner models independent axes. Production engines can reuse rank groups.</span><a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/parallel_planning.py">Parallelism planner</a></li>
+            <li><strong>Prefill and decode routing</strong><span>Step through least-loaded worker assignment, transfer-source tracking and completion in the routing simulation.</span><a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/optimizations/disaggregated_routing.py">Routing simulation</a></li>
+            <li><strong>Further experiments</strong><span>Explore hardware, routing and production scenarios in the notes, then follow the broader experiment series.</span><a href="../notes/phase-4-production.html#incidents">Production incidents</a> · <a href="https://github.com/elizabetht/100-days-of-inference">100 Days of Inference</a> · <a href="https://developer.nvidia.com/blog/mastering-llm-techniques-inference-optimization/">NVIDIA inference optimization guide</a></li>
+          </ul>
+        </section>
+      </article>
+    </div>
+  </main>
+  <footer><div class="wrap"><a class="brand" href="../index.html">Inference from Scratch</a><a href="#content">Back to top</a></div></footer>
+</body>
+</html>

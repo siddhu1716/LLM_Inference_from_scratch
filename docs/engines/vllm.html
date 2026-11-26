@@ -7,12 +7,14 @@
       name="description"
       content="A source-pinned, beginner-friendly deep dive into vLLM inference: an interactive token lifecycle from HTTP request to [DONE], file-by-file trace, scheduler, KV cache, model runner, attention, CUDA graphs, sampler, streaming, distributed serving, and a verified feature catalog."
     >
-    <meta name="theme-color" content="#3156d3">
+    <meta name="theme-color" content="#112c2a">
     <title>vLLM Deep Dive · Token Lifecycle | LLM Inference from Scratch</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%233156d3'/><text x='32' y='40' text-anchor='middle' font-size='24' font-family='sans-serif' font-weight='700' fill='white'>LLM</text></svg>">
-    <link rel="stylesheet" href="../styles.css?v=7">
-    <link rel="stylesheet" href="lifecycle.css?v=1">
-    <script src="../app.js?v=2" defer></script>
+    <link rel="icon" href="../assets/mark.svg">
+    <link rel="stylesheet" href="../styles.css?v=8">
+    <link rel="stylesheet" href="lifecycle.css?v=3">
+    <script src="../theme.js" defer></script>
+    <script src="request-lab.js?v=1" defer></script>
+    <script src="../app.js?v=3" defer></script>
     <script src="lifecycle.js?v=1" defer></script>
     <style>
       #main-content p code,
@@ -45,6 +47,7 @@
         overflow-x: auto;
       }
     </style>
+    <noscript><style>.topbar .search-wrap,.top-actions button{display:none} @media(max-width:56rem){.sidebar{position:static;visibility:visible;transform:none;max-height:none;width:auto;border:0;box-shadow:none}.layout{display:block}}</style></noscript>
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -68,6 +71,7 @@
           <ul id="search-results" class="search-results" aria-label="Search results" hidden></ul>
         </div>
         <div class="top-actions">
+          <a class="header-repo" href="https://github.com/siddhu1716/LLM_Inference_from_scratch" aria-label="Project source on GitHub"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="7" cy="5" r="2.5"/><circle cx="7" cy="19" r="2.5"/><circle cx="17" cy="7" r="2.5"/><path d="M7 8v8.5M17 10a7 7 0 0 1-7 7H7"/></svg> GitHub</a>
           <button class="icon-button theme-button" type="button" data-theme-toggle aria-label="Change color theme">
             <span data-theme-icon aria-hidden="true">◐</span>
           </button>
@@ -91,35 +95,52 @@
         <nav>
           <ul class="nav-list">
             <li><a href="#vllm-overview" aria-current="true">Overview</a></li>
+            <li><a href="#request-lab">Request lab</a></li>
+            <li><a href="memory.html#address-lab">KV address inspector</a></li>
             <li><a href="#how-to-read">How to read this page</a></li>
             <li><a href="#architecture">Architecture &amp; IPC</a></li>
             <li><a href="#lifecycle">Interactive token lifecycle</a></li>
             <li><a href="#file-trace">File-by-file trace</a></li>
             <li><a href="#prefill-decode">Prefill vs decode math</a></li>
-            <li><a href="#scheduler">Scheduler &amp; preemption</a></li>
-            <li><a href="#kv-cache">KV cache &amp; prefix caching</a></li>
-            <li><a href="#model-runner">Model runner &amp; input batch</a></li>
-            <li><a href="#attention">Attention backends</a></li>
-            <li><a href="#compilation">CUDA graphs &amp; torch.compile</a></li>
-            <li><a href="#sampler">Sampler &amp; logits processors</a></li>
-            <li><a href="#streaming">Detokenizer &amp; streaming</a></li>
-            <li><a href="#distributed">Executors &amp; parallelism</a></li>
-            <li><a href="#spec-decode">Speculative decoding</a></li>
-            <li><a href="#structured-outputs">Structured outputs</a></li>
-            <li><a href="#lora">LoRA adapters</a></li>
-            <li><a href="#multimodal">Multimodal inputs</a></li>
-            <li><a href="#disagg">Disaggregated prefill</a></li>
-            <li><a href="#kv-offload">KV offloading</a></li>
-            <li><a href="#observability">Metrics &amp; tracing</a></li>
-            <li><a href="#api-surface">OpenAI API surface</a></li>
-            <li><a href="#offline-online">Offline LLM vs server</a></li>
-            <li><a href="#feature-catalog">Feature catalog</a></li>
-            <li><a href="#tuning">Tuning knobs</a></li>
-            <li><a href="#reference-diagrams">Reference diagrams</a></li>
-            <li><a href="#further-reading">Further reading</a></li>
-            <li><a href="#glossary">Glossary</a></li>
-            <li><a href="#self-check">Self-check Q&amp;A</a></li>
-            <li><a href="#sources">Sources &amp; credits</a></li>
+            <li><details class="engine-nav-group">
+              <summary>Scheduling and execution</summary>
+              <ul>
+                <li><a href="#scheduler">Scheduler &amp; preemption</a></li>
+                <li><a href="#kv-cache">KV cache &amp; prefix caching</a></li>
+                <li><a href="#model-runner">Model runner &amp; input batch</a></li>
+                <li><a href="#attention">Attention backends</a></li>
+                <li><a href="#compilation">CUDA graphs &amp; torch.compile</a></li>
+                <li><a href="#sampler">Sampler &amp; logits processors</a></li>
+                <li><a href="#streaming">Detokenizer &amp; streaming</a></li>
+              </ul>
+            </details></li>
+            <li><details class="engine-nav-group">
+              <summary>Serving and deployment</summary>
+              <ul>
+                <li><a href="#distributed">Executors &amp; parallelism</a></li>
+                <li><a href="#spec-decode">Speculative decoding</a></li>
+                <li><a href="#structured-outputs">Structured outputs</a></li>
+                <li><a href="#lora">LoRA adapters</a></li>
+                <li><a href="#multimodal">Multimodal inputs</a></li>
+                <li><a href="#disagg">Disaggregated prefill</a></li>
+                <li><a href="#kv-offload">KV offloading</a></li>
+                <li><a href="#observability">Metrics &amp; tracing</a></li>
+                <li><a href="#api-surface">OpenAI API surface</a></li>
+                <li><a href="#offline-online">Offline LLM vs server</a></li>
+              </ul>
+            </details></li>
+            <li><details class="engine-nav-group">
+              <summary>Reference and review</summary>
+              <ul>
+                <li><a href="#feature-catalog">Feature catalog</a></li>
+                <li><a href="#tuning">Tuning knobs</a></li>
+                <li><a href="#reference-diagrams">Reference diagrams</a></li>
+                <li><a href="#further-reading">Further reading</a></li>
+                <li><a href="#glossary">Glossary</a></li>
+                <li><a href="#self-check">Self-check Q&amp;A</a></li>
+                <li><a href="#sources">Sources &amp; credits</a></li>
+              </ul>
+            </details></li>
             <li><a href="index.html">Engines overview ↗</a></li>
             <li><a href="sglang.html">SGLang deep dive ↗</a></li>
             <li><a href="../index.html">Systems guide ↗</a></li>
@@ -135,31 +156,62 @@
       </aside>
 
       <main id="main-content">
-        <section id="vllm-overview" class="hero" data-search-group="vLLM overview" data-search-item data-keywords="vLLM overview V1 engine token lifecycle commit pinned deep dive">
-          <p class="eyebrow">Engine deep dive · vLLM V1 engine</p>
-          <h1>How vLLM turns a request into tokens.</h1>
-          <p class="hero-copy">
-            Follow a single chat request through vLLM's real code: the FastAPI route,
-            the renderer that applies the chat template, the ZeroMQ hop into the
-            EngineCore busy loop, the scheduler and paged KV-cache allocator, the GPU
-            model runner, the attention kernel that writes keys and values into
-            blocks, the sampler, and the incremental detokenizer that streams text
-            back as server-sent events. Then go wide: every major subsystem and a
-            catalog of features, each tied to verified files and command-line flags.
-          </p>
-          <div class="engine-hero-meta" aria-label="Pinned source metadata">
-            <a href="https://github.com/vllm-project/vllm/tree/7b77ed581d92fa14e34ab43344837bb1ca1b4257">commit 7b77ed5</a>
-            <span>committed 2026-10-31</span>
-            <span>main branch · near v0.33.0rc</span>
-            <span>latest final tag v0.32.0</span>
-            <span>Apache-2.0</span>
-            <span>Model Runner V2 default</span>
-            <span>async scheduling default</span>
+        <nav class="engine-switcher" aria-label="Engine guides">
+          <a href="index.html">Compare engines</a>
+          <a href="vllm.html" aria-current="page">vLLM</a>
+          <a href="sglang.html">SGLang</a>
+          <a href="memory.html">KV memory lab</a>
+        </nav>
+        <section id="vllm-overview" class="hero engine-cover" data-search-group="vLLM overview" data-search-item data-keywords="vLLM overview V1 engine token lifecycle commit pinned deep dive">
+          <div class="engine-cover-text">
+            <p class="eyebrow">Engine deep dive · vLLM V1 engine</p>
+            <h1>Inside vLLM.</h1>
+            <p class="hero-copy">Follow a prompt from the API server into EngineCore. Watch the scheduler assign work to GPU workers, then trace a generated token back to the client.</p>
+            <details class="engine-snapshot">
+              <summary>Pinned source versions</summary>
+              <div class="engine-hero-meta" aria-label="Pinned source metadata">
+                <a href="https://github.com/vllm-project/vllm/tree/7b77ed581d92fa14e34ab43344837bb1ca1b4257">commit 7b77ed5</a>
+                <span>committed 2026-10-31</span>
+                <span>main branch · near v0.33.0rc</span>
+                <span>latest final tag v0.32.0</span>
+                <span>Apache-2.0</span>
+                <span>Model Runner V2 default</span>
+                <span>async scheduling default</span>
+              </div>
+            </details>
+            <div class="hero-actions">
+              <a class="button" href="#request-lab">Trace a request</a>
+              <a class="button button-secondary" href="#lifecycle">Explore the source trace</a>
+              <a class="button button-secondary" href="#feature-catalog">Browse the feature catalog</a>
+            </div>
           </div>
-          <div class="hero-actions">
-            <a class="button" href="#lifecycle">Play the token lifecycle</a>
-            <a class="button button-secondary" href="#feature-catalog">Browse the feature catalog</a>
+          <figure class="engine-topology">
+            <figcaption>vLLM process map</figcaption>
+            <ol>
+              <li><strong>API server</strong><span>Render, tokenize and stream</span>
+                <small>tokenized request</small>
+              </li>
+              <li><strong>EngineCore</strong><span>Schedule work and manage KV blocks</span>
+                <small>scheduled tokens and block tables</small>
+              </li>
+              <li><strong>GPU worker</strong><span>Run the model and sample IDs</span>
+              </li>
+            </ol>
+            <p>Generated IDs return through EngineCore to the API server.</p>
+          </figure>
+        </section>
+
+        <section id="request-lab" class="content-section request-lab-section" data-search-group="Request lab" data-search-item data-keywords="engine comparison request lab beginner trace cold warm cache cancellation TTFT prefill decode lifecycle">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Request lab</p>
+              <h2>Follow one reply.</h2>
+            </div>
+            <p>One chat prompt, 40 input tokens and room for three output tokens. Try the same request with a cold cache and with a shared prefix.</p>
           </div>
+          <div class="request-lab" data-request-lab="vllm" hidden></div>
+          <noscript><p>Tokenize the chat, find reusable KV, process the remaining prompt and sample &ldquo;Blue&rdquo;. Two decode passes add &ldquo; sky&rdquo; and &ldquo;.&rdquo;. The engine streams &ldquo;Blue sky.&rdquo; and releases the request. Read the full <a href="vllm.html#file-trace">vLLM trace</a> or <a href="sglang.html#file-trace">SGLang trace</a> for each hand-off.</p></noscript>
+          <p class="lab-footnote">This is an illustrated request with example tokens. The counts follow one request through ordinary decoding on a single GPU. <a href="../index.html#request-diagram">Open the editable request diagram</a>, then <a href="../systems/index.html#capacity">estimate how many concurrent requests fit on one GPU</a>.</p>
         </section>
 
         <div class="metric-strip" aria-label="Page summary">
@@ -1160,7 +1212,7 @@
           <h3>Step 0: hashing (before scheduling)</h3>
           <p>
             When the EngineCore's input thread builds the <code>Request</code>, the block hasher
-            walks the prompt in 16-token blocks. Only <em>full</em> blocks are hashed:
+            walks this single-group example in full 16-token hash units:
           </p>
           <div class="formula vllm-math">full blocks = floor(1000 / 16) = 62   (tokens 0 … 991)
 partial block = 1000 − 62 × 16 = 8 tokens   (tokens 992 … 999, not hashed yet)
@@ -1280,10 +1332,10 @@ decode 63: token 63 at pos 1062 → block 66           (67 blocks total; token 6
           <p>
             Each decode step costs one token of budget and, on average, one sixteenth of a
             block. The per-step FLOPs for our request are tiny (<code>≈ 16 GFLOP</code>), but
-            the GPU still has to stream all 16 GB of weights from HBM for every step. At about
-            3.35 TB/s that is roughly 5 ms per step whether the batch holds 1 request or 100.
-            That is why batching many decodes together is the main throughput lever, and why
-            a full-graph CUDA replay (no Python per layer) matters for small batches.
+            streaming 16 GB of weights once at 3.35 TB/s already takes about 4.8 ms in an
+            idealized bandwidth calculation. Requests batched in one pass can share those weight
+            reads. Actual step time also depends on batch size, KV reads, arithmetic, kernel
+            efficiency and launch overhead. Graph replay can reduce launch overhead for supported shapes.
           </p>
           <p>
             With async scheduling on, the scheduler schedules decode <em>k+1</em> before the
@@ -1519,11 +1571,11 @@ request A at the end      = 67 blocks = 134 MiB</div>
             <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/kv_cache_utils.py#L162"><code>KVCacheBlock</code></a> with a
             <code>block_id</code>, a reference count, an optional hash, and two free-list
             pointers. In each <strong>GPU worker</strong>, block <code>i</code> is a slice of
-            real tensors, one per attention layer, allocated once at startup. The only thing
-            that crosses the process boundary is block IDs inside the
-            <code>SchedulerOutput</code>. That is why the scheduler can plan memory without
-            touching the GPU, and why every worker allocates identical cache shapes: block 3117
-            must mean the same slot range on every tensor-parallel rank.
+            real cache storage for participating local layers, allocated at startup. The
+            <code>SchedulerOutput</code> carries block IDs along with scheduling metadata.
+            Workers translate the IDs into their own rank-local storage. Tensor-parallel
+            ranks may own different head shards and pipeline stages own different layers.
+            <a href="memory.html#address-lab">Trace a logical position to a physical slot</a>.
           </p>
           <p>
             How big is a block? For a standard attention layer,
@@ -1621,9 +1673,10 @@ request A at the end      = 67 blocks = 134 MiB</div>
             set, and logs a warning that hashes will not match across instances.
           </p>
           <p>
-            A lookup never covers the final prompt token (the model must run at least one
-            token to produce logits), and because hits are whole blocks, a prompt that is
-            entirely cached still recomputes up to one block. Cache hits and queries are
+            Ordinary generation leaves at least the last prompt position to compute its logits.
+            In this dense single-group example, rounding down to a full block can leave up to a block of
+            work even for an identical prompt. Compatible hybrid configurations can support
+            <a href="memory.html#prefix-reuse">sub-block hit boundaries</a>. Cache hits and queries are
             recorded per step and exported as the prefix-cache hit-rate metric. The cache can
             be cleared at runtime through
             <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/kv_cache_manager.py#L682"><code>KVCacheManager.reset_prefix_cache</code></a>
@@ -3683,7 +3736,7 @@ curl -N http://localhost:8000/v1/chat/completions \
               <p><strong>What:</strong> Full KV blocks are indexed by a hash of their tokens plus everything before them, and reused by later requests with the same prefix.</p>
               <p><strong>Why:</strong> Shared system prompts, few-shot examples and multi-turn chats skip most of their prefill.</p>
               <p><strong>How:</strong> <code>hash_block_tokens</code> chains each block's hash to its parent's; extra keys cover LoRA, multimodal hashes and an optional <code>cache_salt</code>. <code>get_computed_blocks</code> walks the chain on admission; freed blocks stay cached until evicted LRU-first.</p>
-              <p><strong>Caveat:</strong> Only full blocks are shared, and hits are local to one engine unless a KV connector shares them.</p>
+              <p><strong>Caveat:</strong> A dense single-group cache hits on full blocks. Compatible aligned hybrid cache groups can match smaller units. Local hits require resident state; configured KV connectors can bring in external KV. <a href="memory.html#prefix-reuse">See the alignment rules</a>.</p>
               <span class="feature-files">Key files: <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/kv_cache_utils.py#L707" title="hash_block_tokens">vllm/v1/core/kv_cache_utils.py</a> · <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/kv_cache_manager.py#L266" title="get_computed_blocks">vllm/v1/core/kv_cache_manager.py</a> · <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/block_pool.py#L230" title="cache_full_blocks">vllm/v1/core/block_pool.py</a></span>
               <span class="feature-flag"><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/engine/arg_utils.py#L1406">--enable-prefix-caching</a> · <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/engine/arg_utils.py#L1413">--prefix-caching-hash-algo</a></span>
             </article>

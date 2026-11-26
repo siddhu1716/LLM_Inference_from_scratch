@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#112c2a">
+  <meta name="description" content="An annotated library of inference notebooks, articles, engine documentation and research papers. Search by concept or follow a reading path from one token to a cluster.">
+  <title>Reading library | Inference from Scratch</title>
+  <link rel="icon" href="../assets/mark.svg">
+  <link rel="stylesheet" href="library.css">
+  <script src="../theme.js" defer></script>
+    <script src="library.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main-content">Skip to reading library</a>
+  <header class="site-header">
+    <div class="mast wrap">
+      <a class="brand" href="../index.html"><img src="../assets/mark.svg" alt="" width="34" height="34">Inference from Scratch</a>
+      <nav aria-label="Main navigation">
+        <a href="../index.html">Guide</a>
+        <a href="../curriculum.html">Curriculum</a>
+        <a href="../models/index.html">Models</a>
+        <a href="../systems/index.html">Systems lab</a>
+        <a href="index.html" aria-current="page">Reading library</a>
+       <button class="theme-switch" type="button" data-theme-toggle aria-label="Change color theme"><span data-theme-icon aria-hidden="true">◐</span></button></nav>
+    </div>
+  </header>
+  <main id="main-content" class="wrap">
+    <div class="intro">
+      <div class="title-block">
+        <p class="eyebrow">Field guide / References</p>
+        <h1>Reading library</h1>
+        <p class="intro-text">Follow a token through the literature. Each source comes with a question to answer as you read, from your first forward pass to a multi-GPU deployment.</p>
+      </div>
+      <a class="featured" href="https://github.com/elizabetht/100-days-of-inference">
+        <span class="book" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="feature-copy"><span class="eyebrow">Featured collection</span>
+        <strong>100 Days of Inference</strong>
+        <span>The original experiments by elizabetht. Open the notebook collection on GitHub.</span></span>
+      </a>
+    </div>
+    <div class="layout">
+      <aside class="filters" aria-label="Library index">
+        <div class="filter-controls" id="filter-controls" hidden>
+          <h2>Find a reading</h2>
+          <label for="query">Search the library</label>
+          <input type="search" id="query" placeholder="e.g. KV cache" autocomplete="off" aria-controls="results">
+          <label for="format">Source type</label>
+          <select id="format" aria-controls="results"><option value="">All source types</option><option>Notebook</option><option>Paper</option><option>Documentation</option><option>Engineering guide</option><option>Medium</option></select>
+          <label for="topic">Topic</label>
+          <select id="topic" aria-controls="results"><option value="">All topics</option><option value="foundations">Foundations</option><option value="engines">Serving engines</option><option value="optimization">Optimization</option><option value="distributed">Distributed inference</option></select>
+          <button id="reset" type="button" hidden>Clear filters</button>
+        </div>
+        <nav class="contents" aria-label="Jump to topic">
+          <h2>On this page</h2>
+          <a href="#foundations">Foundations</a>
+          <a href="#engines">Serving engines</a>
+          <a href="#optimization">Optimization</a>
+          <a href="#distributed">Distributed inference</a>
+        </nav>
+      </aside>
+      <div id="results" class="results">
+        <p class="result-count" id="count" role="status" aria-live="polite" aria-atomic="true">31 readings</p>
+        <div class="empty" id="empty" hidden>
+          <h2>No matching readings</h2>
+          <p>Try a broader search term or clear the active filters.</p>
+          <button type="button" id="reset-empty">Show all readings</button>
+        </div>
+        <section class="collection" id="foundations" aria-labelledby="foundations-title">
+          <div class="collection-heading">
+            <div><h2 id="foundations-title">Foundations</h2><p>Follow one prompt from text to tokens, then account for the state retained after each step.</p></div>
+            <a class="lesson-link" href="../index.html#token-loop">Open the token loop</a>
+          </div>
+          <ul class="entries">
+            <li class="entry" data-type="Notebook" data-keywords="how inference works transformer logits prompt prefill decode sampling tokenizer autoregressive">
+              <p class="entry-meta"><span class="type">Notebook</span><span>100 Days of Inference · elizabetht</span></p>
+              <h3><a href="https://github.com/elizabetht/100-days-of-inference/blob/main/day01/llm-inference-mechanics.ipynb">Day 01 · Watch a model generate</a></h3>
+              <p class="annotation">Step through a small GPT-2 example. Pick one output position and track it from the input IDs through scores, a token choice and the next input.</p>
+              <p class="question"><span>Reading question</span>Which model output becomes the first generated token?</p>
+            </li>
+            <li class="entry" data-type="Paper" data-keywords="attention is all you need transformer causal mask scaled dot product">
+              <p class="entry-meta"><span class="type">Paper</span><span>Ashish Vaswani et al. · 2017</span></p>
+              <h3><a href="https://arxiv.org/abs/1706.03762">Inside a transformer’s attention layer</a></h3>
+              <p class="annotation">Read the attention equation and the masking paragraph in §3.2. The decoder’s mask gives each position access to earlier positions while the full training sequence is available.</p>
+              <p class="question"><span>Reading question</span>If three input tokens enter together, which other positions can the middle token attend to?</p>
+            </li>
+            <li class="entry" data-type="Documentation" data-keywords="KV cache explanation caching past_key_values memory">
+              <p class="entry-meta"><span class="type">Documentation</span><span>Hugging Face · Transformers</span></p>
+              <h3><a href="https://huggingface.co/docs/transformers/main/en/cache_explanation">How a key/value cache grows</a></h3>
+              <p class="annotation">Follow the shapes as the cache appends a new key and value. The current query still reads earlier keys, even when their projections are already stored.</p>
+              <p class="question"><span>Reading question</span>Which tensors can the next decoding step reuse, and which does it still have to compute?</p>
+            </li>
+            <li class="entry" data-type="Notebook" data-keywords="key value caching gpt2 past keys values memory">
+              <p class="entry-meta"><span class="type">Notebook</span><span>100 Days of Inference · elizabetht</span></p>
+              <h3><a href="https://github.com/elizabetht/100-days-of-inference/blob/main/day05/kv-cache.ipynb">Day 05 · Inspect a KV cache</a></h3>
+              <p class="annotation">Trace two steps of generation alongside the cache notebook. Keep separate counts for positions fed into the model and tokens emitted to the user.</p>
+              <p class="question"><span>Reading question</span>Immediately after the first sample, which token positions already have cache entries?</p>
+            </li>
+            <li class="entry" data-type="Medium" data-keywords="benchmark inferencex qwen pytorch triton from scratch serving measurement">
+              <p class="entry-meta"><span class="type">Medium</span><span>Shreyansh Pathak · 2026</span></p>
+              <h3><a href="https://medium.com/@shreyansh.pathak27/my-benchmark-lied-to-me-8-times-while-i-built-an-llm-inference-server-from-scratch-61f8991e9399">Building an inference server on a laptop GPU</a></h3>
+              <p class="annotation">Follow an engineer adding optimizations one at a time to a small PyTorch server. Look for the checks that distinguish better measurements from actual speedups.</p>
+              <p class="question"><span>Reading question</span>Which changes would you log before and after adding a paged cache?</p>
+            </li>
+          </ul>
+        </section>
+        <section class="collection" id="engines" aria-labelledby="engines-title">
+          <div class="collection-heading">
+            <div><h2 id="engines-title">Serving engines</h2><p>Trace a request through scheduling, shared memory, model execution and token selection.</p></div>
+            <a class="lesson-link" href="../engines/index.html">Compare the engines</a>
+          </div>
+          <ul class="entries">
+            <li class="entry" data-type="Documentation" data-keywords="vllm architecture overview enginecore executor scheduler gpu token stream v1">
+              <p class="entry-meta"><span class="type">Documentation</span><span>vLLM project · Design notes</span></p>
+              <h3><a href="https://docs.vllm.ai/en/stable/design/arch_overview/">Follow the vLLM V1 process boundaries</a></h3>
+              <p class="annotation">Locate the API server, engine core and GPU worker in the process diagram. Trace a request forward and the generated token back to its client.</p>
+              <p class="question"><span>Reading question</span>Where does the scheduling decision happen, and which process executes the model?</p>
+            </li>
+            <li class="entry" data-type="Paper" data-keywords="pagedattention vllm copy-on-write paging block table sharing prefix kv cache">
+              <p class="entry-meta"><span class="type">Paper</span><span>Woosuk Kwon et al. · 2023</span></p>
+              <h3><a href="https://arxiv.org/abs/2309.06180">Map logical tokens onto physical KV blocks</a></h3>
+              <p class="annotation">Use the PagedAttention diagrams to map a sequence onto nonadjacent blocks. Compare the bytes that the last block reserves with the token slots actually used.</p>
+              <p class="question"><span>Reading question</span>How can two requests share a prefix before their outputs diverge?</p>
+            </li>
+            <li class="entry" data-type="Notebook" data-keywords="vllm pagedattention scheduler continuous batching in-flight">
+              <p class="entry-meta"><span class="type">Notebook</span><span>100 Days of Inference · elizabetht</span></p>
+              <h3><a href="https://github.com/elizabetht/100-days-of-inference/blob/main/day09/vllm-paged-attention.ipynb">Day 09 · Experiment with vLLM batching</a></h3>
+              <p class="annotation">Pair the notebook’s block layout with the scheduling exercise in the guide. Draw two requests with different output lengths on the same timeline.</p>
+              <p class="question"><span>Reading question</span>At which iteration can a new request use the slot of a finished request?</p>
+            </li>
+            <li class="entry" data-type="Paper" data-keywords="sglang efficient execution structured language model programs radixattention trie prefix cache">
+              <p class="entry-meta"><span class="type">Paper</span><span>Lianmin Zheng et al. · 2023 preprint</span></p>
+              <h3><a href="https://arxiv.org/abs/2312.07104">Reuse prompt prefixes with SGLang’s radix tree</a></h3>
+              <p class="annotation">Draw the paths for two prompts that start alike and finish differently. In the paper’s RadixAttention section, locate the longest matching prefix and the branch created for the suffix.</p>
+              <p class="question"><span>Reading question</span>What work can a second request skip after a prefix hit?</p>
+            </li>
+            <li class="entry" data-type="Notebook" data-keywords="sglang radixattention structured outputs json prefix">
+              <p class="entry-meta"><span class="type">Notebook</span><span>100 Days of Inference · elizabetht</span></p>
+              <h3><a href="https://github.com/elizabetht/100-days-of-inference/blob/main/day10/sglang-radix-attention.ipynb">Day 10 · Explore SGLang prefix sharing</a></h3>
+              <p class="annotation">Use the notebook to study a shared prefix and a constrained output. Track two kinds of state separately, the prompt tokens already computed and the next tokens permitted by a format.</p>
+              <p class="question"><span>Reading question</span>Can two requests share prompt computation while producing different valid outputs?</p>
+            </li>
+            <li class="entry" data-type="Documentation" data-keywords="guided decoding grammar regex json schema xgrammar structured generation">
+              <p class="entry-meta"><span class="type">Documentation</span><span>SGLang project · Runtime guide</span></p>
+              <h3><a href="https://docs.sglang.io/docs/advanced_features/structured_outputs">Constrain a generated response to a schema</a></h3>
+              <p class="annotation">Inspect a structured-output request and identify the constraint sent to the server. Compare grammar-constrained decoding with checking the response after generation.</p>
+              <p class="question"><span>Reading question</span>What does a valid JSON shape tell you about the truth of the values inside it?</p>
+            </li>
+            <li class="entry" data-type="Paper" data-keywords="orca iteration level selective batching continuous scheduling">
+              <p class="entry-meta"><span class="type">Paper</span><span>Gyeong-In Yu et al. · OSDI 2022</span></p>
+              <h3><a href="https://www.usenix.org/conference/osdi22/presentation/yu">Schedule a batch one iteration at a time</a></h3>
+              <p class="annotation">Use Orca’s running example to follow a batch whose membership changes during generation. Relate the scheduling unit to the uneven lengths of real responses.</p>
+              <p class="question"><span>Reading question</span>What makes a request eligible to join a running workload?</p>
+            </li>
+          </ul>
+        </section>
+        <section class="collection" id="optimization" aria-labelledby="optimization-title">
+          <div class="collection-heading">
+            <div><h2 id="optimization-title">Optimization</h2><p>Identify the limiting resource, change one variable and check the effect on both latency and throughput.</p></div>
+            <a class="lesson-link" href="../systems/index.html">Open the systems lab</a>
+          </div>
+          <ul class="entries">
+            <li class="entry" data-type="Engineering guide" data-keywords="mastering llm techniques inference optimization latency throughput quantization batching">
+              <p class="entry-meta"><span class="type">Engineering guide</span><span>Shashank Verma &amp; Neal Vaidya · NVIDIA</span></p>
+              <h3><a href="https://developer.nvidia.com/blog/mastering-llm-techniques-inference-optimization/">Match an inference bottleneck to a technique</a></h3>
+              <p class="annotation">Start with NVIDIA’s introduction to prefill, decode and memory. For each technique in the remainder, write down the resource it targets and a metric to test.</p>
+              <p class="question"><span>Reading question</span>Would a long prompt and a long generated answer stress the same parts of your server?</p>
+            </li>
+            <li class="entry" data-type="Paper" data-keywords="flash attention exact tiling io hbm sram online softmax attention">
+              <p class="entry-meta"><span class="type">Paper</span><span>Tri Dao et al. · 2022</span></p>
+              <h3><a href="https://arxiv.org/abs/2205.14135">Count the memory traffic in FlashAttention</a></h3>
+              <p class="annotation">Sketch where an ordinary attention implementation stores its score matrix. Then follow one tile through the paper’s algorithm and identify the writes it avoids.</p>
+              <p class="question"><span>Reading question</span>How can the attention operation stay exact while the GPU transfers fewer bytes?</p>
+            </li>
+            <li class="entry" data-type="Paper" data-keywords="gqa mqa mha grouped query head kv size memory bandwidth">
+              <p class="entry-meta"><span class="type">Paper</span><span>Joshua Ainslie et al. · 2023</span></p>
+              <h3><a href="https://arxiv.org/abs/2305.13245">Calculate the cache saved by grouped-query attention</a></h3>
+              <p class="annotation">Use the figure comparing multi-head, multi-query and grouped-query attention. Count key/value heads separately from query heads when estimating the bytes cached per position.</p>
+              <p class="question"><span>Reading question</span>With 32 query heads and 8 KV heads, how much KV storage does the layer need relative to 32 KV heads?</p>
+            </li>
+            <li class="entry" data-type="Paper" data-keywords="awq activation aware weight quantization int4 calibration">
+              <p class="entry-meta"><span class="type">Paper</span><span>Ji Lin et al. · 2023 preprint</span></p>
+              <h3><a href="https://arxiv.org/abs/2306.00978">Choose which weights to protect in low precision</a></h3>
+              <p class="annotation">Read the motivation for AWQ’s use of activation statistics. Sketch a calibration plan and check the model’s task quality as well as its memory footprint.</p>
+              <p class="question"><span>Reading question</span>Why might equally sized weight errors affect the model output by different amounts?</p>
+            </li>
+            <li class="entry" data-type="Paper" data-keywords="speculative decoding speculation acceptance draft target distribution rejection sampling">
+              <p class="entry-meta"><span class="type">Paper</span><span>Yaniv Leviathan, Matan Kalman &amp; Yossi Matias · 2022 preprint</span></p>
+              <h3><a href="https://arxiv.org/abs/2211.17192">Trace one speculative verification round</a></h3>
+              <p class="annotation">A small model proposes several tokens for a larger model to verify. Mark the accepted prefix, the first rejection and the correction step in the sampling algorithm.</p>
+              <p class="question"><span>Reading question</span>Which target-model work can be amortized, and what happens to the proposals after a rejection?</p>
+            </li>
+            <li class="entry" data-type="Notebook" data-keywords="eagle medusa speculative decoding ngram acceptance draft overhead">
+              <p class="entry-meta"><span class="type">Notebook</span><span>100 Days of Inference · elizabetht</span></p>
+              <h3><a href="https://github.com/elizabetht/100-days-of-inference/blob/main/day15/speculative-decoding.ipynb">Day 15 · Vary speculative acceptance</a></h3>
+              <p class="annotation">Compare the draft-and-verify methods in the notebook. Before timing a run, predict what a low acceptance rate does to the total cost per emitted token.</p>
+              <p class="question"><span>Reading question</span>Which two costs must you include besides the number of proposed tokens?</p>
+            </li>
+            <li class="entry" data-type="Documentation" data-keywords="vllm automatic prefix caching apc time to first token ttft">
+              <p class="entry-meta"><span class="type">Documentation</span><span>vLLM project · Feature guide</span></p>
+              <h3><a href="https://docs.vllm.ai/en/stable/features/automatic_prefix_caching/">Separate a prefix-cache hit from a fast decode step</a></h3>
+              <p class="annotation">Read the examples of repeated documents and multi-turn conversations. Mark the shared prompt segment and identify the tokens whose prefill can be reused.</p>
+              <p class="question"><span>Reading question</span>Which latency metric should improve first when the shared prefix is long?</p>
+            </li>
+            <li class="entry" data-type="Notebook" data-keywords="prefix reuse cache aware routing prompt design">
+              <p class="entry-meta"><span class="type">Notebook</span><span>100 Days of Inference · elizabetht</span></p>
+              <h3><a href="https://github.com/elizabetht/100-days-of-inference/blob/main/day16/kv-cache-prefix-caching.ipynb">Day 16 · Move a changing field in the prompt</a></h3>
+              <p class="annotation">Trace what happens to the longest reusable prefix when a variable field moves from the beginning of a prompt to the end.</p>
+              <p class="question"><span>Reading question</span>How can two prompts contain the same instructions yet produce very different cache hit rates?</p>
+            </li>
+            <li class="entry" data-type="Medium" data-keywords="benchmarking llm backends tgi vllm lmdeploy tensorrt-llm bento">
+              <p class="entry-meta"><span class="type">Medium</span><span>Sean Sheng · BentoML · 2024</span></p>
+              <h3><a href="https://medium.com/data-science/benchmarking-llm-inference-backends-6c8ae46e72e4">Read an inference backend benchmark</a></h3>
+              <p class="annotation">Read the BentoML team’s Llama 3 experiments. Compare the A100 setup, model precision, client concurrency and reported metrics before comparing results across engines.</p>
+              <p class="question"><span>Reading question</span>Would the backend you pick for shortest first-token latency also maximize aggregate output tokens per second?</p>
+            </li>
+            <li class="entry" data-type="Medium" data-keywords="benchmarking vllm baseline first optimization concurrency throughput ttft goodput">
+              <p class="entry-meta"><span class="type">Medium</span><span>Arul Mathur · 2026</span></p>
+              <h3><a href="https://medium.com/understanding-llm-serving/benchmarking-vllm-baseline-and-our-first-optimization-afc50c181e54">Find the throughput plateau in a vLLM load test</a></h3>
+              <p class="annotation">Follow the author’s concurrency sweep. Compare the point where the throughput curve flattens with the point where first-token latency starts to miss a target.</p>
+              <p class="question"><span>Reading question</span>Which offered load would you choose for an interactive service, and what evidence supports it?</p>
+            </li>
+            <li class="entry" data-type="Medium" data-keywords="gpu profiling small speed improvements a100 vllm attention overhead">
+              <p class="entry-meta"><span class="type">Medium</span><span>Nandana Dileep · 2026</span></p>
+              <h3><a href="https://medium.com/@nandanadileep29/what-i-saw-from-profiling-vllm-on-an-nvidia-a100-eb69a9c7da74">Follow a vLLM profile on an A100</a></h3>
+              <p class="annotation">The author profiles cache and attention overhead on one GPU. Compare the original hypothesis with the place the measurements show time being spent.</p>
+              <p class="question"><span>Reading question</span>What evidence would justify spending a day optimizing an attention kernel?</p>
+            </li>
+          </ul>
+        </section>
+        <section class="collection" id="distributed" aria-labelledby="distributed-title">
+          <div class="collection-heading">
+            <div><h2 id="distributed-title">Distributed inference</h2><p>Decide what to split across GPUs, what to replicate and what must travel across the network.</p></div>
+            <a class="lesson-link" href="../systems/index.html">Explore distributed inference</a>
+          </div>
+          <ul class="entries">
+            <li class="entry" data-type="Documentation" data-keywords="vllm distributed inference tensor parallel pipeline parallel tp pp dp replicas nodes">
+              <p class="entry-meta"><span class="type">Documentation</span><span>vLLM project · Serving guide</span></p>
+              <h3><a href="https://docs.vllm.ai/en/stable/serving/parallelism_scaling/">Choose a multi-GPU execution layout</a></h3>
+              <p class="annotation">Walk through the single-node and multi-node cases. For each layout, mark which devices exchange partial results within a layer and which pass activations between layers.</p>
+              <p class="question"><span>Reading question</span>If the model fits on one node but demand exceeds its capacity, what other scaling option can you test?</p>
+            </li>
+            <li class="entry" data-type="Notebook" data-keywords="tensor expert pipeline data parallelism TP EP PP DP MoE">
+              <p class="entry-meta"><span class="type">Notebook</span><span>100 Days of Inference · elizabetht</span></p>
+              <h3><a href="https://github.com/elizabetht/100-days-of-inference/blob/main/day17/model-parallelism.ipynb">Day 17 · Compare four parallel layouts</a></h3>
+              <p class="annotation">Use the notebook’s parallelism examples to draw weight placement and a token’s route. Mark any communication that repeats for each generated token.</p>
+              <p class="question"><span>Reading question</span>How does routing a token to a mixture-of-experts layer differ from routing a request to a replica?</p>
+            </li>
+            <li class="entry" data-type="Paper" data-keywords="megatron model parallel tensor parallel all reduce communication">
+              <p class="entry-meta"><span class="type">Paper</span><span>Mohammad Shoeybi et al. · 2019</span></p>
+              <h3><a href="https://arxiv.org/abs/1909.08053">Trace a tensor-parallel transformer layer</a></h3>
+              <p class="annotation">Read Megatron-LM’s tensor partition diagrams. Follow only the forward pass first, multiplying a row or column shard and marking where the partial results are combined.</p>
+              <p class="question"><span>Reading question</span>At which boundaries does each device need data produced by its peers?</p>
+            </li>
+            <li class="entry" data-type="Paper" data-keywords="distserve disaggregated serving goodput slo pd disaggregation">
+              <p class="entry-meta"><span class="type">Paper</span><span>Yinmin Zhong et al. · 2024</span></p>
+              <h3><a href="https://arxiv.org/abs/2401.09670">Budget for the handoff between prefill and decode</a></h3>
+              <p class="annotation">Study DistServe’s separation of the two phases. Record the latency goals it enforces and the KV transfer required when a request crosses from one pool to the other.</p>
+              <p class="question"><span>Reading question</span>What fraction of offered requests meets both the first-token and per-token latency goals?</p>
+            </li>
+            <li class="entry" data-type="Documentation" data-keywords="sglang pd disaggregation prefill decode transfer kv cache">
+              <p class="entry-meta"><span class="type">Documentation</span><span>SGLang project · Deployment guide</span></p>
+              <h3><a href="https://docs.sglang.io/docs/advanced_features/pd_disaggregation">Connect a prefill worker to a decode worker</a></h3>
+              <p class="annotation">Identify the router, workers and transfer mechanism in SGLang’s deployment examples. Follow a single request across them before scaling either pool.</p>
+              <p class="question"><span>Reading question</span>Which data needs to reach a decode worker before it can continue the sequence?</p>
+            </li>
+            <li class="entry" data-type="Notebook" data-keywords="disaggregation prefill decode kv transfer handoff bandwidth">
+              <p class="entry-meta"><span class="type">Notebook</span><span>100 Days of Inference · elizabetht</span></p>
+              <h3><a href="https://github.com/elizabetht/100-days-of-inference/blob/main/day18/disaggregation-prefill-decode.ipynb">Day 18 · Study the cost of moving KV state</a></h3>
+              <p class="annotation">Use the phase-splitting notebook to reason about handoff size. Hold bytes per token fixed and predict what happens to transfer time when prompt length doubles.</p>
+              <p class="question"><span>Reading question</span>When could moving the cache take longer than the queueing time saved by the split?</p>
+            </li>
+            <li class="entry" data-type="Medium" data-keywords="multi tenant distributed routing locality llm-d xeon red hat openshift cache aware">
+              <p class="entry-meta"><span class="type">Medium</span><span>Vinay Kumar &amp; Amber Jain · Intel · 2026</span></p>
+              <h3><a href="https://medium.com/intel-tech/accelerate-multi-turn-llm-inference-workloads-on-intel-xeon-with-llm-d-intelligent-routing-on-red-91333f78dcaf">Route multi-turn conversations to a warm replica</a></h3>
+              <p class="annotation">Inspect Intel’s A/B experiment with llm-d on Xeon. Find the document lengths, number of conversations and routing policy, then sketch a case where the same policy could overload one replica.</p>
+              <p class="question"><span>Reading question</span>Which workload properties make routing for cache locality valuable?</p>
+            </li>
+            <li class="entry" data-type="Medium" data-keywords="vllm pd disaggregation transfer performance network troubleshooting kv cache">
+              <p class="entry-meta"><span class="type">Medium</span><span>Federico Iezzi · 2026</span></p>
+              <h3><a href="https://medium.com/google-cloud/your-kv-cache-transfer-is-100x-slower-than-it-should-be-4937f17fb13e">Investigate a slow KV transfer between workers</a></h3>
+              <p class="annotation">Follow a measurement of the handoff path in a disaggregated deployment. Separate time spent moving data from time spent preparing the transfer.</p>
+              <p class="question"><span>Reading question</span>What would you measure before blaming network bandwidth for slow requests?</p>
+            </li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </main>
+  <footer><div class="wrap"><a href="../index.html">Inference from Scratch</a><a href="#main-content">Back to top</a></div></footer>
+</body>
+</html>

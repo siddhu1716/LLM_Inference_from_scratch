@@ -7,11 +7,13 @@
       name="description"
       content="A 26-day inference engineering curriculum from model mechanics through GPU systems, capacity planning, and safe deployment."
     >
-    <meta name="theme-color" content="#3156d3">
+    <meta name="theme-color" content="#112c2a">
     <title>26-Day Curriculum | LLM Inference from Scratch</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%233156d3'/><text x='32' y='40' text-anchor='middle' font-size='24' font-family='sans-serif' font-weight='700' fill='white'>LLM</text></svg>">
-    <link rel="stylesheet" href="styles.css?v=7">
-    <script src="app.js?v=2" defer></script>
+    <link rel="icon" href="assets/mark.svg">
+    <link rel="stylesheet" href="styles.css?v=8">
+    <script src="theme.js" defer></script>
+    <script src="app.js?v=3" defer></script>
+    <noscript><style>.topbar .search-wrap,.top-actions button{display:none} @media(max-width:56rem){.sidebar{position:static;visibility:visible;transform:none;max-height:none;width:auto;border:0;box-shadow:none}.layout{display:block}}</style></noscript>
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -35,6 +37,7 @@
           <ul id="search-results" class="search-results" aria-label="Search results" hidden></ul>
         </div>
         <div class="top-actions">
+          <a class="header-repo" href="https://github.com/siddhu1716/LLM_Inference_from_scratch" aria-label="Project source on GitHub"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="7" cy="5" r="2.5"/><circle cx="7" cy="19" r="2.5"/><circle cx="17" cy="7" r="2.5"/><path d="M7 8v8.5M17 10a7 7 0 0 1-7 7H7"/></svg> GitHub</a>
           <button class="icon-button theme-button" type="button" data-theme-toggle aria-label="Change color theme">
             <span data-theme-icon aria-hidden="true">◐</span>
           </button>
@@ -62,6 +65,7 @@
             <li><a href="#phase-two">Days 6-12 · Engines</a></li>
             <li><a href="#phase-three">Days 13-18 · Optimization</a></li>
             <li><a href="#phase-four">Days 19-26 · Production</a></li>
+            <li><a href="#cache-to-cluster">Cache-to-cluster exercise</a></li>
             <li><a href="#core-equations">Core equations</a></li>
             <li><a href="#production-checklist">Production checklist</a></li>
             <li><a href="#study-method">Study method</a></li>
@@ -69,6 +73,11 @@
             <li><a href="engines/index.html">Engines overview ↗</a></li>
             <li><a href="engines/vllm.html">vLLM deep dive ↗</a></li>
             <li><a href="engines/sglang.html">SGLang deep dive ↗</a></li>
+            <li><a href="models/index.html">Model architectures</a></li>
+            <li><a href="engines/memory.html">KV address explorer</a></li>
+            <li><a href="systems/fabric.html">GPU communication lab</a></li>
+            <li><a href="systems/index.html">Distributed inference lab</a></li>
+            <li><a href="reading/index.html">Reading library</a></li>
           </ul>
         </nav>
         <div class="sidebar-note">
@@ -106,7 +115,8 @@
             <div>
               <span class="phase-number">Phase 01 · Days 1-5</span>
               <h2>Model mechanics</h2>
-              <a class="volume-link" href="notes/phase-1-mechanics.html">Read the complete Phase 1 textbook →</a>
+              <a class="volume-link" href="notes/phase-1-mechanics.html">Read the complete Phase 1 textbook →</a><br>
+              <a href="index.html#request-replay">Replay the Python model</a>
             </div>
             <p>Build the token-level mental model before discussing serving optimizations.</p>
           </div>
@@ -159,7 +169,8 @@
             <div>
               <span class="phase-number">Phase 02 · Days 6-12</span>
               <h2>Performance and inference engines</h2>
-              <a class="volume-link" href="notes/phase-2-engines.html">Read the complete Phase 2 textbook →</a>
+              <a class="volume-link" href="notes/phase-2-engines.html">Read the complete Phase 2 textbook →</a><br>
+              <a href="engines/index.html#request-lab">Compare one request in both engines</a>
             </div>
             <p>Explain where time and memory go before selecting an optimization.</p>
           </div>
@@ -233,7 +244,8 @@
             <div>
               <span class="phase-number">Phase 03 · Days 13-18</span>
               <h2>Optimization and scale-out</h2>
-              <a class="volume-link" href="notes/phase-3-optimization.html">Read the complete Phase 3 textbook →</a>
+              <a class="volume-link" href="notes/phase-3-optimization.html">Read the complete Phase 3 textbook →</a><br>
+              <a href="systems/index.html#capacity">Try the memory worksheet</a>
             </div>
             <p>Reduce bytes, predict more tokens per target pass, and partition work deliberately.</p>
           </div>
@@ -299,7 +311,8 @@
             <div>
               <span class="phase-number">Phase 04 · Days 19-26</span>
               <h2>Production inference engineering</h2>
-              <a class="volume-link" href="notes/phase-4-production.html">Read the complete Phase 4 textbook →</a>
+              <a class="volume-link" href="notes/phase-4-production.html">Read the complete Phase 4 textbook →</a><br>
+              <a href="systems/index.html#measurement">Measure a client trace</a>
             </div>
             <p>Operate the system under real hardware, traffic, capacity, and deployment constraints.</p>
           </div>
@@ -361,6 +374,25 @@
               <a class="notes-link" href="notes/phase-4-production.html#day-26">Read detailed Day 26 notes</a>
             </article>
           </div>
+        </section>
+
+        <section id="cache-to-cluster" class="content-section" data-search-group="Worked case" data-search-item data-keywords="capstone vLLM block table SGLang pool slot address HiCache PD AFD TP PP DP EP transfer">
+          <div class="section-heading">
+            <div><p class="eyebrow">Worked case</p><h2>Follow a 33-token prompt from cache to cluster</h2></div>
+            <p>Two users submit prompts with the same first 32 token IDs and different final IDs. Assume the same model, adapter, tokenizer and cache namespace. Open each answer after making a prediction.</p>
+          </div>
+          <details class="qa-item"><summary>1. How much state could the second request reuse?</summary>
+            <div class="qa-answer"><p>Take a full-attention decoder with 32 layers, eight KV heads per layer, 128 values per head and BF16 storage. A position costs 2 × 32 × 8 × 128 × 2 = 131,072 bytes of KV across the model. The shared 32 positions represent 4 MiB of useful state. If they are resident and reusable, prefill only needs to process the different final position to obtain its next-token scores. Cache reservation and metadata add overhead. DeepSeek MLA uses a different stored representation. <a href="models/index.html#compare">Compare model cache shapes</a>.</p></div>
+          </details>
+          <details class="qa-item"><summary>2. With 16 positions per block, where does the new KV go?</summary>
+            <div class="qa-answer"><p>In a single vLLM cache group using whole-block reuse, two prefix hashes identify reusable blocks. Suppose the request’s block table becomes <code>[7, 19, 4]</code>. At position 32 (counting from zero), the logical block is 2 and the offset is 0. Reading table entry 2 gives physical block 4, so the write slot is 4 × 16 + 0 = 64. The vocabulary ID at position 32 can be any valid token ID. <a href="engines/memory.html#address-lab">Step through the address lookup</a>.</p></div>
+          </details>
+          <details class="qa-item"><summary>3. How would SGLang locate that same position?</summary>
+            <div class="qa-answer"><p>In the ordinary token-pool path, the scheduler obtains a request-pool row <code>r</code>. A radix hit supplies cached location IDs for the shared prefix. The allocator supplies space for the suffix. If <code>req_to_token[r, 32] = 901</code>, the attention backend uses location 901 to find the layer’s KV data. Position 32 and the request-row ID have different jobs. With HiCache, a host or storage hit must also be made available to the device before the corresponding attention work can consume it. <a href="engines/memory.html#hicache">Follow a HiCache hit</a>.</p></div>
+          </details>
+          <details class="qa-item"><summary>4. What crosses the network after prefill?</summary>
+            <div class="qa-answer"><p>In a prefill/decode split, a fresh decode worker may need KV for all 33 processed positions. Here that is 4.125 MiB of useful payload before page padding, metadata or replication. A destination-side hit can reduce the missing bytes when the connector supports it. Changing to an attention/FFN split moves intermediate activations during each separated layer instead. For expert layers, follow the routes out and the outputs back before the model can finish its forward pass. <a href="systems/fabric.html#link-lab">Compare the communication budgets</a>.</p></div>
+          </details>
         </section>
 
         <section id="core-equations" class="content-section" data-search-group="Theory">

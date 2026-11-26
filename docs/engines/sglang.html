@@ -7,12 +7,14 @@
       name="description"
       content="A source-pinned, beginner-friendly deep dive into SGLang inference: an interactive token lifecycle from HTTP request to [DONE], a file-by-file trace, the overlap scheduler, schedule policies, RadixAttention prefix caching, memory pools, batch flow, attention backends, CUDA graphs, sampling, constrained decoding, and streaming detokenization."
     >
-    <meta name="theme-color" content="#3156d3">
+    <meta name="theme-color" content="#112c2a">
     <title>SGLang Deep Dive · Token Lifecycle | LLM Inference from Scratch</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%233156d3'/><text x='32' y='40' text-anchor='middle' font-size='24' font-family='sans-serif' font-weight='700' fill='white'>LLM</text></svg>">
-    <link rel="stylesheet" href="../styles.css?v=7">
-    <link rel="stylesheet" href="lifecycle.css?v=1">
-    <script src="../app.js?v=2" defer></script>
+    <link rel="icon" href="../assets/mark.svg">
+    <link rel="stylesheet" href="../styles.css?v=8">
+    <link rel="stylesheet" href="lifecycle.css?v=3">
+    <script src="../theme.js" defer></script>
+    <script src="request-lab.js?v=1" defer></script>
+    <script src="../app.js?v=3" defer></script>
     <script src="lifecycle.js?v=1" defer></script>
     <style>
       #main-content p code,
@@ -48,6 +50,7 @@
         margin: 0;
       }
     </style>
+    <noscript><style>.topbar .search-wrap,.top-actions button{display:none} @media(max-width:56rem){.sidebar{position:static;visibility:visible;transform:none;max-height:none;width:auto;border:0;box-shadow:none}.layout{display:block}}</style></noscript>
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -71,6 +74,7 @@
           <ul id="search-results" class="search-results" aria-label="Search results" hidden></ul>
         </div>
         <div class="top-actions">
+          <a class="header-repo" href="https://github.com/siddhu1716/LLM_Inference_from_scratch" aria-label="Project source on GitHub"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="7" cy="5" r="2.5"/><circle cx="7" cy="19" r="2.5"/><circle cx="17" cy="7" r="2.5"/><path d="M7 8v8.5M17 10a7 7 0 0 1-7 7H7"/></svg> GitHub</a>
           <button class="icon-button theme-button" type="button" data-theme-toggle aria-label="Change color theme">
             <span data-theme-icon aria-hidden="true">◐</span>
           </button>
@@ -94,41 +98,58 @@
         <nav>
           <ul class="nav-list">
             <li><a href="#sglang-overview" aria-current="true">Overview</a></li>
+            <li><a href="#request-lab">Request lab</a></li>
+            <li><a href="memory.html#address-lab">KV address inspector</a></li>
             <li><a href="#how-to-read">How to read this page</a></li>
             <li><a href="#architecture">Architecture &amp; IPC</a></li>
             <li><a href="#lifecycle">Interactive token lifecycle</a></li>
             <li><a href="#file-trace">File-by-file trace</a></li>
             <li><a href="#prefill-decode">Prefill vs decode math</a></li>
-            <li><a href="#scheduler">Scheduler &amp; overlap loop</a></li>
-            <li><a href="#schedule-policy">Schedule policies</a></li>
-            <li><a href="#radix-cache">RadixAttention cache</a></li>
-            <li><a href="#memory-pools">Memory pools</a></li>
-            <li><a href="#batch-flow">Batch flow &amp; forward modes</a></li>
-            <li><a href="#attention">Attention backends</a></li>
-            <li><a href="#cuda-graphs">CUDA graphs &amp; torch.compile</a></li>
-            <li><a href="#sampling">Logits, sampling &amp; penalties</a></li>
-            <li><a href="#streaming">Detokenizer &amp; streaming</a></li>
-            <li><a href="#constrained-decoding">Constrained decoding</a></li>
-            <li><a href="#spec-decode">Speculative decoding</a></li>
-            <li><a href="#parallelism">Parallelism (TP/PP/DP/EP)</a></li>
-            <li><a href="#disagg">PD disaggregation</a></li>
-            <li><a href="#hicache">HiCache tiers</a></li>
-            <li><a href="#lora">LoRA adapters</a></li>
-            <li><a href="#multimodal">Multimodal inputs</a></li>
-            <li><a href="#function-calling">Function calling &amp; reasoning</a></li>
-            <li><a href="#router">Router &amp; gateway</a></li>
-            <li><a href="#observability">Metrics &amp; tracing</a></li>
-            <li><a href="#api-surface">API surface</a></li>
-            <li><a href="#offline-engine">Offline Engine</a></li>
-            <li><a href="#frontend-language">Frontend language</a></li>
-            <li><a href="#feature-catalog">Feature catalog</a></li>
-            <li><a href="#tuning">Tuning knobs</a></li>
-            <li><a href="#reference-diagrams">Reference diagrams</a></li>
-            <li><a href="#further-reading">Further reading</a></li>
-            <li><a href="#glossary">Glossary</a></li>
-            <li><a href="#self-check">Self-check Q&amp;A</a></li>
-            <li><a href="#sources">Sources &amp; credits</a></li>
-            <li><a href="#vs-vllm">SGLang vs vLLM</a></li>
+            <li><details class="engine-nav-group">
+              <summary>Scheduling and execution</summary>
+              <ul>
+                <li><a href="#scheduler">Scheduler &amp; overlap loop</a></li>
+                <li><a href="#schedule-policy">Schedule policies</a></li>
+                <li><a href="#radix-cache">RadixAttention cache</a></li>
+                <li><a href="#memory-pools">Memory pools</a></li>
+                <li><a href="#batch-flow">Batch flow &amp; forward modes</a></li>
+                <li><a href="#attention">Attention backends</a></li>
+                <li><a href="#cuda-graphs">CUDA graphs &amp; torch.compile</a></li>
+                <li><a href="#sampling">Logits, sampling &amp; penalties</a></li>
+                <li><a href="#streaming">Detokenizer &amp; streaming</a></li>
+                <li><a href="#constrained-decoding">Constrained decoding</a></li>
+                <li><a href="#spec-decode">Speculative decoding</a></li>
+              </ul>
+            </details></li>
+            <li><details class="engine-nav-group">
+              <summary>Serving and deployment</summary>
+              <ul>
+                <li><a href="#parallelism">Parallelism (TP/PP/DP/EP)</a></li>
+                <li><a href="#disagg">PD disaggregation</a></li>
+                <li><a href="#hicache">HiCache tiers</a></li>
+                <li><a href="#lora">LoRA adapters</a></li>
+                <li><a href="#multimodal">Multimodal inputs</a></li>
+                <li><a href="#function-calling">Function calling &amp; reasoning</a></li>
+                <li><a href="#router">Router &amp; gateway</a></li>
+                <li><a href="#observability">Metrics &amp; tracing</a></li>
+                <li><a href="#api-surface">API surface</a></li>
+                <li><a href="#offline-engine">Offline Engine</a></li>
+                <li><a href="#frontend-language">Frontend language</a></li>
+              </ul>
+            </details></li>
+            <li><details class="engine-nav-group">
+              <summary>Reference and review</summary>
+              <ul>
+                <li><a href="#feature-catalog">Feature catalog</a></li>
+                <li><a href="#tuning">Tuning knobs</a></li>
+                <li><a href="#reference-diagrams">Reference diagrams</a></li>
+                <li><a href="#further-reading">Further reading</a></li>
+                <li><a href="#glossary">Glossary</a></li>
+                <li><a href="#self-check">Self-check Q&amp;A</a></li>
+                <li><a href="#sources">Sources &amp; credits</a></li>
+                <li><a href="#vs-vllm">SGLang vs vLLM</a></li>
+              </ul>
+            </details></li>
             <li><a href="index.html">Engines overview ↗</a></li>
             <li><a href="vllm.html">vLLM deep dive ↗</a></li>
             <li><a href="../index.html">Systems guide ↗</a></li>
@@ -144,33 +165,63 @@
       </aside>
 
       <main id="main-content">
-        <section id="sglang-overview" class="hero" data-search-group="SGLang overview" data-search-item data-keywords="SGLang overview SRT runtime token lifecycle commit pinned deep dive RadixAttention overlap scheduler">
-          <p class="eyebrow">Engine deep dive · SGLang Runtime (SRT)</p>
-          <h1>How SGLang turns a request into tokens.</h1>
-          <p class="hero-copy">
-            Follow one chat request through SGLang's real code: the FastAPI route and
-            OpenAI adapter that render the chat template, the TokenizerManager that
-            parks an <code>asyncio.Event</code> for the reply, the ZeroMQ hop into a
-            Scheduler process, the radix tree that finds a reusable prefix, the
-            PrefillAdder that budgets KV memory, the GPU ModelRunner that replays a
-            CUDA graph, the sampler that applies grammar masks and penalties, and the
-            DetokenizerManager that turns token IDs back into streamed text. Then open
-            each subsystem chapter for the data structures behind it.
-          </p>
-          <div class="engine-hero-meta" aria-label="Pinned source metadata">
-            <a href="https://github.com/sgl-project/sglang/tree/07a85353d6c6be47a268e33a416ad537985ef262">commit 07a8535</a>
-            <span>committed 2026-10-31</span>
-            <span>version: setuptools-scm (dynamic)</span>
-            <span>install docs pin v0.5.23</span>
-            <span>Apache-2.0</span>
-            <span>overlap scheduler on by default</span>
-            <span>Rust radix TreeCore default</span>
-            <span>build pins torch 2.14.1</span>
+        <nav class="engine-switcher" aria-label="Engine guides">
+          <a href="index.html">Compare engines</a>
+          <a href="vllm.html">vLLM</a>
+          <a href="sglang.html" aria-current="page">SGLang</a>
+          <a href="memory.html">KV memory lab</a>
+        </nav>
+        <section id="sglang-overview" class="hero engine-cover" data-search-group="SGLang overview" data-search-item data-keywords="SGLang overview SRT runtime token lifecycle commit pinned deep dive RadixAttention overlap scheduler">
+          <div class="engine-cover-text">
+            <p class="eyebrow">Engine deep dive · SGLang Runtime (SRT)</p>
+            <h1>Inside SGLang.</h1>
+            <p class="hero-copy">Follow a prompt from the TokenizerManager through the radix cache and the GPU. Watch the scheduler grow a reply one token at a time and the detokenizer turn it into text.</p>
+            <details class="engine-snapshot">
+              <summary>Pinned source versions</summary>
+              <div class="engine-hero-meta" aria-label="Pinned source metadata">
+                <a href="https://github.com/sgl-project/sglang/tree/07a85353d6c6be47a268e33a416ad537985ef262">commit 07a8535</a>
+                <span>committed 2026-10-31</span>
+                <span>version: setuptools-scm (dynamic)</span>
+                <span>install docs pin v0.5.23</span>
+                <span>Apache-2.0</span>
+                <span>overlap scheduler on by default</span>
+                <span>Rust radix TreeCore default</span>
+                <span>build pins torch 2.14.1</span>
+              </div>
+            </details>
+            <div class="hero-actions">
+              <a class="button" href="#request-lab">Trace a request</a>
+              <a class="button button-secondary" href="#lifecycle">Explore the source trace</a>
+              <a class="button button-secondary" href="#radix-cache">Jump to RadixAttention</a>
+            </div>
           </div>
-          <div class="hero-actions">
-            <a class="button" href="#lifecycle">Play the token lifecycle</a>
-            <a class="button button-secondary" href="#radix-cache">Jump to RadixAttention</a>
+          <figure class="engine-topology">
+            <figcaption>SGLang process map</figcaption>
+            <ol>
+              <li><strong>HTTP + TokenizerManager</strong><span>Render, tokenize and track the request</span>
+                <small>tokenized request</small>
+              </li>
+              <li><strong>Scheduler + GPU worker</strong><span>Match the prefix, batch and generate</span>
+                <small>sampled token IDs</small>
+              </li>
+              <li><strong>DetokenizerManager</strong><span>Turn sampled IDs into incremental text</span>
+              </li>
+            </ol>
+            <p>Text returns to the TokenizerManager for streaming.</p>
+          </figure>
+        </section>
+
+        <section id="request-lab" class="content-section request-lab-section" data-search-group="Request lab" data-search-item data-keywords="engine comparison request lab beginner trace cold warm cache cancellation TTFT prefill decode lifecycle">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Request lab</p>
+              <h2>Follow one reply.</h2>
+            </div>
+            <p>One chat prompt, 40 input tokens and room for three output tokens. Try the same request with a cold cache and with a shared prefix.</p>
           </div>
+          <div class="request-lab" data-request-lab="sglang" hidden></div>
+          <noscript><p>Tokenize the chat, find reusable KV, process the remaining prompt and sample &ldquo;Blue&rdquo;. Two decode passes add &ldquo; sky&rdquo; and &ldquo;.&rdquo;. The engine streams &ldquo;Blue sky.&rdquo; and releases the request. Read the full <a href="vllm.html#file-trace">vLLM trace</a> or <a href="sglang.html#file-trace">SGLang trace</a> for each hand-off.</p></noscript>
+          <p class="lab-footnote">This is an illustrated request with example tokens. The counts follow one request through ordinary decoding on a single GPU. <a href="../index.html#request-diagram">Open the editable request diagram</a>, then <a href="../systems/index.html#capacity">estimate how many concurrent requests fit on one GPU</a>.</p>
         </section>
 
         <div class="metric-strip" aria-label="Page summary">
@@ -1005,7 +1056,7 @@
               <p class="eyebrow">Worked example</p>
               <h2>Prefill (extend) vs decode, with real numbers</h2>
             </div>
-            <p>SGLang never "prefills a prompt"; it extends whatever prefix the cache already holds. The arithmetic below follows the code path step by step.</p>
+            <p>SGLang calls ordinary prefill an extend pass. With an empty cache it processes the whole prompt. On a prefix hit it processes the suffix.</p>
           </div>
           <p>
             In most papers the first forward pass over a prompt is called <em>prefill</em>.
@@ -1071,8 +1122,10 @@
           <div class="formula sglang-math">
             <pre>prefix_len        = 1,500           (KV reused, no compute, no new slots)
 extend_input_len  = 12,000 − 1,500 = 10,500
-saved             = 1,500 / 12,000 = 12.5 % of prompt FLOPs and 1,500 × 128 KiB ≈ 183 MiB of KV</pre>
+positions reused  = 1,500 / 12,000 = 12.5 % of prompt positions
+existing KV reused = 1,500 × 128 KiB = 187.5 MiB</pre>
           </div>
+          <p>The suffix still attends to the reused prefix. The fraction of input positions skipped does not directly predict total FLOPs or latency.</p>
 
           <h3>Step 2 — the memory budget</h3>
           <p>
@@ -1170,7 +1223,7 @@ ForwardBatch: extend_prefix_lens=[1500], extend_seq_lens=[8192], seq_lens=[9692]
           </p>
           <p>
             Once our request decodes, every step allocates one slot per running request and
-            reads all of their KV. With 49 requests averaging 3,000 context tokens plus ours at
+            reads their active KV. With 48 other requests averaging 3,000 context tokens plus ours at
             12,001:
           </p>
           <div class="formula sglang-math">
@@ -2939,9 +2992,9 @@ new_text  = read_text[len(surr_text):]</pre>
     RadixAttention only helps while the shared prefix is still in GPU memory. With many users, long system prompts,
     and multi-turn sessions, the working set quickly outgrows HBM and the oldest prefixes are evicted — then the next
     turn of that conversation pays full prefill again. HiCache treats GPU memory as level 1, pinned host DRAM as
-    level 2, and an external store (local files, a distributed KV store, a shared filesystem) as level 3. The radix
-    tree remains the single index: each node knows whether its KV is on the device, backed up on the host, or
-    available from storage.
+    level 2, and an optional external store as level 3. The radix tree tracks local device and host
+    residency. For storage, the controller queries the configured backend for available pages.
+    A local file path only enables cross-node reuse if the underlying filesystem is shared.
   </p>
 
   <h3>The moving parts</h3>
@@ -2978,9 +3031,10 @@ new_text  = read_text[len(surr_text):]</pre>
       <path class="edge" d="M520 191 V169" marker-end="url(#sgb-arrow-hc)"></path>
       <text x="600" y="182" class="muted">prefetch</text>
     </svg>
-    <figcaption>Original diagram. Backups flow down (device → host → storage); hits flow up (storage → host via prefetch, host → device via layer-wise load-back). The radix tree tracks which tier holds each node.</figcaption>
+    <figcaption>Backups move from device to host and, when configured, storage. Storage prefetch fills host buffers. Layer-wise load-back makes KV available on the GPU. The tree tracks local residency and the storage backend answers L3 queries.</figcaption>
   </figure>
 
+  <p><a href="memory.html#hicache">Follow a 4,160-token request through L1, L2 and optional L3, including a partial or late prefetch</a>.</p>
   <h3>Policies you can choose</h3>
   <ul>
     <li><strong>Write policy</strong> (<code>--hicache-write-policy</code>): <code>write_through</code> (default) backs a node up to host once it has been hit once; <code>write_through_selective</code> waits for a second hit; <code>write_back</code> copies only when the node is about to be evicted from the GPU. The thresholds are set in <code>init_hicache</code>.</li>
@@ -3577,7 +3631,7 @@ print(state["grade"])</code></pre>
       <span class="feature-flag"><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/arg_groups/fields/memory.py#L98">--enable-hierarchical-cache</a></span>
       <span class="feature-flag"><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/arg_groups/fields/memory.py#L109">--hicache-ratio</a></span>
       <span class="feature-flag"><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/arg_groups/fields/memory.py#L149">--hicache-storage-backend</a></span>
-      <p><strong>Caveats:</strong> Host memory is shared by all ranks on a machine (see <code>--hicache-host-memory-fraction</code>); loading from host is fast but not free, so tiny prefixes may not be worth it.</p>
+      <p><strong>Caveats:</strong> Per-rank host pools compete for the same node memory budget (see <code>--hicache-host-memory-fraction</code>); loading from host is fast but not free, so tiny prefixes may not be worth it.</p>
     </article>
 
     <article class="feature-card" id="feature-sampling">
@@ -4134,16 +4188,16 @@ print(state["grade"])</code></pre>
       <path class="edge" d="M578 80 V126" marker-end="url(#sgb-arrow-vs)"></path>
       <rect class="node-teal" x="460" y="210" width="250" height="40" rx="10"></rect>
       <text x="585" y="235" text-anchor="middle">free-block queue in LRU order</text>
-      <text x="420" y="276" class="muted">Only full blocks are hashed; each hash folds in its parent's hash.</text>
+      <text x="420" y="276" class="muted">Dense single-group example: a parent hash links each block.</text>
     </svg>
-    <figcaption>Original diagram. Left: SGLang walks a tree whose edges are token runs. Right: vLLM V1 computes a chained hash per full block (<a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/kv_cache_utils.py#L707"><code>hash_block_tokens</code></a>) and looks each hash up in the <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/block_pool.py#L137"><code>BlockPool</code></a>; freed blocks wait in a <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/kv_cache_utils.py#L258"><code>FreeKVCacheBlockQueue</code></a> ordered for LRU eviction.</figcaption>
+    <figcaption>Original diagram. Left: SGLang walks a tree whose edges are token runs. Right: this dense, single-group vLLM V1 example computes a chained hash per full block (<a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/kv_cache_utils.py#L707"><code>hash_block_tokens</code></a>) and looks each hash up in the <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/block_pool.py#L137"><code>BlockPool</code></a>; freed blocks wait in a <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/kv_cache_utils.py#L258"><code>FreeKVCacheBlockQueue</code></a> ordered for LRU eviction.</figcaption>
   </figure>
 
   <div class="table-wrap">
     <table class="file-map">
       <thead><tr><th>Aspect</th><th>SGLang (this commit)</th><th>vLLM (see <a href="vllm.html">vLLM page</a>)</th></tr></thead>
       <tbody>
-        <tr><td>Prefix index</td><td>Radix tree (<code>UnifiedRadixCache</code>); nodes split at divergence points; explicit lock counts; pluggable eviction (LRU, LFU, SLRU, priority, TLRU).</td><td>Chained hash per full block; a hash-to-block map; LRU-ordered free-block queue (<a href="vllm.html#kv-cache">KV cache section</a>).</td></tr>
+        <tr><td>Prefix index</td><td>Radix tree (<code>UnifiedRadixCache</code>); nodes split at divergence points; explicit lock counts; pluggable eviction (LRU, LFU, SLRU, priority, TLRU).</td><td>Chained prefix keys with group identity identify reusable blocks. Single-group hits align to the block size. Compatible hybrid groups permit <a href="memory.html#prefix-reuse">finer hit boundaries</a>. Unhashed free blocks are recycled first, then cached free blocks (<a href="vllm.html#kv-cache">KV cache section</a>).</td></tr>
         <tr><td>What the structure makes easy</td><td>Tree-shaped questions: "which waiting requests share the longest prefix?" (the <code>lpm</code> policy) and hierarchical residency per node (HiCache).</td><td>Constant-time lookups per block and a uniform block-level memory model.</td></tr>
         <tr><td>Process layout</td><td>Tokenizer manager in the HTTP/Engine process; one scheduler subprocess per rank owning batching, cache, and model worker; a separate detokenizer subprocess; all linked by ZeroMQ.</td><td>An API-server process (including the output processor that detokenizes) and an EngineCore process with a busy loop, linked by ZeroMQ (<a href="vllm.html#architecture">architecture section</a>).</td></tr>
         <tr><td>CPU/GPU overlap</td><td><code>event_loop_overlap</code> processes the previous batch's results while the current batch runs, using future token placeholders.</td><td>The vLLM page lists async scheduling as on by default at its pinned commit.</td></tr>

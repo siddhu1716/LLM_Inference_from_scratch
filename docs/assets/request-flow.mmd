@@ -1,0 +1,15 @@
+flowchart TD
+  accTitle: One request through a serving engine
+  accDescr: The scheduler sends prompt chunks to prefill and later tokens to decode. Both paths can produce a token for streaming. Unfinished requests return to the scheduler. A stop or cancellation releases request-owned state.
+  A["Validate, tokenize and queue"] --> S["Schedule token work"]
+  S -->|Prompt positions| P["Prefill a prompt chunk"]
+  S -->|Generated position| D["Decode with prior KV"]
+  P -->|More prompt left| S
+  P -->|End of prompt| T["Select a token ID"]
+  D --> T
+  T --> O["Stream available text"]
+  O -->|Continue| S
+  O -->|Stop or length limit| F["Release request state"]
+  S -.->|Abort| F
+  classDef memory fill:#f7e7c6,stroke:#af8b45,color:#332b16
+  class S,F memory

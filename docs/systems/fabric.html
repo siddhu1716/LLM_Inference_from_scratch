@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#112c2a">
+  <meta name="description" content="Trace tensor reductions, pipeline messages, expert routing, KV transfers and attention–FFN disaggregation for a single LLM request.">
+  <title>Inside distributed inference · Inference from Scratch</title>
+  <link rel="icon" href="../assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="systems.css">
+  <script src="../theme.js" defer></script>
+  <script src="chapters.js" defer></script>
+  <script src="fabric.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#content">Skip to guide</a>
+  <header class="site-header"><div class="wrap header-inner">
+    <a class="brand" href="../index.html"><img src="../assets/mark.svg" alt="" width="32" height="32">Inference from Scratch</a>
+    <nav aria-label="Site"><a href="index.html">Systems lab</a><a href="../models/index.html">Model internals</a><a href="../engines/index.html">Engine guides</a><button class="theme-switch" type="button" data-theme-toggle aria-label="Change color theme"><span data-theme-icon aria-hidden="true">◐</span></button></nav>
+  </div></header>
+  <main id="content">
+    <div class="hero"><div class="wrap hero-inner">
+      <div><p class="kicker">Distributed execution</p><h1>Follow the<br>messages</h1>
+        <p class="lede">A model can span processes, cards and whole machines. Track the owner of one request, the bytes it sends, and the reply it must wait for before generating its next token.</p>
+        <a class="action" href="#token-messages">Trace a decode step</a>
+      </div>
+      <figure class="hero-diagram">
+        <div class="diagram-head"><span>Two places to split a model</span></div>
+        <div class="hero-wire"><b>Prefill</b><span><small>Prompt KV</small>⟶</span><b>Decode</b></div>
+        <p class="wire-caption">One logical handoff at a phase boundary</p>
+        <div class="hero-wire"><b>Attention</b><span><small>Activations</small>⇄</span><b>FFN</b></div>
+        <figcaption>One round trip at each remotely executed feed-forward layer during a forward pass.</figcaption>
+      </figure>
+    </div></div>
+    <div class="wrap guide-grid">
+      <aside><nav class="chapters" aria-label="In this guide"><h2>In this guide</h2>
+        <a href="#token-messages">Per-token messages</a><a href="#pd">Prefill and decode</a>
+        <a href="#afd">Attention and FFN</a><a href="#link-lab">Link budget lab</a>
+        <a href="#compatibility">Engine support</a><a href="#deployment">Deployment exercise</a>
+      </nav></aside>
+      <article>
+        <section id="token-messages">
+          <p class="kicker">Per-token messages</p><h2>What leaves a rank?</h2>
+          <p>Suppose the previous pass sampled token 42. The engine now feeds token 42 through the model to predict token 43. It batches 32 independent sequences at one new position each. A hidden state is the vector representing one position inside the network. With width 4,096 and two-byte elements, the whole batch of hidden states occupies <strong>256 KiB</strong>.</p>
+          <p>The examples below apply different placements to that same step. Combine placements only when the model and runtime support their interaction. <a href="index.html#topologies">Review the five topology diagrams</a> · <a href="../models/index.html">Inspect a transformer block</a></p>
+          <dl class="exchange-list">
+            <div><dt>Data parallel <span>One routing decision per request</span></dt><dd>For two independent dense replicas, the frontend assigns a new chat to replica B. B owns its local KV and processes all subsequent steps. In that deployment the router does not broadcast every hidden state between replicas. Streaming events return to the client. If B fails, a retry needs a surviving compatible cache or a fresh prefill from the prompt. A follow-up chat turn is a new request and can miss cached history if routed elsewhere.</dd></div>
+            <div><dt>Tensor parallel <span>A collective within a layer</span></dt><dd>On two ranks, split the input channels of the output projection. Rank 0 computes a partial vector, for example [2, 3], and rank 1 computes [5, −1]. With an all-reduce sum, both receive [7, 2]. For our full batch each rank contributes a 256 KiB partial tensor for this particular projection. Actual wire bytes depend on the collective algorithm and rank count. Other projections may shard outputs locally. All participants must agree on collective order, dtype and count. <a href="https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/collectives.html">NCCL collective semantics</a></dd></div>
+            <div><dt>Pipeline parallel <span>An activation at each stage boundary</span></dt><dd>Stage 0 owns layers 0–15 and their KV. Stage 1 owns layers 16–31 and theirs. After layer 15, stage 0 sends a 32 × 4,096 activation tensor to stage 1, a 256 KiB boundary payload in this simple layout. Stage 1 finishes the forward pass. The sampled token IDs must become available to the next iteration's input stage. Microbatch B can enter stage 0 while A is in stage 1. A's next generated token still depends on A finishing both stages. Real model interfaces may send an extra residual tensor.</dd></div>
+            <div><dt>Expert parallel <span>A dispatch and combine per routed layer</span></dt><dd>The gate chooses two experts for every token. With 32 tokens, the layer has 64 token–expert assignments. Group rows by destination rank, run the resident experts, return expert outputs, and restore source-token order before summing weighted contributions. Experts on the same rank may share one transport batch. A local assignment may avoid the interconnect. Wide EP can use the same physical ranks for attention and experts. <a href="https://github.com/deepseek-ai/DeepEP">DeepEP dispatch and combine</a></dd></div>
+            <div><dt>Context parallel <span>Attention across token positions</span></dt><dd>Suppose rank A owns positions 0–2,047 and B owns 2,048–4,095. A query at position 3,000 needs valid history from both partitions. One family of methods communicates KV tiles. Another combines local softmax statistics and partial value sums using their relative normalization factors. Summing two independently normalized attention outputs would give the wrong result. The cache layout and the stage doing the exchange depend on the attention backend.</dd></div>
+          </dl>
+        </section>
+        <section id="pd">
+          <p class="kicker">Prefill/decode disaggregation · PD</p><h2>Transfer a request's history</h2>
+          <p>Prefill and decode are separate <em>model-serving groups</em>. Each group can run the complete model forward path for its phase. The weights are loaded when the workers start. A request changes groups by transferring its accumulated attention state and enough information to resume generation.</p>
+          <div class="flow" aria-label="PD request path"><div><small>Prefill group</small><b>Prompt positions 0…4095</b></div><span aria-hidden="true">→</span><div><small>Connector</small><b>KV blocks + token state</b></div><span aria-hidden="true">→</span><div><small>Decode group</small><b>Consume first sampled token</b></div></div>
+          <ol class="sequence">
+            <li><strong>Load and register</strong><p>Each role loads compatible weights and creates local cache pools and model runners. The connector registers memory or otherwise makes blocks addressable, then exchanges endpoint and layout information. A producer's block ID is local to its allocator. The consumer needs a destination mapping before writing or reading the payload.</p></li>
+            <li><strong>Agree on the request</strong><p>The router identifies the same request on both sides, including tokenized history, relevant model or adapter identity and generation configuration. Prefill evaluates the uncached prompt positions. Decode admission determines when destination KV slots can be reserved. Early reservation gives transfers a destination sooner but may occupy slots throughout a long prefill.</p></li>
+            <li><strong>Publish the continuation</strong><p>For the 4,096-token example, prefill produces prompt KV and the final-position logits. In a design where prefill samples the first output, send that token ID and sampling or stopping state needed to continue. The KV for the <em>sampled</em> token appears when it is subsequently fed through the model. The first output may reach the client before or after the transfer, depending on how the proxy streams.</p></li>
+            <li><strong>Move and validate</strong><p>A connector can push bytes into reserved decode slots or let decode pull from a producer that keeps the source blocks pinned. A single logical handoff may involve many per-rank, layer, or block transfers, sometimes pipelined with computation. Decode waits for the required blocks, metadata and completion events before it reads them.</p></li>
+            <li><strong>Continue or recover</strong><p>Decode runs the ordinary token loop. A receiver timeout, cancellation or incompatible layout must leave no partially installed prefix visible to a new request. Lifetimes include in-flight device copies: release or reuse a source or destination block only once the transfer is finished or safely abandoned. Depending on connector and policy, fail the request or reconstruct the lost prefix by recomputing it. A retry after partial streaming must account for tokens already delivered.</p></li>
+          </ol>
+          <div class="worked"><h3>Read the two queues separately</h3>
+            <p>If a long prompt gets its first token quickly but token two arrives late, time the wait for decode slots, KV transfer and first decode iteration separately. A fast RDMA link cannot admit a request into a full decode cache. If prefill retains pinned cache pages while decode waits, the backlog can spread to both pools. <a href="../engines/memory.html">Compare engine cache ownership and eviction</a> · <a href="https://www.usenix.org/conference/osdi24/presentation/zhong-yinmin">DistServe</a></p>
+          </div>
+        </section>
+        <section id="afd">
+          <p class="kicker">Attention–FFN disaggregation · AFD</p><h2>Send a token out, bring its result back</h2>
+          <p>A feed-forward network (FFN) transforms each token after attention mixes information across the sequence. In an MoE block a gate chooses a small number of routed FFN experts. With AFD, attention workers hold the request and KV history while a separate FFN group executes remote layer work. Each split layer introduces a dependency before the hidden state can advance to the next layer.</p>
+          <figure class="permute">
+            <figcaption><strong>Two tokens through one routed layer</strong><span>Illustrative top-two routing · two-dimensional outputs</span></figcaption>
+            <div class="permutation-grid">
+              <div><h3>Route</h3><p><b>A</b> selects E2 × .75<br>and E0 × .25</p><p><b>B</b> selects E1 × .60<br>and E2 × .40</p></div>
+              <div><h3>Group by expert</h3><p><b>E0</b> A → [4, 0]</p><p><b>E1</b> B → [10, 0]</p><p><b>E2</b> A → [0, 8]<br>B → [0, 5]</p></div>
+              <div><h3>Restore token order</h3><p><b>A</b> .25[4, 0] + .75[0, 8]<br><strong>[1, 6]</strong></p><p><b>B</b> .60[10, 0] + .40[0, 5]<br><strong>[6, 2]</strong></p></div>
+            </div>
+          </figure>
+          <p><strong>Permutation</strong> groups the assigned rows so each expert receives a batch. Dispatch carries the activation rows and enough routing or ordering metadata to return each result. Combine reverses the mapping and applies the gate weights exactly once. In models with a shared expert or another scaling factor, the model wrapper must add that contribution and preserve residual order. A synchronization barrier or completion event prevents the next layer from consuming unfinished output.</p>
+          <div class="cases">
+            <details open><summary>Where the gate runs changes what crosses the link</summary><p>In a <strong>staged</strong> example, attention sends a batch of hidden states to an FFN service. That service gates and dispatches internally to expert owners, combines and sends one result per input row back. A <strong>direct</strong> example gates on attention and sends each expert's rows to its owning FFN rank. The return path combines the contributions. If two experts share a destination, a backend may deduplicate payloads or aggregate their outputs there. The worksheet below makes the assumed boundary explicit. <a href="https://github.com/vllm-project/afd-plugin/blob/e58fdec5876782b9c6a03683416611deea42af92/docs/support.md">vLLM AFD connector and gate placement</a></p></details>
+            <details><summary>Why share an FFN pool?</summary><p>Two attention replicas may each have only a few tokens for expert 7. Pooling compatible tokens can make its matrix multiply larger and keep fewer copies of its weights. A hot expert, an underfilled return queue or incompatible layer numbers can still stall a microbatch. Group work by model, layer, dtype and execution shape. Reserve receive and permutation buffers at the peak number of assignments, including imbalance and graph padding.</p></details>
+            <details><summary>What can overlap?</summary><p>While FFN computes microbatch A, attention may process an independent microbatch B. Each microbatch needs separate routing maps and live buffers. The next layer for A still waits for its own returned results. On a lightly loaded decode server there may be too little independent work to hide many small messages. Record the unhidden wait at each layer and compare with colocated EP.</p></details>
+            <details><summary>Which group owns failures and state?</summary><p>The attention side owns the request and its KV. An FFN response belongs to a particular forward step, layer, microbatch and row ordering. An extra or stale reply cannot be applied twice. A serving design needs to coordinate aborts and drain outstanding transfers across the participating ranks. Rebuilding a failed expert service requires compatible weights and a healthy group before replay. Actual restart and replay guarantees depend on the runtime.</p></details>
+          </div>
+          <div class="worked"><h3>Compose the cuts</h3><p>One possible deployment prefills on a full-model pool, transfers its KV once, then decodes using an attention group and a remote expert group. In that case the PD handoff ends at the decode-side cache owner. The AFD exchanges repeat for each split decode layer and each forward iteration. Ordinary EP can route expert tokens within a colocated worker fleet even when there is no separate FFN service. <a href="https://github.com/sgl-project/sglang/issues/45568">SGLang's proposed composition and boundaries</a></p><a href="transfer-boundaries.mmd" download>Download the PD and AFD sequence diagram (Mermaid)</a></div>
+        </section>
+        <section id="link-lab">
+          <p class="kicker">Interactive experiment</p><h2>Budget the traffic at each boundary</h2>
+          <p>Compare the size of <strong>one PD handoff</strong> with <strong>one batched forward step using AFD</strong>. The two events occur at different rates. Prompt length controls the former. Batch size, routing and split layers control the latter.</p>
+          <div class="lab"><div class="lab-head"><h3>Link budget worksheet</h3><span class="mono">Illustrative payload model</span></div>
+            <form id="wire-form" hidden>
+              <div class="inputs">
+                <label>Transferred prompt positions<input name="prompt" type="number" min="0" max="4194304" step="1" value="4096" required></label>
+                <label>Tokens in this forward step<input name="tokens" type="number" min="1" max="65536" step="1" value="32" required></label>
+                <label>Remotely executed FFN layers<input name="layers" type="number" min="1" max="1024" step="1" value="32" required></label>
+                <label>Effective bandwidth (GiB/s)<input name="bandwidth" type="number" min="0.01" max="100000" step="any" value="25" required></label>
+                <label>Attention–FFN boundary<select name="gate"><option value="direct">Direct · one row per assignment</option><option value="staged">Staged · one row per token</option></select></label>
+                <label>Experts chosen per token<input name="experts" type="number" min="1" max="128" step="1" value="2" required></label>
+              </div>
+              <details class="model-controls"><summary>Change payload dimensions and workload</summary><div class="inputs">
+                <label>Full-model KV per position (KiB)<input name="kvKiB" type="number" min="0.001" max="1048576" step="any" value="128" required></label>
+                <label>Hidden dimension<input name="width" type="number" min="1" max="1048576" step="1" value="4096" required></label>
+                <label>Activation bytes each way<select name="bytes"><option value="2">2 bytes</option><option value="1">1 byte</option><option value="4">4 bytes</option></select></label>
+                <label>Prompt handoffs per second<input name="handoffs" type="number" min="0" max="1048576" step="any" value="6" required></label>
+                <label>Forward steps per second<input name="steps" type="number" min="0" max="1048576" step="any" value="50" required></label>
+              </div></details>
+              <button class="reset" type="reset">Restore worked example</button>
+            </form>
+            <noscript><p>The worked values below use 4,096 prompt positions and a 32-token step. Enable JavaScript to change the workload.</p></noscript>
+            <div id="wire-results" class="wire-results">
+              <div><h3>PD · per handoff</h3><strong id="pd-amount">512 MiB</strong><p id="pd-duration">20 ms of payload transfer at 25 GiB/s.</p><p id="pd-rate">6 handoffs/s require 3 GiB/s.</p></div>
+              <div><h3>AFD · per step</h3><strong id="afd-amount">32 MiB</strong><p id="afd-duration">1.25 ms of serialized payload transfer at 25 GiB/s.</p><p id="afd-rate">50 steps/s require 1.5625 GiB/s across both directions.</p></div>
+            </div>
+            <p class="status" id="wire-status" role="status">32 split layers each dispatch 512 KiB and return 512 KiB. The row count includes two assignments per token.</p>
+          </div>
+          <details class="explain" open><summary>Read the arithmetic and its limits</summary>
+            <p class="formula">PD payload = transferred positions × full-model KV bytes per position<br>AFD payload = 2 × split layers × rows per layer × width × bytes per element</p>
+            <p>In the direct toy model, 32 tokens each visit two experts. That sends 64 × 4,096 × 2 bytes, or 512 KiB outward per layer, and the same amount back. Across 32 layers that is 32 MiB. The staged case sends 32 rows per direction for 16 MiB per step. It excludes internal FFN dispatch traffic. Both counts exclude headers, indices, scale tensors, padding, retries and copies through staging buffers.</p>
+            <p>The time estimate serializes payloads on a single link at your effective rate. Startup cost for many small messages, network topology, computation, overlap, multi-rail placement and full duplex affect real elapsed time. Throughput across both directions is the sum of sent and returned bytes. For the direct example at 50 steps/s, a symmetric link carries about 0.78125 GiB/s <em>in each direction</em>. This is an aggregate group budget. A hot expert's NIC can saturate before the fleet average. Measure per-rank link utilization and message latency.</p>
+          </details>
+        </section>
+        <section id="compatibility">
+          <p class="kicker">Upstream implementation evidence</p><h2>Which combinations run?</h2>
+          <p>These source snapshots describe separate engine and connector paths, checked on 26 November 2026. Follow the recipe for the exact revision you deploy. The worksheet above uses illustrative hardware-independent dimensions.</p>
+          <dl class="exchange-list">
+            <div><dt>vLLM · PD with NIXL <span>Documented experimental feature</span></dt><dd>vLLM documents separate instances linked by a KV connector. Its NIXL matrix supports different TP degrees for dense transformers, with model-specific restrictions for MLA and hybrids. The handshake checks compatibility including attention backend, cache dtype and transfer mode. Different rank counts require a connector capable of mapping the actual shards. A push connector and a pull connector implement different protocols. <a href="https://docs.vllm.ai/en/stable/features/disagg_prefill/">vLLM PD lifecycle</a> · <a href="https://github.com/vllm-project/vllm/blob/898a7c68c2d1e869ebde2ce25ffbfc1e253bf0b4/docs/features/nixl_connector_compatibility.md">Pinned NIXL compatibility matrix</a></dd></div>
+            <div><dt>SGLang · PD with Mooncake or NIXL <span>Documented serving feature</span></dt><dd>The Mooncake guide illustrates unequal attention TP with a GPU staging buffer. Head slices can be gathered contiguously on prefill, moved, and scattered into decode pages. This staging path applies to non-MLA attention such as GQA. The separately documented deferred decode-allocation policy has narrower compatibility, including limitations on staging and parallel degrees. Check the intended model and policy together. <a href="https://github.com/sgl-project/sglang/blob/221713687e005c7bf044f97d7ca8c98015c119b6/docs/docs/advanced_features/pd_disaggregation.mdx">SGLang PD deployment and allocation policies</a></dd></div>
+            <div><dt>vLLM · external AFD plugin <span>Experimental plugin with hardware-specific records</span></dt><dd>In the cited snapshot the optional CUDA dependency pins vLLM 0.32.0. The support matrix records historical vLLM 0.30 hardware validation of Qwen3-30B-A3B with two attention and two FFN ranks using DeepEP M2N, including H100/H200 tests and a separate two-node configuration. Qwen3 MoE's P2P path gates on FFN and its direct DeepEP path gates on attention. The latter has explicit GPU architecture, expert layout, payload-format and parallelism constraints. A historical test is evidence for its recorded combination. <a href="https://github.com/vllm-project/afd-plugin/blob/e58fdec5876782b9c6a03683416611deea42af92/docs/support.md">Plugin support and validation</a> · <a href="https://github.com/vllm-project/afd-plugin/blob/e58fdec5876782b9c6a03683416611deea42af92/docs/installation.md">Version pins</a></dd></div>
+            <div><dt>SGLang · attention/FFN roles <span>Upstream RFC and implementation under review</span></dt><dd>The RFC describes attention-side scheduling, KV, routing and shared experts, with routed experts on the FFN side. Its full reference PR includes separate roles, staged and direct transports, and proposed compatibility tests. As of the date above, the reference PR was open. The RFC proposes incremental integration and documents limits including static group membership. Use its reproduction environment when evaluating the prototype. <a href="https://github.com/sgl-project/sglang/issues/45568">SGLang RFC</a> · <a href="https://github.com/sgl-project/sglang/pull/45562">Reference implementation and evaluation</a></dd></div>
+          </dl>
+          <div class="worked"><h3>Can attention and experts use different hardware?</h3><p>Memory-rich devices may suit long-context attention while another pool offers high expert-matrix throughput. To test a pairing, identify its supported accelerator runtime and collective transport first. CUDA/NCCL and Ascend connectors have distinct backends. Evidence for each ecosystem individually does not establish a direct CUDA-to-Ascend data path.</p>
+            <p>For PD, match checkpoint revision, tokenizer and template, adapter, position scheme, KV element and scale formats, attention backend, block layout and connector protocol. For AFD also check hidden width, routing weights and normalization, expert ownership and weight packing, supported activation wire dtype, residual semantics, graph capacities and compatible kernel builds on each side. Quantized expert <em>weights</em> and the <em>activation wire format</em> are separate choices. Exercise the exact model, runtime, topology and connector against a known-good colocated result. <a href="https://github.com/vllm-project/afd-plugin/blob/e58fdec5876782b9c6a03683416611deea42af92/docs/support.md">AFD support by connector and execution backend</a></p>
+          </div>
+        </section>
+        <section id="deployment">
+          <p class="kicker">Deployment exercise</p><h2>Choose the boundary from a trace</h2>
+          <p>You have two nodes, fast links within each, and a shared network between them. Requests mix long input documents with short chat turns. A weekly traffic spike raises both the first-token tail and the interval between streamed tokens.</p>
+          <ol class="runbook"><li><strong>Establish a baseline.</strong> Use a colocated model and the smallest TP or PP layout that fits the measured peak. Capture offered load, queue time, active KV blocks, expert load, prompt lengths and output lengths. Compare the same data, cold and warm, across trials.</li>
+            <li><strong>Try PD if the phases interfere.</strong> Profile a colocated chunked-prefill alternative. Place the PD boundary where the measured effective link rate can support new prompt KV per second. Check decode destination wait, registration time, transfer p99 and the first-to-second token gap. Include capacity reserved by each pool.</li>
+            <li><strong>Try AFD when expert batching or duplication is costly.</strong> Compare colocated EP first. For the chosen connector, measure per-layer dispatch, FFN queue, expert execution, combine, and time exposed on the decode critical path. Count bubbles and skew when changing the number of A and F ranks. Move the frequently crossed boundary onto the faster fabric when measurements justify it.</li>
+            <li><strong>Stress the actual deployment.</strong> Warm workers and verify comparable outputs before collecting timings. Vary arrival rate, prefix reuse, context length and expert skew. Cancel an in-flight request and check memory recovery. For a worker loss, record failed requests and restart behavior alongside successful goodput and cost per qualifying request.</li>
+          </ol>
+          <p><a href="index.html#measurement">Read the latency measurement walkthrough</a> · <a href="../engines/memory.html">Inspect cache allocation and release</a> · <a href="../models/index.html">Review model tensor shapes</a></p>
+        </section>
+      </article>
+    </div>
+  </main>
+  <footer><div class="wrap"><a class="brand" href="index.html">Distributed inference lab</a><a href="#content">Back to top</a></div></footer>
+</body>
+</html>

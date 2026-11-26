@@ -12,7 +12,7 @@
       content="LLM inference, GPU architecture, HBM, MIG, NVIDIA containers, autoscaling, batching, queueing, Little's Law, multi-cloud, canary deployment, SLO, TTFT, ITL, goodput"
     >
     <meta name="author" content="LLM Inference from Scratch">
-    <meta name="theme-color" content="#3156d3">
+    <meta name="theme-color" content="#112c2a">
     <meta property="og:type" content="article">
     <meta property="og:title" content="Days 19-26: Production Inference Textbook">
     <meta
@@ -20,8 +20,9 @@
       content="Build a practical mental model for the hardware and operations behind a production LLM fleet."
     >
     <title>Days 19-26: Production Inference | LLM Inference from Scratch</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%233156d3'/><text x='32' y='40' text-anchor='middle' font-size='24' font-family='sans-serif' font-weight='700' fill='white'>LLM</text></svg>">
-    <link rel="stylesheet" href="../styles.css?v=7">
+    <link rel="icon" href="../assets/mark.svg">
+    <link rel="stylesheet" href="../styles.css?v=8">
+    <script src="../theme.js" defer></script>
     <script src="../app.js" defer></script>
     <style>
       .textbook-hero { margin-bottom: 1.5rem; }
@@ -90,6 +91,7 @@
         details > * { display: block; }
       }
     </style>
+    <noscript><style>.topbar .search-wrap,.top-actions button{display:none} @media(max-width:56rem){.sidebar{position:static;visibility:visible;transform:none;max-height:none;width:auto;border:0;box-shadow:none}.layout{display:block}}</style></noscript>
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -106,6 +108,7 @@
           <ul id="search-results" class="search-results" aria-label="Search results" hidden></ul>
         </div>
         <div class="top-actions">
+          <a class="header-repo" href="https://github.com/siddhu1716/LLM_Inference_from_scratch" aria-label="Project source on GitHub"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="7" cy="5" r="2.5"/><circle cx="7" cy="19" r="2.5"/><circle cx="17" cy="7" r="2.5"/><path d="M7 8v8.5M17 10a7 7 0 0 1-7 7H7"/></svg> GitHub</a>
           <button class="icon-button theme-button" type="button" data-theme-toggle aria-label="Change color theme"><span data-theme-icon aria-hidden="true">◐</span></button>
           <button class="icon-button menu-button" type="button" data-menu-toggle aria-label="Open section navigation" aria-controls="section-navigation" aria-expanded="false"><span aria-hidden="true">☰</span></button>
         </div>
@@ -134,6 +137,8 @@
             <li><a href="#sources-and-credits">Sources &amp; credits</a></li>
             <li><a href="phase-3-optimization.html">Previous: Phase 3 ↗</a></li>
             <li><a href="../curriculum.html">26-day curriculum ↗</a></li>
+            <li><a href="../systems/index.html">Distributed inference lab</a></li>
+            <li><a href="../reading/index.html">Reading library</a></li>
           </ul>
         </nav>
         <div class="sidebar-note">
@@ -189,6 +194,7 @@
             <h2>GPU architecture: a factory for parallel math</h2>
             <p class="lead">Learn why the fastest kernel is usually the one that moves fewer bytes, how warps turn threads into execution, and why “peak FLOPS” is a ceiling rather than a prediction.</p>
           </header>
+          <p><a href="../systems/fabric.html#compatibility">Check which hardware and runtime placements can exchange state</a></p>
 
           <div class="learning-objectives">
             <strong>By the end, you can:</strong> trace data from HBM to a register; explain SMs, warps, occupancy, coalescing, and divergence; estimate a memory-bandwidth lower bound; and choose the next metric when a GPU appears “underutilized.”

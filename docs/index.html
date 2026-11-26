@@ -7,18 +7,43 @@
       name="description"
       content="An original, systems-first guide to LLM inference engines: token loops, caches, scheduling, kernels, serving, vLLM and SGLang internals, and 110 interview questions."
     >
-    <meta name="theme-color" content="#3156d3">
-    <title>LLM Inference from Scratch | Systems Guide</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%233156d3'/><text x='32' y='40' text-anchor='middle' font-size='24' font-family='sans-serif' font-weight='700' fill='white'>LLM</text></svg>">
-    <link rel="stylesheet" href="styles.css?v=7">
-    <script src="app.js?v=2" defer></script>
+    <meta name="theme-color" content="#112c2a">
+    <title>LLM Inference from Scratch | Engineering Field Guide</title>
+    <link rel="icon" href="assets/mark.svg">
+    <link rel="stylesheet" href="styles.css?v=8">
+    <link rel="stylesheet" href="atlas.css">
+    <script src="theme.js" defer></script>
+    <script src="app.js?v=3" defer></script>
+    <script src="replay.js" defer></script>
+    <noscript><style>.topbar .search-wrap,.top-actions button{display:none} @media(max-width:56rem){.sidebar{position:static;visibility:visible;transform:none;max-height:none;width:auto;border:0;box-shadow:none}.layout{display:block}}</style></noscript>
   </head>
-  <body>
+  <body class="atlas-home">
+    <svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" class="icon-defs" aria-hidden="true" focusable="false"><defs>
+  <symbol id="icon-path" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V7a3 3 0 0 1 3-3h4v15H7a3 3 0 0 0-3 2m7-2h6a3 3 0 0 1 3 2V6a2 2 0 0 0-2-2h-4"/></symbol>
+  <symbol id="icon-chip" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 3v3m6-3v3M9 18v3m6-3v3M3 9h3m-3 6h3m12-6h3m-3 6h3"/><rect x="9" y="9" width="6" height="6" rx="1"/></symbol>
+  <symbol id="icon-network" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="5" rx="1"/><rect x="2" y="16" width="6" height="5" rx="1"/><rect x="16" y="16" width="6" height="5" rx="1"/><path d="M12 8v4m-7 4v-4h14v4"/></symbol>
+  <symbol id="icon-books" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h4v15H3zm6 0h4v15H9zm6 1 4-1 3 14-4 1z"/></symbol>
+  <symbol id="icon-layers" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="m2 8 10-5 10 5-10 5zM2 12l10 5 10-5M2 16l10 5 10-5"/></symbol>
+  <symbol id="icon-flow" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11V5h7m-3 12h5a5 5 0 0 0 5-5V9"/><circle cx="5" cy="17" r="3"/><rect x="15" y="3" width="7" height="6" rx="1"/></symbol>
+  <symbol id="icon-lab" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="m9 3 6 0m-5 0v6L4 19a1.4 1.4 0 0 0 1.2 2h13.6a1.4 1.4 0 0 0 1.2-2L14 9V3M7 15h10"/></symbol>
+  <symbol id="icon-overview" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+  <symbol id="icon-code" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="m7 7-5 5 5 5m10-10 5 5-5 5M14 4l-4 16"/></symbol>
+  <symbol id="icon-source" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="5" r="2.5"/><circle cx="7" cy="19" r="2.5"/><circle cx="17" cy="7" r="2.5"/><path d="M7 8v8.5M17 10a7 7 0 0 1-7 7H7"/></symbol>
+  <symbol id="icon-chat" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14a3 3 0 0 1-3 3H9l-5 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"/><path d="M8 9h8m-8 4h5"/></symbol>
+  <symbol id="icon-search" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></symbol>
+  <symbol id="icon-play" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="m7 4 13 8-13 8z"/></symbol>
+  <symbol id="icon-optimize" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18h18M5 14l5-6 4 3 6-8"/><path d="M15 3h5v5"/></symbol>
+  <symbol id="icon-compare" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16m-4-4 4 4-4 4M20 18H4m4-4-4 4 4 4"/></symbol>
+  <symbol id="icon-grid" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="19" height="19" rx="2"/><path d="M3 9h18M9 9v12"/></symbol>
+  <symbol id="icon-file" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h9l5 5v13H5zM14 3v5h5M8 13h8m-8 4h6"/></symbol>
+  <symbol id="icon-bolt" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="m13 2-9 12h7l-1 8 10-14h-7z"/></symbol>
+  <symbol id="icon-stack" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="m3 7 9-5 9 5-9 5zM3 12l9 5 9-5M3 17l9 5 9-5"/></symbol>
+</defs></svg>
     <a class="skip-link" href="#main-content">Skip to main content</a>
 
     <header class="topbar">
       <div class="topbar-inner">
-        <a class="brand" href="#overview" aria-label="LLM Inference from Scratch home">
+        <a class="brand" href="index.html" aria-label="LLM Inference from Scratch home">
           <span class="brand-mark" aria-hidden="true">LLM</span>
           <span class="brand-text">Inference from Scratch</span>
         </a>
@@ -28,7 +53,7 @@
           <input
             id="site-search"
             type="search"
-            placeholder="Search concepts and questions"
+            placeholder="Search the field guide"
             autocomplete="off"
             aria-controls="search-results"
             aria-label="Search the guide"
@@ -38,6 +63,7 @@
         </div>
 
         <div class="top-actions">
+          <a class="header-repo" href="https://github.com/siddhu1716/LLM_Inference_from_scratch" aria-label="Project source on GitHub"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="7" cy="5" r="2.5"/><circle cx="7" cy="19" r="2.5"/><circle cx="17" cy="7" r="2.5"/><path d="M7 8v8.5M17 10a7 7 0 0 1-7 7H7"/></svg> GitHub</a>
           <button
             class="icon-button theme-button"
             type="button"
@@ -62,65 +88,140 @@
 
     <div class="layout">
       <aside id="section-navigation" class="sidebar" aria-label="Section navigation">
-        <p class="sidebar-title">Systems journey</p>
-        <nav>
-          <ul class="nav-list">
-            <li><a href="#overview" aria-current="true">Overview</a></li>
-            <li><a href="curriculum.html">26-day curriculum ↗</a></li>
-            <li><a href="engines/index.html">Engines overview ↗</a></li>
-            <li><a href="engines/vllm.html">vLLM deep dive ↗</a></li>
-            <li><a href="engines/sglang.html">SGLang deep dive ↗</a></li>
-            <li><a href="#architecture">Architecture</a></li>
-            <li><a href="#token-loop">Prefill &amp; decode</a></li>
-            <li><a href="#attention">Attention, RoPE &amp; GQA</a></li>
-            <li><a href="#memory">KV &amp; prefix caches</a></li>
-            <li><a href="#scheduling">Batching &amp; scheduling</a></li>
-            <li><a href="#flash-attention">FlashAttention</a></li>
-            <li><a href="#quantization">Quantization</a></li>
-            <li><a href="#speculation">Speculative decoding</a></li>
-            <li><a href="#scale-out">Parallelism &amp; MoE</a></li>
-            <li><a href="#gpu-execution">CUDA execution</a></li>
-            <li><a href="#structured-output">Structured outputs</a></li>
-            <li><a href="#serving">Serving &amp; metrics</a></li>
-            <li><a href="#learning-paths">Learning paths</a></li>
-            <li><a href="#limitations">Limitations</a></li>
-            <li><a href="#source-map">Source map</a></li>
-            <li><a href="#interview-bank">Interview bank</a></li>
-            <li><a href="#references">References</a></li>
-            <li><a href="#diagram-gallery">Reference diagrams</a></li>
-            <li><a href="#further-reading">Further reading</a></li>
-          </ul>
-        </nav>
-        <div class="sidebar-note">
-          <strong>Scope marker</strong><br>
-          “Implemented” means code exists in this checkout. “Simulation” means
-          executable learning-scale code, not a production kernel.
-        </div>
+        <nav aria-label="Field guide">
+            <p class="sidebar-title">Field guide</p><ul class="nav-list"><li><a href="#overview" aria-current="location"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-overview"/></svg><span>Overview</span></a></li>
+              <li><a href="curriculum.html"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-path"/></svg><span>26-day curriculum</span></a></li>
+              <li><a href="#request-replay"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-lab"/></svg><span>Token laboratory</span></a></li>
+              <li><a href="models/index.html"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-layers"/></svg><span>Model architectures</span></a></li>
+              <li><a href="reading/index.html"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-books"/></svg><span>Reading library</span></a></li></ul>
+            <p class="sidebar-title">Inference engines</p><ul class="nav-list"><li><a href="engines/index.html#request-lab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-compare"/></svg><span>Compare engines</span></a></li>
+              <li><a href="engines/memory.html#address-lab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-grid"/></svg><span>KV address explorer</span></a></li>
+              <li><a href="engines/vllm.html#request-lab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-chip"/></svg><span>vLLM walkthrough</span></a></li>
+              <li><a href="engines/sglang.html#request-lab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-network"/></svg><span>SGLang walkthrough</span></a></li></ul>
+            <p class="sidebar-title">Systems</p><ul class="nav-list"><li><a href="systems/index.html#optimization"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-optimize"/></svg><span>Optimization</span></a></li>
+              <li><a href="systems/index.html#topologies"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-network"/></svg><span>Distributed inference</span></a></li>
+              <li><a href="systems/fabric.html"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-flow"/></svg><span>GPU communication</span></a></li>
+              <li><a href="systems/index.html#capacity"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-grid"/></svg><span>Capacity calculator</span></a></li></ul>
+            <p class="sidebar-title">Reference</p><ul class="nav-list"><li><a href="#request-diagram"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-layers"/></svg><span>Request diagram</span></a></li>
+              <li><a href="#source-map"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-source"/></svg><span>Code map</span></a></li>
+              <li><a href="#interview-bank"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-chat"/></svg><span>Interview practice</span></a></li></ul>
+            <details class="topic-nav"><summary>All reference topics</summary><ul class="nav-list">
+              <li><a href="#architecture">Architecture</a></li>
+              <li><a href="#token-loop">Prefill and decode</a></li>
+              <li><a href="#attention">Attention, RoPE and GQA</a></li>
+              <li><a href="#memory">KV and prefix caches</a></li>
+              <li><a href="#scheduling">Batching and scheduling</a></li>
+              <li><a href="#flash-attention">FlashAttention</a></li>
+              <li><a href="#quantization">Quantization</a></li>
+              <li><a href="#speculation">Speculative decoding</a></li>
+              <li><a href="#scale-out">Parallelism and MoE</a></li>
+              <li><a href="#gpu-execution">CUDA execution</a></li>
+              <li><a href="#structured-output">Structured outputs</a></li>
+              <li><a href="#serving">Serving and metrics</a></li>
+              <li><a href="#learning-paths">Learning paths</a></li>
+              <li><a href="#limitations">Project scope</a></li>
+              <li><a href="#references">Primary references</a></li>
+              <li><a href="#diagram-gallery">Reference diagrams</a></li>
+              <li><a href="#further-reading">Further reading</a></li>
+            </ul></details>
+          </nav>
       </aside>
 
       <main id="main-content">
-        <section id="overview" class="hero" data-search-group="Overview">
-          <p class="eyebrow">A systems-first field guide</p>
-          <h1>Follow every token.</h1>
-          <p class="hero-copy">
-            Trace an LLM request from prompt admission to streamed output. Learn why
-            inference is a memory-management and scheduling problem as much as it is
-            a matrix-multiplication problem.
-          </p>
-          <div class="hero-actions">
-            <a class="button" href="#architecture">Start with the architecture</a>
-            <a class="button button-secondary" href="curriculum.html">Follow the 26-day track</a>
-            <a class="button button-secondary" href="engines/index.html">Explore engine deep dives</a>
-            <a class="button button-secondary" href="#interview-bank">Practice 110 questions</a>
+        <section id="overview" class="atlas-hero" data-search-group="Overview">
+          <div class="atlas-intro">
+            <p class="section-kicker"><span></span> Engineering field guide</p>
+            <h1>LLM inference<br><em>from scratch.</em></h1>
+            <p>How does a prompt become a stream of tokens? Follow one request from the first forward pass to the engines that serve it across GPUs.</p>
+            <div class="hero-actions"><a class="button" href="#request-replay"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-play"/></svg> Trace a request</a><a class="button button-secondary" href="curriculum.html">Browse curriculum</a></div>
+            <div class="atlas-byline">By <a href="https://shivanampalli.netlify.app/">Shiva Nampalli</a><span aria-hidden="true">·</span><a href="https://www.linkedin.com/in/shiva-nampalli/">LinkedIn</a><span aria-hidden="true">·</span><a href="https://github.com/siddhu1716">GitHub profile</a></div>
+          </div>
+          <figure class="gpu-figure">
+            <figcaption><span><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-chip"/></svg> GPU execution</span><small>Schematic</small></figcaption>
+            <img src="assets/gpu-schematic.svg" width="480" height="284" alt="A compute die reads model weights and cached keys and values from GPU memory.">
+            <div class="gpu-caption"><i aria-hidden="true"></i> Weights stay resident. The KV cache grows with the sequence.</div>
+          </figure>
+        </section>
+
+        <section class="atlas-section paths-panel" aria-labelledby="paths-title" data-search-group="Learning paths">
+          <div class="atlas-heading"><h2 id="paths-title">Explore the field guide</h2><a href="curriculum.html">View curriculum</a></div>
+          <div class="trail-grid">
+            <a class="trail-card mint" id="start-mechanics" data-search-item href="notes/phase-1-mechanics.html"><span class="trail-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-layers"/></svg></span><div class="card-content"><h3>Model mechanics</h3><span>Tokens, attention and the first forward pass.</span></div></a>
+            <a class="trail-card lilac" id="start-models" data-search-item href="models/index.html">
+              <span class="trail-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-layers"/></svg></span>
+              <div class="card-content"><h3>Model architectures</h3><span>Compare how dense, MoE and MLA models store and move state.</span></div>
+            </a>
+            <a class="trail-card ochre" id="start-engines" data-search-item href="engines/index.html#request-lab"><span class="trail-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-chip"/></svg></span><div class="card-content"><h3>Inference engines</h3><span>One request inside vLLM and SGLang.</span></div></a>
+            <a class="trail-card mint" id="start-address" data-search-item href="engines/memory.html#address-lab">
+              <span class="trail-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-grid"/></svg></span>
+              <div class="card-content"><h3>KV addressing</h3><span>Locate one token in vLLM blocks and SGLang pools.</span></div>
+            </a>
+            <a class="trail-card blue" id="start-optimization" data-search-item href="systems/index.html#optimization"><span class="trail-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-optimize"/></svg></span><div class="card-content"><h3>Optimization</h3><span>Find the bottleneck and test a change.</span></div></a>
+            <a class="trail-card lilac" id="start-distributed" data-search-item href="systems/index.html#topologies"><span class="trail-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-network"/></svg></span><div class="card-content"><h3>Distributed inference</h3><span>Split weights, route requests and move KV.</span></div></a>
           </div>
         </section>
 
-        <div class="metric-strip" aria-label="Guide summary">
-          <div class="metric"><strong>26</strong><span>guided curriculum days</span></div>
-          <div class="metric"><strong>2</strong><span>paired learning paths</span></div>
-          <div class="metric"><strong>110</strong><span>interview questions</span></div>
-          <div class="metric"><strong>0</strong><span>site build dependencies</span></div>
-        </div>
+        <section id="request-replay" class="atlas-section" data-search-group="Token laboratory" data-search-item data-keywords="what is inference token lab byte tokenizer prefill decode KV logits greedy actual python model">
+          <p class="section-kicker"><span></span> Token laboratory</p>
+          <div class="atlas-heading"><h2>Inside one request</h2></div>
+          <p class="atlas-lead">Inference uses fixed model weights to predict what comes next. A tokenizer turns the prompt into IDs. The model scores each possible next ID, selects one, then uses it as input for the following step.</p>
+          <details class="replay-primer">
+            <summary>What are prefill, decode, KV and logits?</summary>
+            <dl>
+              <dt>Prefill</dt><dd>The first pass reads the prompt. The scores at its final position determine the first output token.</dd>
+              <dt>Decode</dt><dd>Each later pass reads the previously selected token and predicts the next one.</dd>
+              <dt>KV cache</dt><dd>Attention saves a key and a value for every processed position in each layer. Later tokens consult those saved vectors to use earlier context.</dd>
+              <dt>Logits</dt><dd>The model’s raw scores for the next token. This example uses greedy decoding, so the ID with the highest score wins.</dd>
+            </dl>
+          </details>
+          <div class="replay">
+            <div class="replay-bar"><b><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-code"/></svg> Python model replay</b><span>Greedy decoding · seed 7</span></div>
+            <div class="replay-controls" hidden>
+              <label>Prompt <select id="sample-prompt"><option>Hi</option><option>π</option><option>GPU</option></select></label>
+              <div class="pass-picker" role="group" aria-label="Forward pass"><button type="button" data-pass="0" aria-pressed="true">Prefill</button><button type="button" data-pass="1" aria-pressed="false">Decode 1</button><button type="button" data-pass="2" aria-pressed="false">Decode 2</button></div>
+            </div>
+            <div id="replay-output" aria-live="polite" aria-atomic="true">
+              <div class="replay-stages">
+                <div><small>Input token IDs</small><strong id="replay-input">72 · 105</strong></div><div><small>Cached positions per layer</small><strong id="replay-cache">0 → 2</strong></div><div><small>Selected token ID</small><strong id="replay-token">104</strong></div>
+              </div>
+              <p id="replay-explain">The byte tokenizer maps “Hi” to 72 and 105. Prefill processes both positions. The last position scores all 256 possible next bytes and ID 104 wins.</p>
+              <p class="replay-scores"><b>Highest logits</b> <span id="replay-scores">104 (2.7758) · 173 (2.6726) · 74 (2.0050)</span></p>
+              <p class="replay-result"><b>Generated IDs</b> <code id="replay-generated">[104]</code></p>
+            </div>
+            <details class="run-local"><summary>Reproduce this trace in Python</summary>
+              <p>The replay uses recorded outputs from the repository’s one-layer, untrained model. Its 256 vocabulary entries are byte values, so generated IDs can include control bytes. From the repository root, install the package and run the selected prompt.</p>
+              <pre><code>python -m pip install -e .
+<span id="replay-command">mini-infer sample "Hi" --seed 7 --temperature 0 --max-new-tokens 3</span></code></pre>
+              <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/cli.py">Generation loop</a> · <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/backends/python/model.py">Model forward pass</a> · <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/common/tokenizer.py">Byte tokenizer</a>
+            </details>
+          </div>
+        </section>
+
+        <section id="request-diagram" class="atlas-section" data-search-group="Request diagram" data-search-item data-keywords="editable Mermaid Excalidraw diagram server token loop admission release prefill decode cancellation">
+          <p class="section-kicker"><span></span> Serving architecture</p>
+          <div class="atlas-heading"><h2>From one token to a serving engine</h2></div>
+          <p class="atlas-lead">A server keeps many token loops in flight. Trace the successful path below. Each time a request needs another token, it returns to the scheduler alongside other active requests.</p>
+          <div class="request-map">
+            <figure class="request-overview">
+            <ol class="map-route">
+              <li><b>Accept</b><span>Validate the request and tokenize the prompt.</span></li>
+              <li><b>Schedule</b><span>Choose token work that fits the batch and KV budget.</span></li>
+              <li><b>Run &amp; select</b><span>Prefill or decode, update KV and choose a token ID.</span></li>
+              <li><b>Return</b><span>Detokenize and emit the available text.</span></li>
+            </ol>
+            <figcaption><strong>Continue</strong> Send unfinished requests back to the scheduler. <strong>Finish</strong> On a stop condition or cancellation, release request-owned resources. Reusable cache entries may outlive the request.</figcaption>
+            </figure>
+            <details class="loop-diagram">
+              <summary>Trace each branch of the scheduling loop</summary>
+              <p>A long prompt can return to the scheduler several times before it produces its first token. After that first token, follow the decode branch for each subsequent forward pass.</p>
+              <div class="diagram-viewport" tabindex="0" role="region" aria-label="Scrollable scheduling diagram">
+                <img src="assets/request-flow.svg" width="560" height="844" loading="lazy" alt="The scheduler dispatches a prompt chunk to prefill or a generated token to decode. Partial prompts loop back for more prefill. Completed passes select and stream a token. The request returns to the scheduler until it stops, or aborts and releases its state.">
+              </div>
+            </details>
+            <div class="map-files"><span><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-file"/></svg> Edit the diagram</span><a href="assets/request-flow.mmd" download>Mermaid source</a><a href="assets/request-flow.excalidraw" download>Excalidraw drawing</a></div>
+          </div>
+          <div class="engine-routes"><a href="engines/vllm.html#request-lab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-chip"/></svg> Follow vLLM</a><a href="engines/sglang.html#request-lab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-network"/></svg> Follow SGLang</a><a href="engines/index.html#request-lab"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-compare"/></svg> Compare both engines</a></div>
+        </section>
 
         <section id="architecture" class="content-section" data-search-group="Architecture">
           <div class="section-heading">
@@ -191,9 +292,9 @@
               <span class="tag implemented">Implemented</span>
               <h3>Observability</h3>
               <p>
-                Measures queue, prefill, decode, streaming, and cleanup separately.
-                Request IDs and model/version labels connect traces to user-visible
-                behavior.
+                The teaching engine timestamps submission, start, generated tokens and
+                completion. Compare queue delay with time to first token and the gaps
+                between successive tokens.
               </p>
             </article>
           </div>
@@ -208,9 +309,8 @@
             <h3>Deep dive: one request, several processes</h3>
             <p>
               The five-step flow above is usually spread across separate operating-system
-              processes. The reason is practical: Python string work (JSON parsing, chat
-              templates, tokenization, detokenization) is slow and holds the interpreter
-              lock, while the loop that feeds the GPUs must never wait. Splitting the work
+              processes. The reason is practical: input processing and incremental text output have
+              different resource demands from the loop that schedules GPU work. Splitting the work
               lets each stage run in parallel and talk through cheap message passing.
             </p>
             <ol>
@@ -630,6 +730,7 @@ release(state.kv)</code></pre>
               token, dominates capacity planning, and couples memory policy to scheduling.
             </p>
           </div>
+          <p><a href="systems/index.html#capacity">Calculate the KV footprint for a batch</a></p>
 
           <div class="formula">
             KV bytes ≈ 2 × layers × sequence_tokens × kv_heads × head_dim × bytes_per_element
@@ -678,10 +779,10 @@ release(state.kv)</code></pre>
           <h3>Allocator invariants</h3>
           <ul>
             <li>A physical block is free, exclusively writable, or immutable and shared.</li>
-            <li>Reference counts cover queued, running, and cached-prefix ownership.</li>
+            <li>Track active references separately from prefix-index membership. An indexed block with zero active references can be evicted.</li>
             <li>Copy-on-write occurs before a shared partial block is modified.</li>
             <li>Cancellation and failures enter the same idempotent cleanup path as success.</li>
-            <li>Block metadata and kernel-visible tables change atomically at a step boundary.</li>
+            <li>Publish the mapping and order KV writes before kernels consume the updated positions.</li>
           </ul>
 
           <figure id="fig-block-table" class="svg-diagram" data-search-item data-keywords="block table paged KV cache physical logical blocks reference count copy on write diagram">
@@ -758,22 +859,19 @@ release(state.kv)</code></pre>
               <li><strong>Hash chain over full blocks (vLLM).</strong> Every full block gets a hash built
                 from its parent block’s hash, its token IDs, and extra keys such as the LoRA
                 adapter, multimodal content hashes, and an optional per-tenant cache salt. A
-                lookup walks the prompt block by block and stops at the first miss. Only full
-                blocks are shareable. Freed blocks with zero references stay in an LRU-ordered
+                lookup walks successive hash chunks until a miss. With one hash per physical block, reuse lands on whole blocks. Compatible cache managers can hash smaller chunks and copy a matched partial block into private storage before extending it. Freed blocks with zero references stay in an LRU-ordered
                 free queue, so a later hit can revive them until the allocator actually reuses them.</li>
               <li><strong>Radix tree over token spans (SGLang).</strong> The RadixCache stores prefixes as
                 tree edges labelled with token sequences; each node points at KV slots in a
                 token-to-KV pool. Matching returns the longest shared prefix at page granularity
                 (a page can be as small as one token). Nodes used by running requests are locked;
-                when memory is short, unlocked leaves are evicted least-recently-used first. A
+                under the LRU policy, eviction selects eligible unlocked leaves in recency order. A
                 longest-prefix-match scheduling policy can reorder the waiting queue to raise hit
                 rates; the default policy is first-come-first-served.</li>
             </ul>
             <p>
               The hash approach is simple, cheap to share with other systems (hashes double as
-              keys for offloading tiers and routers), and fits fixed-size kernels. The tree
-              captures finer-grained sharing and gives eviction a natural order but needs reference
-              locking and is harder to distribute. Either way, identity is exact token IDs plus
+              keys for offloading tiers and routers), and fits fixed-size kernels. A radix tree makes shared branches explicit. Its match boundary depends on page alignment. Active nodes need locks, and external storage needs a stable identity for each reusable span. Either way, identity is exact token IDs plus
               everything that changes the KV values.
             </p>
           </div>
@@ -908,7 +1006,7 @@ release(state.kv)</code></pre>
           <div class="callout">
             <strong>Engine view:</strong> follow block pools, hash chains, and connectors in the
             <a href="engines/vllm.html">vLLM deep dive</a>; radix trees, the token-to-KV pool, and
-            HiCache in the <a href="engines/sglang.html">SGLang deep dive</a>; or start from the
+            HiCache in the <a href="engines/memory.html#hicache">HiCache tier walkthrough</a>; or start from the
             <a href="engines/index.html">engines overview</a>.
           </div>
         </section>
@@ -1330,6 +1428,7 @@ release(state.kv)</code></pre>
               communication, bubbles, routing complexity, and failure surface.
             </p>
           </div>
+          <p><a href="systems/index.html#topologies">Explore the five GPU topology diagrams</a></p>
 
           <div class="card-grid three">
             <article id="tensor-parallelism" class="card" data-search-item data-keywords="tensor parallel all reduce sharding">
@@ -1764,6 +1863,7 @@ release(state.kv)</code></pre>
               dominate user experience even when kernels are fast.
             </p>
           </div>
+          <p><a href="systems/index.html#measurement">Work through a client latency trace</a></p>
 
           <div class="card-grid three">
             <article id="serving-contract" class="card" data-search-item data-keywords="OpenAI API validation request response">
@@ -2192,7 +2292,7 @@ release(state.kv)</code></pre>
             </details>
             <details id="q-i11" class="qa-item" data-category="intermediate" data-search-item>
               <summary>26. Why use a radix tree for prefixes?</summary>
-              <div class="qa-answer"><p>A radix tree compactly shares common token spans and finds the longest matching prefix, including partial paths longer than a fixed hash lookup. It also gives eviction a natural tree structure.</p></div>
+              <div class="qa-answer"><p>A radix tree compactly shares common token spans and finds the longest matching prefix, with matches rounded to the cache’s supported page granularity. It also gives eviction a natural tree structure.</p></div>
             </details>
             <details id="q-i12" class="qa-item" data-category="intermediate" data-search-item>
               <summary>27. What is online softmax?</summary>
@@ -2489,19 +2589,19 @@ release(state.kv)</code></pre>
             </details>
             <details id="q-e04" class="qa-item" data-category="engine-internals" data-search-item>
               <summary>94. How do vLLM’s KV cache manager and block pool work?</summary>
-              <div class="qa-answer"><p>After profiling weights and activations, remaining GPU memory is cut into fixed-size blocks (16 tokens by default). The block pool keeps an LRU-ordered free queue and a map from block hash to cached block; each request owns an ordered list of block IDs. Blocks are reference-counted, and freed blocks keep their cached contents until the allocator actually reuses them.</p></div>
+              <div class="qa-answer"><p>The configured cache budget is divided into blocks. The base default is 16 token positions per block in the pinned source. Effective sizes depend on the backend and cache group. The prefix index finds reusable physical block IDs from a hash and cache group. A request’s ordered block table identifies the physical blocks its attention kernels will read. A zero-reference cached block can be revived until the allocator evicts it. <a href="engines/memory.html#address-lab">Translate a token position</a>.</p></div>
             </details>
             <details id="q-e05" class="qa-item" data-category="engine-internals" data-search-item>
               <summary>95. What are the block table and slot mapping on a worker?</summary>
-              <div class="qa-answer"><p>The block table is a per-request row of physical block IDs that attention kernels follow to find earlier keys and values. The slot mapping gives, for each token computed this step, the physical slot (block × block size + offset) where its new K/V must be written. Both live in persistent GPU buffers and are updated incrementally each step.</p></div>
+              <div class="qa-answer"><p>The block table is a per-request row of physical block IDs that attention kernels follow to find earlier keys and values. The slot mapping gives, for each token computed this step, the physical slot (block × block size + offset) where its new K/V must be written. The runner prepares the kernel-visible metadata for the scheduled batch. Buffer placement and update strategy depend on the runner and attention backend.</p></div>
             </details>
             <details id="q-e06" class="qa-item" data-category="engine-internals" data-search-item>
               <summary>96. How does vLLM decide that a prompt hits the prefix cache?</summary>
-              <div class="qa-answer"><p>Each full block is hashed from its parent block’s hash, its token IDs, and extra keys such as LoRA ID, multimodal content hashes, and an optional cache salt. Lookup walks the prompt from the start and stops at the first miss; matched blocks gain a reference. Partial tail blocks are never shared, and the default hash at the pinned source is SHA-256.</p></div>
+              <div class="qa-answer"><p>Each full block is hashed from its parent block’s hash, its token IDs, and extra keys such as LoRA ID, multimodal content hashes, and an optional cache salt. Lookup walks the prompt from the start and stops at the first miss; matched blocks gain a reference. With matching hash and physical block sizes, a partial tail misses. Compatible fine-grained cache paths can reuse an aligned sub-block prefix and protect it with copy-on-write. The default hash at the pinned source is SHA-256. <a href="engines/memory.html#prefix-reuse">Inspect the reuse boundaries</a>.</p></div>
             </details>
             <details id="q-e07" class="qa-item" data-category="engine-internals" data-search-item>
               <summary>97. How does SGLang’s radix cache differ from block hashing?</summary>
-              <div class="qa-answer"><p>Prefixes live in a radix tree keyed by token IDs, so matches can be as fine as the page size allows—down to single tokens. Nodes point at slots in a token-to-KV pool, nodes in use are locked, and eviction removes least-recently-used unlocked leaves. An optional longest-prefix-match policy reorders waiting requests to raise hit rates; the default is first-come-first-served.</p></div>
+              <div class="qa-answer"><p>In the radix-cache path, prefixes live in a radix tree keyed by token IDs, so matches can be as fine as the page size allows—down to single tokens. Nodes point at slots in a token-to-KV pool, active paths are locked, and the configured policy selects eligible leaves for eviction. An optional longest-prefix-match policy reorders waiting requests to raise hit rates; the default is first-come-first-served.</p></div>
             </details>
             <details id="q-e08" class="qa-item" data-category="engine-internals" data-search-item>
               <summary>98. How do vLLM and SGLang differ in chunked prefill?</summary>
@@ -2878,6 +2978,7 @@ release(state.kv)</code></pre>
           </div>
 
           <h3 id="reading-book">The book: <em>Inference Engineering</em>, chapter by chapter</h3>
+          <p><a class="button button-secondary" href="reading/index.html">Browse the annotated reading library</a></p>
           <ul class="reading-list">
             <li data-search-item id="read-book-ch0-1" data-keywords="Inference Engineering book Philip Kiely Baseten chapter 0 1 prerequisites latency percentiles">
               <a href="https://www.baseten.co/inference-engineering/">Chapters 0–1: Inference and Prerequisites</a>
@@ -3188,7 +3289,7 @@ release(state.kv)</code></pre>
         <footer class="site-footer">
           <p>
             Built as a dependency-free learning site. Explanatory prose is original.
-            Review the honest-scope section before treating a concept as implemented.
+            See the <a href="#limitations">implementation scope</a> for the features implemented in Python and the features modeled at teaching scale.
           </p>
         </footer>
       </main>

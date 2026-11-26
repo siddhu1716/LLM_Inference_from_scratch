@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#112c2a">
+  <meta name="description" content="Trace token positions to GPU KV slots in vLLM and SGLang, compare prefix matching and physical allocation, and follow HiCache transfers.">
+  <title>KV memory, address by address · Inference from Scratch</title>
+  <link rel="icon" href="../assets/mark.svg">
+  <link rel="stylesheet" href="../styles.css?v=8">
+  <link rel="stylesheet" href="lifecycle.css?v=3">
+  <script src="../theme.js" defer></script>
+  <script src="memory.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to guide</a>
+  <header class="topbar"><div class="memory-header">
+    <a class="brand" href="../index.html"><img src="../assets/mark.svg" width="34" height="34" alt="">Inference from Scratch</a>
+    <nav aria-label="Site"><a href="index.html">Engine guides</a><a href="../systems/index.html">Systems lab</a><button class="icon-button theme-button" type="button" data-theme-toggle aria-label="Change theme"><span data-theme-icon aria-hidden="true">◐</span></button></nav>
+  </div></header>
+  <main id="main-content" class="memory-guide">
+    <nav class="engine-switcher" aria-label="Engine guides">
+      <a href="index.html">Compare engines</a><a href="vllm.html">vLLM</a><a href="sglang.html">SGLang</a><a href="memory.html" aria-current="page">KV memory lab</a>
+    </nav>
+    <section class="hero engine-cover" id="memory-overview">
+      <div class="engine-cover-text">
+        <p class="eyebrow">Engine memory lab</p>
+        <h1>Where does a token live?</h1>
+        <p class="hero-copy">A token in the seventh position can occupy slot 22 in GPU memory. Two requests can even read some of the same slots. Follow the numbers from the prompt to an attention layer.</p>
+        <div class="hero-actions"><a class="button" href="#address-lab">Inspect a token address</a></div>
+      </div>
+      <figure class="engine-topology">
+        <figcaption>Three different identifiers</figcaption>
+        <ol><li><strong>Token ID</strong><span>Which vocabulary entry was read?</span><small>“X” in the example</small></li>
+        <li><strong>Logical position</strong><span>Where is it in this request?</span><small>Position 6, counting from zero</small></li>
+        <li><strong>Physical slot</strong><span>Where did this layer store its KV?</span></li></ol>
+        <p>The same token ID can have different KV after a different prefix.</p>
+      </figure>
+    </section>
+    <nav class="memory-chapters" aria-label="In this lab"><a href="#address-lab">Address inspector</a><a href="#prefix-reuse">Prefix reuse</a><a href="#vllm-blocks">vLLM block lifetime</a><a href="#sglang-pools">SGLang pools</a><a href="#hicache">HiCache tiers</a><a href="#feature-evidence">Defaults and practice</a></nav>
+
+    <section id="address-lab">
+      <p class="eyebrow">Worked example</p><h2>Inspect a token address</h2>
+      <p>Request A has computed <code>A B C D E F G H I J</code>. Request B arrives with <code>A B C D E F X Y Z K</code>. Letters stand for individual vocabulary IDs. Allocation IDs below are invented, and the four-token page makes the arithmetic small. Both requests use the same dense causal model, weights and cache context on one GPU.</p>
+      <div class="addr-inspector">
+        <form id="address-controls" class="lab-config" hidden>
+          <label>Memory layout<select id="address-layout"><option value="vllm">vLLM · four-token blocks</option><option value="sg-token">SGLang · one-token pages</option><option value="sg-paged">SGLang · four-token pages</option></select></label>
+          <label>Request B<select id="address-prefix"><option value="six">First six IDs match</option><option value="same">Identical ten IDs</option><option value="none">First ID differs</option></select></label>
+          <label>Position in B <output id="address-value" for="address-position">6</output><input id="address-position" type="range" min="0" max="9" step="1" value="6"></label>
+        </form>
+        <div class="addr-board">
+          <h3>Request B in logical order</h3>
+          <div id="address-strip" class="addr-strip" aria-label="Request B token positions"><span class="reused">A</span><span class="reused">B</span><span class="reused">C</span><span class="reused">D</span><span>E</span><span>F</span><span aria-current="true">X</span><span>Y</span><span>Z</span><span>K</span></div>
+          <p id="address-reuse">6 matching IDs · 4 reused positions · 6 prompt positions to compute</p>
+          <div class="addr-route" aria-live="polite">
+            <div><small>Request coordinate</small><strong id="address-token">ID X · position 6</strong></div>
+            <div><small>Address table</small><strong id="address-lookup">table[B][1] = 5</strong></div>
+            <div><small>Physical location</small><strong id="address-result">5 × 4 + 2 = 22</strong></div>
+          </div>
+          <p id="address-explain">Floor(6 / 4) selects logical block 1. Its table entry is physical block 5. The remainder 2 selects the token slot within it.</p>
+          <div class="addr-tables"><code id="address-a">A blocks [7, 2, 9]</code><code id="address-b">B blocks [7, 5, 3]</code></div>
+        </div>
+      </div>
+      <p>Each slot holds a key vector and a value vector for each local KV head at a particular layer. The number 22 is an index in a cache layout. Turning it into byte addresses also requires the layer, head, dimension, strides and data type. Grouped-query attention can have more query heads than stored KV heads. <a href="../models/index.html">See how model architecture changes KV shapes</a>.</p>
+    </section>
+
+    <section id="prefix-reuse">
+      <p class="eyebrow">Before allocation</p><h2>Which positions can B borrow?</h2>
+      <ol class="memory-list">
+        <li><strong>Match from the beginning.</strong> A difference in the first ID changes the context for every later ID. Identical suffix text alone cannot reproduce earlier contextual keys and values. Check compatible model, adapter, positional settings and any cache namespace as well as rendered token IDs.</li>
+        <li><strong>Leave input for next-token logits.</strong> For ordinary generation both pinned implementations cap the candidate hit at prompt length minus one. A ten-token exact repeat can therefore use up to nine positions before alignment. Prompt log probabilities and specialized execution paths can lower the limit further. <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/kv_cache_manager.py#L266">vLLM hit cap</a> · <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/managers/schedule_batch.py#L1911">SGLang hit cap</a>.</li>
+        <li><strong>Round down to the reusable boundary.</strong> In our single-group vLLM example and SGLang four-token layout, six matching IDs yield four reusable positions. For an exact repeat, nine eligible positions yield eight. In SGLang's one-token layout these examples yield six and nine.</li>
+        <li><strong>Allocate the remaining positions.</strong> A and B may both contain E and F, yet the four-token layout gives B its own page for E F X Y. Each attention pass reads shared KV, computes the uncached suffix and writes fresh values into B’s assigned slots.</li>
+      </ol>
+      <details class="memory-more"><summary>When can vLLM match inside a physical block?</summary>
+        <p>At this pin a single cache group uses its resolved block size as the hit unit. Multiple groups can have different physical block sizes. The scheduler aligns across groups, while chained hashes may use a smaller common divisor. Aligned Mamba state checkpoints and compatible managers can enable finer-grained hits. The manager checks lookup support for the other participating groups. A configured hash granularity alone does not establish a usable checkpoint. <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/kv_cache_utils.py#L762">Eligibility and block-size resolution</a> · <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/block_pool.py#L486">Partial-entry registration</a>.</p>
+      </details>
+    </section>
+
+    <section id="vllm-blocks">
+      <p class="eyebrow">vLLM V1</p><h2>Two lookups, two jobs</h2>
+      <div class="card-grid"><article class="card"><h3>Find reusable computation</h3><p>The first key summarizes the prefix ending in A B C D. The next key combines that first hash, E F G H and applicable extra inputs. Group identity distinguishes entries for different KV cache groups. A compatible second request can find physical block 7 by the first key. Multiple physical blocks may temporarily carry equal keys. <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/kv_cache_utils.py#L707">Block hashing</a> · <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/block_pool.py#L202">Block lookup</a>.</p></article>
+      <article class="card"><h3>Find a token for attention</h3><p>After allocation the worker has B’s ordered table of physical block IDs. With equal kernel and allocator page sizes and no context sharding, the slot for position <em>p</em> is <code>table[p // size] × size + p % size</code>. The slot-mapping kernel reads integer block numbers. Prefix hashes stay out of this per-token arithmetic. <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/worker/gpu/block_table.py#L334">Slot-mapping kernel</a>.</p></article></div>
+      <h3>The lifetime of physical block 7</h3>
+      <div class="table-wrap"><table class="file-map"><thead><tr><th>Event</th><th>B’s table</th><th>Block 7</th><th>What the block pool does</th></tr></thead><tbody>
+        <tr><td>A computes A B C D</td><td>Unassigned</td><td>ref = 1</td><td>Indexes the full block by its prefix key. In this example A stays active.</td></tr>
+        <tr><td>B finds A’s prefix</td><td>[7, 5, 3]</td><td>ref = 2</td><td>Touches shared block 7, allocates private suffix blocks 5 and 3.</td></tr>
+        <tr><td>A finishes</td><td>[7, 5, 3]</td><td>ref = 1</td><td>B still reads the shared block at every layer in this group.</td></tr>
+        <tr><td>B finishes</td><td>Released</td><td>ref = 0</td><td>Returns the block to the free queue. The cached key can still find it before eviction.</td></tr>
+        <tr><td>A competing request reclaims 7</td><td>Released</td><td>ref = 1</td><td>Evicts the old key on reassignment, then permits new contents. A later request would have to find another copy or recompute.</td></tr>
+      </tbody></table></div>
+      <p>If a cache hit finds an idle block with ref = 0, touching it removes it from the free queue before incrementing the count. Under pressure the allocator prefers unhashed free blocks, then cached free blocks. Active blocks require their holders to release them. <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/block_pool.py#L706">Allocation</a> · <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/core/block_pool.py#L792">Touch and free</a>.</p>
+      <p><strong>Layout exceptions.</strong> The config starts with 16 positions per block. Backends and model/cache groups constrain the effective layout. For example, the pinned FlashAttention SM90 FP8-KV path with head dimension 512 and FA4 selects a 64-token tile. In context-parallel decode the slot kernel also computes rank ownership and local offsets. Kernel block and allocator block sizes may differ. <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/config/cache.py#L185">Cache defaults</a> · <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/attention/backends/flash_attn.py#L300">Backend constraint</a> · <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/v1/worker/gpu/block_table.py#L293">Kernel block expansion</a>.</p>
+    </section>
+
+    <section id="sglang-pools">
+      <p class="eyebrow">SGLang runtime</p><h2>A request row points to token locations</h2>
+      <ol class="memory-list">
+        <li><strong>Claim a row.</strong> B’s external request ID is used for routing. Internally the allocator might give it row 8; A already holds row 3. <code>ReqToTokenPool.req_to_token</code> is an integer tensor with shape <code>[size + 1, max_context_len]</code>. Real requests use nonzero rows, with row 0 reserved for padded graph work. <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/mem_cache/memory_pool.py#L379">Request-row pool</a>.</li>
+        <li><strong>Match and protect a path.</strong> The radix index compares the token-ID prefix and returns an ordered vector of existing KV slot indices and a matching node. With one-token pages A and B share A–F. The path may branch into G… for A and X… for B. Locking the matched path protects shared state during use. <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/mem_cache/unified_radix_cache.py#L642">Prefix matching</a> · <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/mem_cache/unified_radix_cache.py#L1128">Path locks</a>.</li>
+        <li><strong>Fill the row.</strong> The token allocator supplies suffix locations. In the one-token view, A and B’s first six columns hold the same location IDs, and <code>req_to_token[8, 6] = 106</code>. The four-token allocator expands page numbers to consecutive slots within each page and can extend a partially used final page. The row contains the resulting token locations in both layouts. <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/mem_cache/allocator/token.py#L54">Token allocation</a> · <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/mem_cache/allocator/paged.py#L181">Paged allocation</a>.</li>
+        <li><strong>Read and append.</strong> Attention backends consume past locations or derive backend-specific page metadata; current writes use <code>out_cache_loc</code>. For dense MHA, local layers store separate K and V buffers indexed by token location. A latent-attention model can store a compressed representation, and hybrid models need additional state. <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/mem_cache/memory_pool.py">Layer storage layouts</a>.</li>
+        <li><strong>Finish or cancel.</strong> Release the request row and its active path locks. Reusable cached locations can remain owned by the tree. Eviction frees eligible locations for future requests. Reusing row 8 for a different request does not grant that request access to the finished conversation. <a href="sglang.html#radix-cache">Radix insertion and eviction</a>.</li>
+      </ol>
+      <p><strong>Default and exceptions.</strong> On ordinary CUDA, the fallback page size is one unless a model or backend overrides it. FlashMLA uses 64, and the TensorRT-LLM MLA path resolves unsupported values to 64 from its allowed set of 32 or 64. Page size governs match alignment and allocation. The prefix tree and the integer request row serve different purposes at every size. <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/arg_groups/overrides.py#L1167">Backend rules</a> · <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/arg_groups/overrides.py#L1394">Page-size fallback</a>.</p>
+    </section>
+
+    <section id="hicache">
+      <p class="eyebrow">SGLang HiCache</p><h2>Recover a prefix from another tier</h2>
+      <p>HiCache extends prefix reuse beyond the accelerator. The scheduler checks local residency, can stage storage pages in host memory, and restores usable KV to GPU slots before attention reads it. The host cache and backing store are optional. <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/docs/docs/advanced_features/hicache_design.mdx">Pinned architecture and sharing scope</a>.</p>
+      <div class="addr-route tiers"><div><small>L1 · device</small><strong>GPU KV slots</strong><p>Attention reads here. A resident hit skips both transfer and prefix recomputation.</p></div>
+      <div><small>L2 · host</small><strong>Host memory pool</strong><p>A local hit avoids storage lookup. Transfer the needed layer data to L1 and coordinate readiness before computing.</p></div>
+      <div><small>L3 · storage</small><strong>Optional backend</strong><p>Prefetch matching pages into host memory. Sharing across replicas depends on compatible keys and a shared backend.</p></div></div>
+      <h3>One request, three possible outcomes</h3>
+      <p>Suppose a 4,160-token prompt shares 4,096 leading IDs. Assume 64-token pages, an eligible prefetch, and enough per-rank space. If 1,024 positions remain in L1, another 1,024 are only in L2, and the next 2,048 are in L3, the device can immediately reuse 1,024. Loading the host span raises that to 2,048. A successful storage read and GPU restore bring the prefix to 4,096, leaving 64 fresh positions.</p>
+      <p>If only 1,024 of the storage positions become usable before the deadline, the usable contiguous prefix is 3,072. The model then processes 1,088 positions. If no storage span arrives in time, it processes 2,112 positions after the L2 restore. Transfer and bookkeeping have a cost; a short hit can take longer to restore than to recompute. These counts assume the device prefix remains present while transfers complete.</p>
+      <h3>What determines whether a transfer pays off?</h3>
+      <div class="table-wrap"><table class="file-map"><thead><tr><th>Setting or event</th><th>What it changes</th></tr></thead><tbody>
+      <tr><td>Enable and size tiers</td><td>HiCache defaults off. <code>--enable-hierarchical-cache</code> enables it. In <code>cache</code> mode the host pool retains reusable data. <code>buffer_only</code> uses transient staging and requires storage. The configured host size can override the ratio.</td></tr>
+      <tr><td>Backup from device</td><td><code>write_through</code> is the default policy. The selective variant raises the reuse threshold; <code>write_back</code> can defer backup until eviction. Compare host bandwidth spent with the amount reused later.</td></tr>
+      <tr><td>Prefetch stop rule</td><td><code>timeout</code> is the default. <code>best_effort</code> can admit with what is available; <code>wait_complete</code> can spend longer waiting for the load. Missing, late or unusable pages leave suffix work for prefill.</td></tr>
+      <tr><td>Controller and storage</td><td>The configured transfer backend moves data between host and GPU. The storage backend handles persistence and reads. A local <code>file</code> directory usually serves one node. Mooncake, 3FS or NIXL integrations require their own compatible infrastructure. L3 defaults to unset.</td></tr>
+      <tr><td>Pressure or backend failure</td><td>A device allocation shortage can still postpone admission after a storage hit. A miss, expired deadline or discarded staged span can lead to recomputation. An unhealthy connector or failed rank can also cause a request or startup failure. Check the connector and server logs alongside latency.</td></tr>
+      </tbody></table></div>
+      <p><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/arg_groups/fields/memory.py#L98">Runtime settings and defaults</a> · <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/managers/cache_controller.py">Transfer controller</a> · <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/mem_cache/unified_radix_cache.py">Load-back and prefetch decisions</a>.</p>
+      <h3>Read the counters with a latency trace</h3>
+      <p>With metrics enabled, compare the host gauges <code>sglang:hicache_host_used_tokens</code> and <code>sglang:hicache_host_total_tokens</code>. The storage collector separates <code>sglang:storage_prefetch_hit_tokens_total</code> from <code>sglang:storage_prefetch_unfulfilled_tokens_total</code> by diagnostic reason, including deadline and lost anchor. These count storage attempts; retries can visit the same request again. Pair them with matched prefix lengths, prompt tokens actually computed, queue time and p95 TTFT under the same prompt mix. <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/observability/metrics_collector.py#L772">Host gauges</a> · <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/observability/metrics_collector.py#L2220">Storage counter definitions</a>.</p>
+    </section>
+
+    <section id="feature-evidence">
+      <p class="eyebrow">Reproduce and verify</p><h2>Which behavior should you expect?</h2>
+      <div class="table-wrap"><table class="file-map"><thead><tr><th>Mechanism</th><th>Scope at these pins</th><th>Evidence</th></tr></thead><tbody>
+      <tr><td>vLLM prefix caching</td><td>Enabled in the base cache config for supported generative models. Hash algorithm defaults to SHA-256. Cache hits require eligible resident state and compatible inputs.</td><td><a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/config/cache.py#L257">CacheConfig</a> · <a href="vllm.html#kv-cache">Block pool</a></td></tr>
+      <tr><td>SGLang radix matching</td><td>Default cache settings enable prefix reuse on supported paths. Backend, model and feature combinations can change the cache implementation. Page size is resolved separately.</td><td><a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/srt/arg_groups/fields/memory.py#L64">Memory settings</a> · <a href="sglang.html#memory-pools">Memory pools</a></td></tr>
+      <tr><td>CUDA graphs and fusion</td><td>Execution depends on hardware, model, captured shapes and mode. A captured decode path can reduce launch overhead. KV addressing and residency remain distinct concerns.</td><td><a href="vllm.html#compilation">vLLM graphs</a> · <a href="sglang.html#cuda-graphs">SGLang graphs</a></td></tr>
+      <tr><td>Speculative generation</td><td>Optional proposal and verification can emit multiple accepted tokens per target pass. Acceptance, temporary slots and rollback then change the ordinary decode trace.</td><td><a href="vllm.html#spec-decode">vLLM verification</a> · <a href="sglang.html#spec-decode">SGLang verification</a></td></tr>
+      <tr><td>Disaggregated serving</td><td>Optional worker roles and connectors transfer KV between prefill and decode. The destination must allocate compatible slots and agree on readiness. This serves a different purpose from extending reusable KV into storage.</td><td><a href="vllm.html#disagg">vLLM connectors</a> · <a href="sglang.html#disagg">SGLang hand-off</a> · <a href="../systems/index.html#disaggregation">Distributed lab</a></td></tr>
+      </tbody></table></div>
+      <h3>Try the repository’s CPU implementation</h3>
+      <p>With the project installed, run this example in Python. Interleaved requests A and B force A’s second logical block into physical block 2. The toy cache keeps a Python list of entries per block. Its separate prefix-cache exercise does not install shared production KV references.</p>
+      <pre><code>from mini_infer.engine.block_allocator import BlockAllocator
+from mini_infer.engine.paged_kv_cache import PagedKVCache
+
+cache = PagedKVCache(BlockAllocator(3), block_size=2)
+for request, value in [("A", 1), ("B", 9), ("A", 2), ("A", 3)]:
+    cache.append(request, [value], [value])
+print(cache.block_table("A"))                 # (0, 2)
+print([e.key[0] for e in cache.entries("A")]) # [1, 2, 3]
+cache.free("A")</code></pre>
+      <p>The inspector illustrates production data structures. The Python example exercises the local allocator. The source chapters document the GPU and storage implementations at commits <code>7b77ed5</code> and <code>07a8535</code>. <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/paged_kv_cache.py">Local cache implementation</a> · <a href="../systems/index.html#capacity">Size a real workload</a> · <a href="../systems/fabric.html#pd">Trace a cross-worker KV transfer</a>.</p>
+    </section>
+  </main>
+</body>
+</html>

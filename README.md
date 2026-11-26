@@ -1,13 +1,49 @@
 # LLM Inference from Scratch
 
-A compact, executable study repository for the algorithms and systems ideas
-inside modern LLM inference engines. It intentionally favors readable Python,
-small inputs, explicit state, and tests over production throughput.
+Trace one prompt from token IDs to a streamed reply, then follow the same work across GPUs.
+The repository pairs an executable Python engine with an interactive field guide to vLLM,
+SGLang, model architectures, and distributed inference.
 
-> **Scope:** this is not a replacement for vLLM, SGLang, TensorRT-LLM, or
-> llama.cpp. Hardware-dependent features are implemented as reference math or
-> control-plane simulations. There are no custom CUDA kernels, distributed
-> collectives, production authentication, or pretrained weights.
+**[Open the live field guide](https://siddhu1716.github.io/LLM_Inference_from_scratch/)** · [26-day curriculum](https://siddhu1716.github.io/LLM_Inference_from_scratch/curriculum.html) · [Run the Python model](#quickstart)
+
+[![Inference from Scratch field guide showing the GPU schematic and six learning paths](docs/assets/screenshots/field-guide.png)](https://siddhu1716.github.io/LLM_Inference_from_scratch/)
+
+## Inside the labs
+
+**Where does one token live?** Two prompts share six leading IDs. In the four-token,
+whole-block vLLM example, the first four positions are reusable. At position 6, table entry
+1 points to physical block 5, giving slot 22. Switch to SGLang’s one-token-page example:
+all six leading positions are reusable, and request row 8 maps position 6 to slot 106.
+The explorer also covers paged SGLang allocation, vLLM’s finer-grained prefix hits,
+and HiCache fetches from host memory and storage. [Open the KV address explorer](https://siddhu1716.github.io/LLM_Inference_from_scratch/engines/memory.html#address-lab)
+
+| vLLM block table | SGLang request-to-token pool |
+| --- | --- |
+| ![vLLM inspector showing physical block 5 and slot 22](docs/assets/screenshots/vllm-blocks.png) | ![SGLang inspector showing request row 8, position 6, and KV slot 106](docs/assets/screenshots/sglang-slots.png) |
+
+**Which bytes move when a model is distributed?** Follow a tensor collective,
+a pipeline-stage send, a replica-local request, and an expert dispatch. Compare a
+prefill/decode KV handoff with the activation traffic at each attention/FFN split.
+Check the model, connector, layout, and hardware assumptions before applying the
+bandwidth estimate. [Open the distributed walkthrough](https://siddhu1716.github.io/LLM_Inference_from_scratch/systems/fabric.html)
+
+![Worked expert dispatch showing two tokens regrouped by expert, then combined back in token order](docs/assets/screenshots/expert-dispatch.png)
+
+**Why does architecture change the cache budget?** Compare five checkpoints, trace
+grouped-query and latent attention, and see how full DeepSeek-R1 differs from the
+distilled models. Open the companion visualizer to inspect DeepSeek-V3 layer by layer.
+[Open the model atlas](https://siddhu1716.github.io/LLM_Inference_from_scratch/models/index.html) · [DeepSeek Visualizer](https://siddhu1716.github.io/deepseek_visualizer/)
+
+<details>
+<summary>See the model cache comparison</summary>
+
+![Model cache calculator comparing R1-Distill-Llama-8B and DeepSeek-V3 at 4,096 positions](docs/assets/screenshots/model-cache.png)
+
+</details>
+
+The Python examples use small inputs and untrained weights. The guide labels recorded
+model output, illustrative engine traces, and calculated communication estimates.
+[Implementation scope](https://siddhu1716.github.io/LLM_Inference_from_scratch/index.html#limitations)
 
 ## What you can learn here
 
@@ -26,9 +62,8 @@ small inputs, explicit state, and tests over production throughput.
   and SGLang internals, in the searchable GitHub Pages site.
 - Watch animated **vLLM and SGLang token lifecycles** that show every process
   hop and the exact source files triggered at each step.
-- Follow a **26-day curriculum** derived from the companion
-  `100-days-of-inference` repository and the user's *Inference Engineering*
-  reading track.
+- Follow a **26-day curriculum** with notebooks from *100 Days of Inference*,
+  worked examples, and links to the corresponding Python implementations.
 
 ## Feature matrix
 
@@ -52,7 +87,7 @@ small inputs, explicit state, and tests over production throughput.
 | Serving architecture | Prefill/decode disaggregation router and static-shape graph cache |
 | Structured output | Token DFA and a small JSON-object constraint |
 | API | `/health`, `/v1/models`, `/v1/completions`, `/v1/chat/completions`, SSE |
-| Documentation | Static responsive site, concept search, filters, 90 Q&As |
+| Documentation | Static field guide, model replay, engine walkthroughs, capacity calculator, reading library, and 110 Q&As |
 
 GPTQ, AWQ, FlashAttention GPU kernels, CUDA Graph capture, NCCL collectives,
 and RadixAttention kernels are explained but not falsely presented as
@@ -112,7 +147,10 @@ tests/               # deterministic unit and integration tests
 examples/            # runnable learning walkthroughs
 docs/                # no-build GitHub Pages site and interview bank
 |-- notes/           # four long-form beginner textbook volumes
-`-- engines/         # vLLM/SGLang deep dives and animated token lifecycles
+|-- engines/         # engine lifecycles, source traces, KV addresses and HiCache
+|-- models/          # checkpoint configurations, attention shapes and expert routing
+|-- systems/         # memory, GPU placement and communication worksheets
+`-- reading/         # annotated notebooks, papers and engineering articles
 ```
 
 Each technique has its own file so it is easy to revisit in isolation.
@@ -182,7 +220,7 @@ The `docs/engines/` pages explain how production engines serve one request:
 
 Each lifecycle is interactive: play, pause, or step through admission,
 prefill, repeated decode iterations, and completion while watching the streamed
-output and cumulative list of files touched. Source links are pinned to these
+output and cumulative list of files touched. Engine implementation links are pinned to these
 snapshots so the explanations do not drift:
 
 | Engine | Commit | Snapshot date |
@@ -206,6 +244,22 @@ attention equivalence, quantization error, speculative acceptance/rejection,
 parallel plans, structured decoding, and HTTP behavior.
 
 ## Documentation and GitHub Pages
+
+Start at the [field guide](https://siddhu1716.github.io/LLM_Inference_from_scratch/). The **Token laboratory** replays three
+prompts through the repository’s untrained Python model with seed 7 and greedy
+decoding. Each pass shows the input IDs, KV positions and top three raw logits.
+The reproduction command beside each trace runs the same model locally.
+
+- The [engine comparison](https://siddhu1716.github.io/LLM_Inference_from_scratch/engines/index.html#request-lab) follows one
+  illustrative request in vLLM and SGLang. Switch the prefix-cache state or
+  disconnect the client, then follow the linked implementation chapters.
+- The [distributed inference lab](https://siddhu1716.github.io/LLM_Inference_from_scratch/systems/index.html) connects memory
+  sizing to optimization choices, GPU placement, KV transfers and measurements.
+- The [reading library](https://siddhu1716.github.io/LLM_Inference_from_scratch/reading/index.html) pairs research papers, engine
+  documentation, *100 Days of Inference* notebooks and engineering articles
+  with questions to investigate.
+- The [request diagram](https://siddhu1716.github.io/LLM_Inference_from_scratch/index.html#request-diagram) includes editable
+  Mermaid and Excalidraw downloads.
 
 Serve the site locally:
 
@@ -238,6 +292,10 @@ This project takes inspiration from:
 
 The names help connect study code to production vocabulary; they do not claim
 feature or performance parity.
+
+## Author
+
+Shiva Nampalli · [Portfolio](https://shivanampalli.netlify.app/) · [GitHub](https://github.com/siddhu1716) · [LinkedIn](https://www.linkedin.com/in/shiva-nampalli/)
 
 ## License
 

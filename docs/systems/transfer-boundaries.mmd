@@ -1,0 +1,25 @@
+sequenceDiagram
+    autonumber
+    participant R as Router
+    participant P as Prefill group
+    participant A as Decode attention group
+    participant F as Remote experts
+    R->>P: Evaluate the prompt
+    R->>A: Identify request and reserve cache slots
+    P->>P: Sample the first output token
+    P-->>R: First token for streaming in this example
+    P-->>A: Prompt KV and continuation metadata including sampled ID
+    Note over P,A: One logical PD handoff can involve many block transfers
+    A-->>P: Transfer complete and safe to release source
+    loop Decode until stop
+        loop Each remotely executed MoE layer
+            A->>A: Attend with resident KV and select experts
+            A->>F: Dispatch rows with routing metadata
+            F->>F: Permute rows into expert batches and evaluate
+            F-->>A: Return contributions for combine in source order
+            A->>A: Apply scaling and residual per model
+        end
+        A->>A: Sample the next token
+        A-->>R: Stream available output
+    end
+    A->>A: Release request ownership
