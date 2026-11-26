@@ -27,6 +27,12 @@
 .atlas-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
 .atlas-heading h2 { margin: 0; font: 650 clamp(1.7rem, 2.65vw, 2.65rem)/1.1 var(--font-sans); letter-spacing: -.054em; }
 .atlas-heading > a { white-space: nowrap; font-size: .85rem; font-weight: 640; }
+.bench-entry { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem 1.35rem; margin-top: .8rem; border: 1px solid var(--line); border-left: .25rem solid var(--teal); border-radius: .45rem; padding: .9rem 1rem; background: var(--surface); }
+.bench-entry > div { flex: 1 1 20rem; }
+.bench-entry h3 { margin: 0 0 .2rem; font-size: 1.04rem; }
+.bench-entry h3 a { color: var(--ink); }
+.bench-entry p { color: var(--ink-soft); margin: 0; font-size: .92rem; }
+.bench-entry > a { font-size: .89rem; font-weight: 650; }
 .atlas-lead { max-width: 78ch; margin: .8rem 0 1.2rem; color: var(--ink-soft); }
 .trail-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .7rem; margin-top: 1.15rem; }
 .trail-card { display: flex; flex-direction: column; align-items: flex-start; gap: 1rem; padding: 1.05rem; background: var(--surface); border: 1px solid var(--line); border-radius: .65rem; text-decoration: none; color: var(--ink); }

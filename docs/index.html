@@ -13,7 +13,7 @@
     <link rel="stylesheet" href="styles.css?v=9">
     <link rel="stylesheet" href="atlas.css">
     <script src="theme.js" defer></script>
-    <script src="app.js?v=4" defer></script>
+    <script src="app.js?v=5" defer></script>
     <link rel="stylesheet" href="hardware/h100.css">
     <script src="replay.js" defer></script>
     <script src="hardware/h100.js" defer></script>
@@ -107,7 +107,8 @@
               <li><a href="hardware/index.html"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-chip"/></svg><span>Inside an NVIDIA H100</span></a></li>
               <li><a href="systems/fabric.html"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-flow"/></svg><span>GPU communication</span></a></li>
               <li><a href="systems/index.html#capacity"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-grid"/></svg><span>Capacity calculator</span></a></li></ul>
-            <p class="sidebar-title">Reference</p><ul class="nav-list"><li><a href="#request-diagram"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-layers"/></svg><span>Request diagram</span></a></li>
+            <p class="sidebar-title">Reference</p><ul class="nav-list"><li><a href="benchmarks/index.html"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-grid"/></svg><span>Benchmarks &amp; metrics</span></a></li>
+              <li><a href="#request-diagram"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-layers"/></svg><span>Request diagram</span></a></li>
               <li><a href="#source-map"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-source"/></svg><span>Code map</span></a></li>
               <li><a href="#interview-bank"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-chat"/></svg><span>Interview practice</span></a></li></ul>
             <details class="topic-nav"><summary>All reference topics</summary><ul class="nav-list">
@@ -164,6 +165,10 @@
             </a>
             <a class="trail-card blue" id="start-optimization" data-search-item href="systems/index.html#optimization"><span class="trail-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-optimize"/></svg></span><div class="card-content"><h3>Optimization</h3><span>Find the bottleneck and test a change.</span></div></a>
             <a class="trail-card lilac" id="start-distributed" data-search-item href="systems/index.html#topologies"><span class="trail-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-network"/></svg></span><div class="card-content"><h3>Distributed inference</h3><span>Split weights, route requests and move KV.</span></div></a>
+          </div>
+          <div class="bench-entry">
+            <div><h3><a href="benchmarks/index.html">Benchmarks &amp; metrics</a></h3><p>Score a coding agent, test a long context, or measure a streaming endpoint.</p></div>
+            <a href="benchmarks/index.html#score-lab">Score calculator</a><a href="benchmarks/metrics.html#timeline">Latency formulas</a>
           </div>
         </section>
 
@@ -1870,7 +1875,7 @@ release(state.kv)</code></pre>
               dominate user experience even when kernels are fast.
             </p>
           </div>
-          <p><a href="systems/index.html#measurement">Work through a client latency trace</a></p>
+          <p><a href="benchmarks/metrics.html#timeline">Calculate TTFT, ITL and end-to-end latency from a client trace</a></p>
 
           <div class="card-grid three">
             <article id="serving-contract" class="card" data-search-item data-keywords="OpenAI API validation request response">
@@ -1910,10 +1915,10 @@ release(state.kv)</code></pre>
               </thead>
               <tbody>
                 <tr><td>Queue delay</td><td>Admission and capacity pressure</td><td>Rising before GPU saturation suggests policy or routing imbalance.</td></tr>
-                <tr><td>TTFT</td><td>Queue plus prompt processing</td><td>Scales sharply with prompt length when chunking or prefix reuse is ineffective.</td></tr>
+                <tr><td>TTFT</td><td>Request start to first content token at the client, including queueing, prefill and delivery</td><td>Scales sharply with prompt length when chunking or prefix reuse is ineffective.</td></tr>
                 <tr><td>ITL</td><td>Decode cadence</td><td>Periodic spikes suggest prefill interference, collectives, or host stalls.</td></tr>
                 <tr><td>Cache occupancy</td><td>Dynamic memory pressure</td><td>High occupancy with low active tokens suggests leaks or fragmentation.</td></tr>
-                <tr><td>Goodput</td><td>Requests (or tokens) completed within their latency SLO</td><td>Throughput can rise while goodput falls under aggressive batching.</td></tr>
+                <tr><td>Goodput</td><td>Qualifying successful requests per second under a stated latency target</td><td>Throughput can rise while goodput falls under aggressive batching.</td></tr>
               </tbody>
             </table>
           </div>

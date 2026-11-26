@@ -110,6 +110,17 @@
     ["Inference optimization lab", "systems/index.html#optimization", "bottleneck diagnose latency throughput profiling tuning"],
     ["Distributed inference topologies", "systems/index.html#topologies", "tensor pipeline data expert context parallelism TP PP DP EP MoE GPUs"],
     ["Prefill and decode disaggregation", "systems/index.html#disaggregation", "KV transfer handoff split bandwidth routing"],
+    ["Benchmark directory", "benchmarks/index.html", "benchmarks suites metrics formula performance quality model evaluation leaderboard"],
+    ["Speech, documents and chat benchmarks", "benchmarks/index.html#applications", "ASR OpenASR WER word error rate DocVQA ANLS Levenshtein Arena Bradley Terry WikiText perplexity"],
+    ["Benchmark score calculator", "benchmarks/index.html#score-lab", "formulas accuracy accuracy rate resolution pass@k recall precision F1 macro micro pooled"],
+    ["DeepSWE and SWE-bench", "benchmarks/quality.html#deepswe", "deep swe bench coding agent verified pro preview humaneval mbpp livecodebench tests patches"],
+    ["Pass@k and repeated agent success", "benchmarks/quality.html#pass-at-k", "pass@1 pass@k pass^k best of k selection unbiased estimator candidate budget"],
+    ["Long-context benchmarks", "benchmarks/quality.html#long-context", "bench long context LongBench v2 RULER needle haystack HELMET InfiniteBench longbench2 retrieval"],
+    ["Model and agent evaluation", "benchmarks/quality.html", "reasoning math AIME GSM8K MMLU GPQA instruction agents tool use knowledge multilingual"],
+    ["TTFT, ITL, TPOT and end-to-end latency", "benchmarks/metrics.html#timeline", "TTFT ITL TPOT TTLT E2E latency time per output token inter token gaps first token metrics formulas"],
+    ["Throughput and goodput", "benchmarks/metrics.html#throughput", "requests/s tokens/s input output total SLO RPS TPS batch traffic throughput benchmark"],
+    ["Tail latency percentiles", "benchmarks/metrics.html#percentiles", "p50 p95 p99 percentile tail pooled weighting"],
+    ["Serving benchmark runners", "benchmarks/serving.html", "MLPerf LoadGen vllm bench serve sglang benchmark AIPerf GenAI-Perf offline tools harness"],
     ["Measure serving performance", "systems/index.html#measurement", "TTFT ITL goodput SLO p95 benchmark"],
     ["Annotated reading library", "reading/index.html", "100 days of inference NVIDIA research papers Medium articles resources"],
     ["Editable request diagram", "index.html#request-diagram", "Mermaid Excalidraw flowchart process block diagram"],
@@ -132,7 +143,10 @@
       text: normalize(`${label} ${item.textContent} ${item.dataset.keywords || ""}`),
     };
   });
-  const searchIndex = [...localIndex, ...destinations];
+  const words = (value) => new Set(value.match(/[\p{L}\p{N}_@^]+/gu) || []);
+  const searchIndex = [...localIndex, ...destinations].map((entry) => ({
+    ...entry, titleWords: words(entry.title), keywordWords: words(entry.keywords),
+  }));
 
   const showSearchResults = () => {
     if (!siteSearch || !searchResults) {
@@ -146,9 +160,17 @@
     }
 
     const terms = query.split(/\s+/).filter(Boolean);
-    const score = (entry) => terms.reduce((sum, term) =>
-      sum + (entry.title.includes(term) ? 4 : entry.keywords.includes(term) ? 2 : 0),
-    entry.title === query ? 8 : 0);
+    const score = (entry) => {
+      let rank = entry.title === query ? 20 : 0;
+      for (const term of terms) {
+        if (entry.titleWords.has(term)) rank += 10;
+        else if (entry.keywordWords.has(term)) rank += 7;
+        else if (entry.title.includes(term)) rank += 4;
+        else if (entry.keywords.includes(term)) rank += 2;
+        if (entry.title.startsWith(term)) rank += 1;
+      }
+      return rank;
+    };
     const seen = new Set();
     const matches = searchIndex
       .filter((entry) => terms.every((term) => entry.text.includes(term)))

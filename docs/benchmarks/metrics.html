@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#112c2a">
+  <meta name="description" content="Calculate LLM serving metrics from streamed callbacks and a concurrent load test. Explore TTFT, TTLT, TPOT, inter-token gaps, percentile conventions, throughput and goodput.">
+  <title>Serving metrics lab · Inference from Scratch</title>
+  <link rel="icon" href="../assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../systems/systems.css">
+  <link rel="stylesheet" href="metrics.css">
+  <script src="../theme.js" defer></script>
+  <script src="../systems/chapters.js" defer></script>
+  <script src="metrics.js" defer></script>
+</head>
+<body class="metrics-lesson">
+  <a class="skip" href="#content">Skip to guide</a>
+  <header class="site-header"><div class="wrap header-inner">
+    <a class="brand" href="../index.html"><img src="../assets/mark.svg" alt="" width="32" height="32">Inference from Scratch</a>
+    <nav aria-label="Site"><a href="index.html">Benchmark guide</a><a href="quality.html">Model quality</a><a href="../systems/index.html">Systems lab</a><button class="theme-switch" type="button" data-theme-toggle aria-label="Change color theme"><span data-theme-icon aria-hidden="true">◐</span></button></nav>
+  </div></header>
+  <main id="content">
+    <div class="hero"><div class="wrap hero-inner">
+      <div><p class="kicker">Serving benchmarks</p><h1>Read a<br>serving trace</h1>
+        <p class="lede">A chat reply starts quickly, pauses mid-sentence and closes late. One average hides all three events. Measure them from the client, then see how the same service behaves under load.</p>
+        <a class="action" href="#timeline">Inspect one request</a> <a class="secondary-action" href="#throughput">Compare load levels</a>
+      </div>
+      <figure class="hero-diagram"><div class="diagram-head"><span>Streaming request</span><span>Worked example</span></div>
+        <div class="mini-trace"><div><small>Sent</small><b>0 ms</b></div><div><small>First text</small><b>150 ms</b></div><div><small>Last text</small><b>270 ms</b></div><div><small>Done</small><b>290 ms</b></div></div>
+        <figcaption>The first text marks the wait to begin reading. The final 20 ms belong to the response tail after the last text.</figcaption>
+      </figure>
+    </div></div>
+    <div class="wrap guide-grid">
+      <aside><nav class="chapters" aria-label="In this guide"><h2>In this guide</h2>
+        <a href="#timeline">Trace one request</a><a href="#definitions">Latency formulas</a>
+        <a href="#throughput">Load and goodput</a><a href="#percentiles">Percentiles and weighting</a><a href="#measurement">Measurement conventions</a>
+      </nav></aside>
+      <article>
+        <section id="timeline">
+          <p class="kicker">One request</p><h2>Where did the time go?</h2>
+          <p>The illustrative client starts its monotonic clock when it sends the request. A role-only event arrives at 12 ms. The first callback carrying output content starts the visible stream. Each callback records its arrival time and the number of new token IDs it delivers. The completion marker carries zero tokens. These synthetic traces include aligned server events so you can see what a client alone cannot observe.</p>
+          <div class="lab" id="trace-lab">
+            <div class="lab-head"><h3>Streaming trace worksheet</h3><span class="mono">Times in milliseconds</span></div>
+            <form id="trace-form" hidden>
+              <label class="wide-control">Trace preset<select name="pattern">
+                <option value="steady">Steady · one token per callback</option><option value="queue">Busy server · slow first token</option>
+                <option value="stall">Decode stall · uneven gaps</option><option value="bundle">Bundled output · three tokens together</option>
+                <option value="firstBundle">Buffered start · three tokens in first callback</option><option value="single">Single-token answer</option>
+                <option value="tail">Delayed completion marker</option>
+              </select></label>
+              <div class="inputs trace-inputs">
+                <label>Server queue (ms)<input required name="queue" type="number" min="0" max="10000" step="1" value="50"></label>
+                <label>Prefill to first sample (ms)<input required name="prefill" type="number" min="0" max="10000" step="1" value="80"></label>
+                <label>After last content (ms)<input required name="tail" type="number" min="0" max="10000" step="1" value="20"></label>
+              </div>
+            </form>
+            <noscript><p>The trace below is the steady four-token example. The worked calculations and explanations are available without JavaScript.</p></noscript>
+            <p id="trace-error" role="status" hidden></p>
+            <div id="trace-results">
+              <div class="metric-strip"><div><span>First content</span><strong id="first">150 ms</strong></div><div><span>Last content</span><strong id="last">270 ms</strong></div><div><span>Response complete</span><strong id="done">290 ms</strong></div></div>
+              <div class="phase-meter" aria-hidden="true"><i data-phase="in" style="flex-grow:10"></i><i data-phase="queue" style="flex-grow:50"></i><i data-phase="prefill" style="flex-grow:80"></i><i data-phase="out" style="flex-grow:10"></i><i data-phase="stream" style="flex-grow:120"></i><i data-phase="tail" style="flex-grow:20"></i></div>
+              <ul class="phase-legend" id="phase-legend"><li>Ingress 10 ms</li><li>Queue 50 ms</li><li>Prefill 80 ms</li><li>First delivery 10 ms</li><li>Streaming 120 ms</li><li>Tail 20 ms</li></ul>
+              <h4>Client callback log</h4>
+              <table class="event-table"><thead><tr><th scope="col">Event</th><th scope="col">Arrival</th><th scope="col">New tokens</th><th scope="col">Content gap</th></tr></thead><tbody id="event-rows">
+                <tr><th scope="row">Send request</th><td>0 ms</td><td>0</td><td>—</td></tr><tr><th scope="row">Role only</th><td>12 ms</td><td>0</td><td>—</td></tr>
+                <tr><th scope="row">Content 1</th><td>150 ms</td><td>1</td><td>—</td></tr><tr><th scope="row">Content 2</th><td>190 ms</td><td>1</td><td>40 ms</td></tr>
+                <tr><th scope="row">Content 3</th><td>230 ms</td><td>1</td><td>40 ms</td></tr><tr><th scope="row">Content 4</th><td>270 ms</td><td>1</td><td>40 ms</td></tr>
+                <tr><th scope="row">Done</th><td>290 ms</td><td>0</td><td>—</td></tr>
+              </tbody></table>
+              <h4>Aligned server spans</h4><p id="server-spans">Server receives at 10 ms, schedules prefill at 60 ms, samples token 1 at 140 ms and samples the last token at 260 ms. The server's decode window after the first token is 120 ms.</p>
+              <p class="status" id="trace-note" role="status">Four content callbacks each carry one token. Every gap is 40 ms and the response closes 20 ms after the last content.</p>
+            </div>
+          </div>
+        </section>
+        <section id="definitions"><p class="kicker">Metric formulas</p><h2>Pick the event before you divide</h2>
+          <p>The calculations follow the selected trace. TTFT and TTLT below use nonempty output at the client. E2E ends at the completion marker. Real clients can finish after that marker when they drain or close the transport. A token ID, decoded character, word and streaming callback can each have a different count.</p>
+          <dl class="metric-equations" id="latency-math">
+            <div><dt>Time to first token (TTFT)</dt><dd>First content − send = 150 − 0 = 150 ms.</dd></div>
+            <div><dt>Time to last token (TTLT)</dt><dd>Last content − send = 270 − 0 = 270 ms.</dd></div>
+            <div><dt>End-to-end request latency (E2E)</dt><dd>Done − send = 290 − 0 = 290 ms. Completion tail = 290 − 270 = 20 ms.</dd></div>
+            <div><dt>Inter-token latency (observed callback gaps)</dt><dd>Gapᵢ = current − previous content arrival. Mean = (40 + 40 + 40) / 3 = 40 ms/gap.</dd></div>
+            <div><dt>Content-window TPOT</dt><dd>(Last content − first content) / (output tokens − 1) = (270 − 150) / (4 − 1) = 40 ms/token.</dd></div>
+            <div><dt>Completion-window TPOT</dt><dd>(Done − first content) / (output tokens − 1) = (290 − 150) / (4 − 1) = 46.67 ms/token.</dd></div>
+            <div><dt>Post-first-delivery user rate</dt><dd>Tokens delivered after first callback / streaming seconds = (4 − 1) / 0.12 = 25 tok/s.</dd></div>
+            <div><dt>End-to-end user rate</dt><dd>Output tokens / request seconds = 4 / 0.29 = 13.79 tok/s.</dd></div>
+            <div><dt>Queue, prefill and decode intervals</dt><dd>Queue = 60 − 10 = 50 ms. Prefill to first sample = 140 − 60 = 80 ms. Last sample − first sample = 260 − 140 = 120 ms.</dd></div>
+          </dl>
+          <p id="latency-invalid" hidden>Enter valid trace durations above to calculate the timing formulas.</p>
+          <details class="explain"><summary>Why do reports with the same metric name disagree?</summary>
+            <p>vLLM documents per-request TPOT as (latency − TTFT) / (output tokens − 1) and pools observed inter-output gaps for ITL. Our two TPOT rows illustrate how the chosen endpoint changes the numerator. The callback log contains no individual arrival times for tokens delivered together. Inventing zero-length gaps inside a chunk would alter the ITL distribution. <a href="https://docs.vllm.ai/en/stable/benchmarking/cli/#understanding-the-latency-metrics">vLLM's streaming definitions</a></p>
+            <p>If the first chunk contains several tokens, dividing its subsequent delivery window by all tokens minus one can make the user look faster. The post-first-delivery rate counts only tokens delivered after that first callback. NVIDIA AIPerf distinguishes content and full-response intervals and describes how its denominator depends on available chunk usage. When N = 1, this lesson leaves TPOT and gap-based rates undefined. SGLang documents a separate zero-TPOT convention for single-token replies in its goodput calculation. <a href="https://docs.nvidia.com/aiperf/reference/ai-perf-metrics-reference">AIPerf metric reference</a> · <a href="https://github.com/sgl-project/sglang/blob/main/docs/docs/developer_guide/bench_serving.mdx">SGLang serving benchmark</a></p>
+          </details>
+        </section>
+        <section id="throughput"><p class="kicker">Concurrent requests</p><h2>Count useful work over wall time</h2>
+          <p>A server overlaps requests. Its aggregate rate uses the elapsed run duration once. Below, each synthetic batch of requests is sent and finishes within a 10-second observation window, including drain time. Input and output token totals cover successful requests. <strong>Goodput</strong> counts a successful request only when both latency targets are met. Failures remain in the denominator for attainment.</p>
+          <div class="lab">
+            <div class="lab-head"><h3>Load and service-level objectives</h3><span class="mono">10 s window</span></div>
+            <form id="load-form" hidden><div class="inputs trace-inputs">
+              <label>Offered workload<select name="load"><option value="calm">Light · 40 arrivals</option><option value="busy" selected>Busy · 100 arrivals</option><option value="overload">Overload · 160 arrivals</option><option value="failed">Outage · 20 failures</option></select></label>
+              <label>TTFT at most (ms)<input name="ttft" required type="number" min="0" max="60000" step="any" value="350"></label>
+              <label>Content TPOT at most (ms/token)<input name="tpot" required type="number" min="0" max="60000" step="any" value="55"></label>
+            </div></form>
+            <p id="load-error" role="status" hidden></p>
+            <div id="load-results">
+              <div class="metric-strip"><div><span>Successful throughput</span><strong id="success-rate">9.6 req/s</strong></div><div><span>Request goodput</span><strong id="good-rate">8.8 req/s</strong></div><div><span>Attainment</span><strong id="attainment">88%</strong></div></div>
+              <div class="table-pan" tabindex="0" role="region" aria-label="Workload groups; scroll horizontally if needed">
+                <table class="cohort-table"><caption>Groups of identical completed requests</caption><thead><tr><th scope="col">Count</th><th scope="col">Input / output tokens each</th><th scope="col">TTFT</th><th scope="col">TPOT</th><th scope="col">Qualify</th></tr></thead><tbody id="cohorts">
+                  <tr><td>72</td><td>128 / 8</td><td>150 ms</td><td>40 ms/token</td><td>Yes</td></tr><tr><td>16</td><td>256 / 16</td><td>300 ms</td><td>50 ms/token</td><td>Yes</td></tr>
+                  <tr><td>7</td><td>512 / 24</td><td>700 ms</td><td>90 ms/token</td><td>No</td></tr><tr><td>1</td><td>512 / 24</td><td>1,600 ms</td><td>90 ms/token</td><td>No</td></tr>
+                </tbody></table>
+              </div>
+              <p class="status" id="load-note" role="status">100 attempts, 96 successes, 4 failures. 88 successful requests meet both inclusive targets.</p>
+              <dl class="metric-equations" id="rate-math">
+                <div><dt>Offered load</dt><dd>Attempts / window = 100 / 10 = 10 req/s.</dd></div>
+                <div><dt>Successful throughput</dt><dd>Successes / window = 96 / 10 = 9.6 req/s.</dd></div>
+                <div><dt>Input throughput</dt><dd>Successful input tokens / window = 17,408 / 10 = 1,740.8 tok/s.</dd></div>
+                <div><dt>Output throughput</dt><dd>Successful output tokens / window = 1,024 / 10 = 102.4 tok/s.</dd></div>
+                <div><dt>Total token throughput</dt><dd>(Input + output tokens) / window = (17,408 + 1,024) / 10 = 1,843.2 tok/s.</dd></div>
+                <div><dt>Goodput and attainment</dt><dd>Qualifying successes / window = 88 / 10 = 8.8 req/s. Qualifying successes / all attempts = 88 / 100 × 100% = 88%.</dd></div>
+                <div><dt>Failure fraction</dt><dd>Failures / all attempts = 4 / 100 × 100% = 4%.</dd></div>
+              </dl>
+            </div>
+          </div>
+          <p><strong>Read a published console report.</strong> vLLM's ShareGPT example reports 10 successful requests, 1,369 input tokens and 2,212 output tokens in about 5.78 s. Dividing gives roughly 1.73 req/s, 383 output tok/s and 620 total tok/s. These figures describe that documented run. Hardware, prompt lengths, concurrency, tokenizer and cache reuse are necessary context when comparing a new result. <a href="https://docs.vllm.ai/en/stable/benchmarking/cli/#online-benchmark">vLLM online serving example</a></p>
+        </section>
+        <section id="percentiles"><p class="kicker">Tail latency</p><h2>Whose experience gets a vote?</h2>
+          <p>Sort the successful requests' TTFT values in ascending order. This worksheet uses the <strong>nearest-rank</strong> convention, with a one-based rank of ⌈(p / 100) × N⌉. The selected rank's sample is the percentile. A pooled ITL percentile sorts all observed gaps, so a long output can contribute many more observations than a short one.</p>
+          <div class="worked"><h3>TTFT percentiles for the selected load</h3><ol id="percentile-math">
+            <li>p50 = sample ⌈0.50 × 96⌉ = sample 48 = 150 ms.</li>
+            <li>p95 = sample ⌈0.95 × 96⌉ = sample 92 = 700 ms.</li>
+            <li>p99 = sample ⌈0.99 × 96⌉ = sample 96 = 1,600 ms.</li>
+          </ol></div>
+          <p>With 96 successes, nearest-rank p99 happens to select the maximum. Repeated runs and a larger trace help determine whether the tail persists. A different estimator may interpolate between samples and produce a different p99. Exclude failed latencies only with the failure count visible, since a fast rejection can otherwise improve a latency headline.</p>
+          <details class="explain" open><summary>Work through pooled gaps and per-request means</summary>
+            <p>Request A streams two tokens with one 100 ms gap. Request B streams ten tokens with nine 10 ms gaps. Both emit one token at each callback. Their individual content TPOTs are 100 and 10 ms/token. The request-weighted mean TPOT = (100 + 10) / 2 = <strong>55 ms/token</strong>. The pooled gap mean = (100 + 9 × 10) / 10 = <strong>19 ms/gap</strong>.</p>
+            <p>Nearest-rank p50 of the two request means is the first sorted mean, 10 ms/token. The pooled p95 selects the tenth sorted gap, 100 ms. For fleet-wide percentiles, merge raw samples or compatible histogram counts. Averaging two replica p99 values loses the underlying sample weights and distribution.</p>
+          </details>
+        </section>
+        <section id="measurement"><p class="kicker">Measurement conventions</p><h2>Make the numbers reproducible</h2>
+          <ol class="runbook">
+            <li><strong>Choose the population and the clock.</strong> Record run start/end, warm-up, successes, timeouts and cancellations. Log a monotonic client timestamp for send, every qualified callback, last content and completion. Use server-local durations or synchronized tracing for queue and model time. An unaligned client and server clock cannot yield a one-way network delay by subtraction.</li>
+            <li><strong>Record the arrival process.</strong> Open-loop arrivals are scheduled independently of completions. A closed-loop generator waits for a concurrency slot, so stalls can suppress new arrivals. Keep that client admission wait separate from post-send TTFT. Record offered rate, observed arrivals, in-flight count and test duration.</li>
+            <li><strong>Define a token and a callback.</strong> Prefer output token IDs or trusted usage counts when available. Whitespace, a partial UTF-8 sequence, tokenizer merges, or speculative blocks can change the mapping from content chunks to token counts. Record whether reasoning, tool calls, EOS and empty outputs enter the statistics. A non-streaming response supplies completion latency and token totals but cannot reveal the first-token time or delivery gaps.</li>
+            <li><strong>Track workload and cache policy.</strong> Input tokens/s can count logically presented tokens even on prefix hits. Record reused and newly computed tokens separately if you need prefill compute throughput. Report prompt/output length distributions, model and tokenizer revision, backend version, cache state, sampling settings, device topology, SLOs and percentile convention. <a href="index.html">Benchmark workflow</a> · <a href="quality.html">Quality evaluation</a></li>
+          </ol>
+          <p>The repository's CPU reference records per-request token event times, forms adjacent gaps, and reports generated tokens over a run window. A remote streaming benchmark adds transport, framing and client parsing to those engine-side events. <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/main/src/mini_infer/engine/metrics.py">Inspect the backend metric calculations</a> · <a href="../systems/index.html#measurement">Diagnose latency in the serving system</a></p>
+        </section>
+      </article>
+    </div>
+  </main><footer><div class="wrap"><a class="brand" href="index.html">Benchmark guide</a><a href="#content">Back to top</a></div></footer>
+</body>
+</html>

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#112c2a">
+  <meta name="description" content="Learn how to score a coding agent, test long-context understanding, and measure inference latency and throughput. Try worked formulas and a streamed request trace.">
+  <title>LLM benchmarks &amp; scoring · Inference from Scratch</title>
+  <link rel="icon" href="../assets/mark.svg">
+  <link rel="stylesheet" href="../systems/systems.css">
+  <link rel="stylesheet" href="benchmarks.css">
+  <script src="../theme.js" defer></script>
+  <script src="scores.js" defer></script>
+  <script src="../systems/chapters.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#content">Skip to benchmarks</a>
+  <header class="site-header"><div class="wrap header-inner">
+    <a href="../index.html" class="brand"><img alt="" src="../assets/mark.svg" width="32" height="32">Inference from Scratch</a>
+    <nav aria-label="Site"><a href="../models/index.html">Models</a><a href="../engines/index.html">Engines</a><a href="../systems/index.html">Systems</a>
+      <button class="theme-switch" data-theme-toggle type="button" aria-label="Change color theme"><span data-theme-icon aria-hidden="true">◐</span></button></nav>
+  </div></header>
+  <main id="content">
+    <div class="hero"><div class="wrap hero-inner">
+      <div><p class="kicker">Inference evaluation</p><h1>Read a<br>benchmark.</h1>
+        <p class="lede">Can the model solve the task? How long does the answer take? Follow the same run from a verifier’s verdict to the latency a user experiences.</p>
+        <a class="action" href="#directory">Choose a benchmark</a>
+        <a class="secondary-action" href="#score-lab">Try a score formula</a>
+      </div>
+      <figure class="hero-diagram score-sheet">
+        <div class="diagram-head"><span>Illustrative run</span><span>24 requests · 30 seconds</span></div>
+        <div class="sheet-row"><div><strong>Correct answers</strong><span>18 pass the verifier</span></div><b>75<span>%</span></b></div>
+        <div class="sheet-meter" aria-hidden="true"><i></i></div>
+        <div class="sheet-row"><div><strong>Correct and on time</strong><span>12 pass and meet the deadline</span></div><b>0.40<span> req/s</span></b></div>
+        <div class="sheet-meter qualified" aria-hidden="true"><i></i></div>
+        <figcaption>Accuracy divides 18 by 24 attempts. Goodput under this policy divides 12 qualifying requests by 30 seconds. The bars show each count as a share of attempts.</figcaption>
+      </figure>
+    </div></div>
+    <div class="wrap guide-grid">
+      <aside><nav class="chapters" aria-label="In this guide"><h2>Benchmark guide</h2>
+        <a href="#directory">Choose a benchmark</a><a href="#score-lab">Score calculator</a><a href="#applications">Speech, documents &amp; chat</a><a href="#report">Compare two runs</a>
+        <a href="quality.html">Model &amp; agent evaluations</a><a href="metrics.html">Serving metric formulas</a><a href="serving.html">Benchmark runners</a>
+      </nav></aside>
+      <article>
+        <section id="directory"><p class="kicker">Benchmark directory</p><h2>Start with the question.</h2>
+          <div class="bench-routes">
+            <a href="quality.html#coding"><span class="route-tag">Coding agents</span><h3>Can it change a real repository?</h3><p>Read a DeepSWE or SWE-bench result, find the verifier, and check the agent’s tool and attempt budget.</p><span class="route-link">Explore coding evaluations →</span></a>
+            <a href="quality.html#long-context"><span class="route-tag">Long context</span><h3>Does it use the whole prompt?</h3><p>Compare finding one inserted fact with connecting evidence across long documents in RULER and LongBench.</p><span class="route-link">Explore context evaluations →</span></a>
+            <a href="metrics.html#timeline"><span class="route-tag">Streaming latency</span><h3>Where did the user wait?</h3><p>Read TTFT, ITL, TPOT and end-to-end latency from the timestamps of one streamed response.</p><span class="route-link">Inspect a request trace →</span></a>
+            <a href="serving.html"><span class="route-tag">Serving under load</span><h3>How much traffic can it serve?</h3><p>Choose a vLLM or SGLang runner, interpret an MLPerf scenario and measure goodput as concurrency grows.</p><span class="route-link">Compare serving benchmarks →</span></a>
+          </div>
+          <p class="bench-related">Also in the guide: <a href="quality.html">knowledge, reasoning, tools and instruction following</a> · <a href="serving.html#local">measure the teaching engine</a> · <a href="metrics.html#throughput">tokens/s, requests/s and goodput</a>.</p>
+        </section>
+        <section id="score-lab"><p class="kicker">Worked formulas</p><h2>What goes in the denominator?</h2>
+          <p>Use these examples to read a result table. Each uses small, invented counts so you can check the arithmetic by hand.</p>
+          <div class="score-lab">
+            <div class="score-picker" hidden><label for="score-rule">Scoring rule</label>
+              <select id="score-rule"><option value="accuracy">Task accuracy / resolution rate</option><option value="pass">Code sampling · pass@k</option><option value="f1">Answer overlap · token F1</option><option value="bins">Length groups · macro vs pooled</option></select>
+            </div>
+            <div data-rule="accuracy"><h3>Task accuracy / resolution rate</h3>
+              <p>Grade each task against its verifier. With one verdict per task, the denominator includes every evaluated task, including unsuccessful attempts. Report skipped tasks separately and follow the benchmark’s failure policy.</p>
+              <p class="score-equation">Score (%) = 100 × passed tasks / evaluated tasks</p>
+              <div class="score-fields" hidden><label>Passed tasks<input name="correct" type="number" min="0" max="10000" value="18"></label><label>Evaluated tasks<input name="total" type="number" min="1" max="10000" value="24"></label></div>
+              <p class="score-result" role="status">18 / 24 = 75% of tasks passed.</p>
+              <a href="quality.html#coding">How engineering-task verifiers grade a patch</a>
+            </div>
+            <div data-rule="pass"><h3>Pass@k from sampled programs</h3>
+              <p>Generate <var>n</var> programs for one problem. The tests pass for <var>c</var> of them. Of all groups of <var>k</var> candidates, what fraction contain at least one passing program? Average the per-problem estimates for the suite score. This measures the opportunity to find a solution when given multiple tries.</p>
+              <p class="score-equation">pass@k = 1 − C(n − c, k) / C(n, k)</p>
+              <p><var>C(a, b)</var> counts ways of choosing <var>b</var> items from <var>a</var> without replacement. If fewer than <var>k</var> failures exist, every group contains a pass. The formula requires <var>n ≥ k ≥ 1</var>.</p>
+              <div class="score-fields" hidden><label>Samples (n)<input name="n" type="number" min="1" max="10000" value="5"></label><label>Passing samples (c)<input name="c" type="number" min="0" max="10000" value="2"></label><label>Attempts (k)<input name="k" type="number" min="1" max="10000" value="2"></label></div>
+              <p class="score-result" role="status">pass@2 = 70%. A single draw from these five samples passes 40% of the time.</p>
+              <a href="https://github.com/openai/human-eval/blob/master/human_eval/evaluation.py">HumanEval estimator and aggregation</a>
+            </div>
+            <div data-rule="f1"><h3>Token overlap for a short answer</h3>
+              <p>After the evaluator’s text normalization, count the tokens shared between the prediction and reference, respecting repeated-token counts. For “river silt sample” versus “river silt”, two of three predicted words match both reference words.</p>
+              <p class="score-equation">Precision = overlap / predicted · Recall = overlap / reference<br>F1 = 2 × overlap / (predicted + reference)</p>
+              <div class="score-fields" hidden><label>Matching tokens<input name="match" type="number" min="0" max="10000" value="2"></label><label>Predicted tokens<input name="predicted" type="number" min="0" max="10000" value="3"></label><label>Reference tokens<input name="reference" type="number" min="0" max="10000" value="2"></label></div>
+              <p class="score-result" role="status">Precision 66.7% · Recall 100% · F1 80%.</p>
+              <p>These are evaluator word tokens. In SQuAD v2’s token-F1 rule, two empty normalized answers score 1 and just one empty answer scores 0. Exact match requires the entire normalized answer to match. <a href="https://github.com/rajpurkar/SQuAD-explorer/blob/master/evaluate-v2.0.py">SQuAD v2 scorer</a></p>
+            </div>
+            <div data-rule="bins"><h3>Macro and pooled accuracy by length</h3>
+              <p>Suppose the short-context group has ten examples and the long-context group has two. Pooling gives each example equal weight. A macro average gives each group equal weight. Report group sizes and the suite’s aggregation convention.</p>
+              <p class="score-equation">Pooled = (short correct + long correct) / total items<br>Macro = (short accuracy + long accuracy) / 2</p>
+              <div class="score-fields" hidden><label>Short correct<input name="shortPass" type="number" min="0" max="10000" value="9"></label><label>Short items<input name="shortTotal" type="number" min="1" max="10000" value="10"></label><label>Long correct<input name="longPass" type="number" min="0" max="10000" value="1"></label><label>Long items<input name="longTotal" type="number" min="1" max="10000" value="2"></label></div>
+              <p class="score-result" role="status">Short 90% · Long 50% · Pooled 83.3% · Macro 70%.</p>
+              <a href="quality.html#long-context">How long-context suites aggregate performance</a>
+            </div>
+          </div>
+          <p>For formulas that use timestamps and traffic counts, continue to the <a href="metrics.html#timeline">serving metric lab</a>. For task-specific grading rules, read the <a href="quality.html#scoring">quality scoring guide</a>.</p>
+        </section>
+        <section id="applications"><p class="kicker">Application benchmarks</p><h2>What counts as a good answer?</h2>
+          <p>The same reply can be graded by its words, the facts it contains, or a human preference. Choose a rule that captures the failure your users would notice.</p>
+          <details class="explain" open><summary>NIST OpenASR · transcription error</summary>
+            <p>Align the transcript to the human reference using word edits. Corpus word error rate (WER) = 100 × (substitutions + deletions + insertions) / reference words, summed over the corpus before division. Ten substitutions, four deletions and two insertions across 200 reference words give <strong>8% WER</strong>. Lower is better. Many insertions can take WER above 100%. Fix the language-specific normalization rules before comparing systems. <a href="https://www.nist.gov/system/files/documents/2021/08/03/OpenASR20_EvalPlan_v1_5.pdf">NIST evaluation plan</a>.</p>
+          </details>
+          <details class="explain"><summary>DocVQA · reading answers from document images</summary>
+            <p>The original DocVQA benchmark asks questions about document images. Its ANLS score gives credit for small spelling errors. For two nonempty strings, let d = character edit distance / longer string length. The scorer below assigns 1 − d when d &lt; 0.5 and zero otherwise. Take the best score among accepted references for each question, then average across questions.</p>
+            <p>Reading “INV03” as “INV08” costs one substitution in five characters. The similarity is <strong>0.8</strong> and exact match is zero. For invoice identifiers, a product may require exact match even when the benchmark grants partial credit. <a href="https://openaccess.thecvf.com/content/WACV2021/papers/Mathew_DocVQA_A_Dataset_for_VQA_on_Document_Images_WACV_2021_paper.pdf">Original DocVQA paper</a> · <a href="https://github.com/google-research/pix2struct/blob/main/pix2struct/metrics.py">Pix2Struct ANLS scorer</a>.</p>
+          </details>
+          <details class="explain"><summary>Chatbot Arena · human preference</summary>
+            <p>A voter compares two anonymous responses to the same prompt. In the basic Bradley–Terry model, fitted strengths a and b give predicted preference P(A over B) = 1 / (1 + exp(b − a)). On this natural-log scale, a − b = ln(3) gives a predicted <strong>75%</strong> preference. Public ratings may rescale the fitted values. Record the opponent pool, tie treatment, uncertainty and whether style controls were enabled. <a href="https://www.lmsys.org/blog/2024-08-28-style-control/">Arena team’s scoring method</a>.</p>
+          </details>
+          <details class="explain"><summary>WikiText · next-token prediction and perplexity</summary>
+            <p>Give a causal language model held-out text and score the probability it assigns to each true next token. For N scored positions, perplexity = exp(−Σ ln P(true token | preceding context) / N). If a model assigns 0.5 and 0.125 to the two true next tokens, perplexity = 1 / √(0.5 × 0.125) = <strong>4</strong>. Lower is better under the same tokenizer, text and context-window protocol. Count only positions used in the loss; overlapping windows can otherwise double-count targets. <a href="https://huggingface.co/docs/transformers/perplexity">Worked WikiText evaluation</a>.</p>
+          </details>
+        </section>
+        <section id="report"><p class="kicker">Reading the results</p><h2>Compare two runs fairly.</h2>
+          <dl class="exchange-list">
+            <div><dt>Task and grader</dt><dd>Record the suite version, split, denominator, scoring script and task-level results. A coding agent’s retries, tools and time budget can change its score with identical model weights.</dd></div>
+            <div><dt>Model and input</dt><dd>Pin the checkpoint, tokenizer, prompt template, precision and generation settings. Publish input and output length distributions and what happened to prompts exceeding the context window.</dd></div>
+            <div><dt>Serving conditions</dt><dd>Match hardware, runtime versions, traffic arrivals and cache warm-up. Say where timing starts and ends. Separate cold starts, warm requests, timeouts and cancellations.</dd></div>
+            <div><dt>Decision</dt><dd>Publish quality and latency alongside throughput, the number of tasks or requests, and variation across repeated runs. If the goal is a responsive service, count the successful responses that meet your stated deadline per second.</dd></div>
+          </dl>
+          <details class="explain"><summary>Work out speedup, GPU efficiency, energy and cost</summary>
+            <p><strong>Speedup</strong> for the same work = baseline time / candidate time. Going from 50 to 40 ms gives 1.25× speedup. The latency reduction uses a different denominator: (50 − 40) / 50 = 20%.</p>
+            <p><strong>Output throughput per GPU</strong> = generated tokens / (wall seconds × GPU count). Suppose a four-GPU deployment generates 2,400 tokens in 30 s. Its rate is 80 output tokens/s across the system and 20 output tokens/s/GPU. Report the GPU models alongside a per-device average, especially for a mixed fleet.</p>
+            <p><strong>Energy per output token</strong> = measured energy in joules / generated tokens. If mean whole-node power during those 30 s is 1,200 W, energy is 1,200 × 30 = 36,000 J, or 15 J/output token. Record the measurement boundary, duration and treatment of idle power. <a href="https://docs.mlcommons.org/inference/power/">MLCommons power measurement setup</a>.</p>
+            <p><strong>Cost per million output tokens</strong> = allocated run cost × 1,000,000 / generated tokens. At an illustrative combined rate of $8/hour, the 30 s window costs $8 × 30/3,600. That gives $27.78 per million output tokens. Count idle capacity or additional infrastructure when the question is the cost to operate the service over a billing period.</p>
+          </details>
+          <p>See a real comparison where the decode-latency winner changed with context length. <a href="../engines/plow.html#single-stream">Plow and vLLM on Gemma</a>.</p>
+        </section>
+      </article>
+    </div>
+  </main>
+  <footer><div class="wrap"><a href="../index.html">Inference from Scratch</a><a href="quality.html">Continue to model and agent evaluations →</a></div></footer>
+</body>
+</html>

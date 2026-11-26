@@ -1,0 +1,46 @@
+.mini-trace { display: grid; grid-template-columns: repeat(4,1fr); margin: 1.6rem 0 1rem; gap: .2rem; }
+.mini-trace > div { border-top: 2px solid #8daa96; padding: .7rem .15rem 0 0; position: relative; }
+.mini-trace > div::before { position: absolute; content: ""; left: 0; top: -.28rem; height: .46rem; width: .46rem; background: #edb962; border-radius: 50%; }
+.mini-trace b, .mini-trace small { display: block; }
+.mini-trace small { font-size: .81rem; color: #d3e1d4; }
+.mini-trace b { font: 650 1rem/1.5 var(--mono); color: #f4cf89; }
+.wide-control { display: grid; gap: .28rem; font-weight: 650; font-size: .95rem; }
+.wide-control select { max-width: 100%; min-width: 0; width: 100%; border: 1px solid #94a89c; border-radius: .3rem; padding: .6rem; background: var(--paper); color: var(--ink); }
+.inputs.trace-inputs { grid-template-columns: repeat(3,minmax(0,1fr)); margin-top: .7rem; }
+.metrics-lesson .lab h4 { margin: 1.05rem 0 .3rem; }
+.metric-strip { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .45rem; margin: 1.1rem 0; }
+.metric-strip > div { border-top: 3px solid var(--teal); padding: .6rem; border-radius: .25rem; background: var(--pale); }
+.metric-strip > div:nth-child(2) { border-color: var(--gold); }
+.metric-strip span, .metric-strip strong { display: block; }
+.metric-strip span { color: var(--muted); font-size: .85rem; }
+.metric-strip strong { margin-top: .2rem; overflow-wrap: anywhere; font: 650 clamp(1rem,2.6vw,1.7rem)/1.3 var(--mono); }
+.phase-meter { display: flex; height: .8rem; width: 100%; overflow: hidden; border-radius: 3px; }
+.phase-meter i { flex-basis: 0; }
+.phase-legend { list-style: none; display: flex; gap: .15rem .7rem; flex-wrap: wrap; margin: .45rem 0; padding: 0; }
+.phase-legend li { display: inline-flex; align-items: center; gap: .3rem; font: .8rem/1.55 var(--mono); }
+.phase-legend li::before { content: ""; display: inline-block; width: .55rem; height: .55rem; }
+.phase-meter i:nth-child(1), .phase-legend li:nth-child(1)::before { background: #9aab9d; }
+.phase-meter i:nth-child(2), .phase-legend li:nth-child(2)::before { background: #bc7835; }
+.phase-meter i:nth-child(3), .phase-legend li:nth-child(3)::before { background: #378e7f; }
+.phase-meter i:nth-child(4), .phase-legend li:nth-child(4)::before { background: #7e7495; }
+.phase-meter i:nth-child(5), .phase-legend li:nth-child(5)::before { background: #53759a; }
+.phase-meter i:nth-child(6), .phase-legend li:nth-child(6)::before { background: #938377; }
+.event-table, .cohort-table { width: 100%; border-collapse: collapse; text-align: left; margin: .35rem 0; font-size: .95rem; }
+.event-table :is(td, th), .cohort-table :is(td, th) { border-bottom: 1px solid var(--line); padding: .4rem .36rem; font-variant-numeric: tabular-nums; }
+.event-table thead, .cohort-table thead { background: var(--pale); }
+.table-pan { overflow-x: auto; max-width: 100%; }
+.cohort-table { min-width: 31rem; }
+.cohort-table caption { text-align: left; font-weight: 650; padding-bottom: .35rem; }
+.metric-equations { border-bottom: 1px solid var(--line); margin: .85rem 0; }
+.metric-equations > div { display: grid; grid-template-columns: minmax(0,.65fr) minmax(0,1.35fr); gap: .8rem; padding: .7rem 0; border-top: 1px solid var(--line); }
+.metric-equations dt { font-weight: 680; line-height: 1.4; }
+.metric-equations dd { margin: 0; overflow-wrap: anywhere; }
+#trace-error, #load-error { color: var(--ink); background: var(--pale); padding: .5rem; }
+@media (max-width: 43rem) {
+  .inputs.trace-inputs, .metric-equations > div { grid-template-columns: 1fr; }
+  .metric-equations > div { gap: .2rem; }
+  .event-table { font-size: .88rem; }
+  .event-table :is(td,th) { padding: .3rem .15rem; }
+  .metric-strip > div { padding: .45rem; }
+}
+@media (max-width: 25rem) { .mini-trace { grid-template-columns: 1fr 1fr; gap: .7rem; } }

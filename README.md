@@ -10,6 +10,10 @@ SGLang, model architectures, and distributed inference.
 
 ## Inside the labs
 
+**How should you read a benchmark?** Compare DeepSWE, SWE-bench and long-context evaluations, compute pass@k or token F1 from candidate results, and measure TTFT, inter-token gaps, end-to-end latency and goodput. [Benchmark guide](https://siddhu1716.github.io/LLM_Inference_from_scratch/benchmarks/) · [Serving metrics lab](https://siddhu1716.github.io/LLM_Inference_from_scratch/benchmarks/metrics.html)
+
+[![Worked streaming trace showing a 200 ms gap between two output tokens](docs/assets/screenshots/streaming-benchmark.png)](https://siddhu1716.github.io/LLM_Inference_from_scratch/benchmarks/metrics.html#timeline)
+
 **What happens on an H100?** Step from host DRAM across PCIe to HBM3, follow a tile through the GPU’s shared L2, and see where thread blocks and warps execute. The lab also shows how cooperating thread blocks exchange data. [Explore the H100](https://siddhu1716.github.io/LLM_Inference_from_scratch/hardware/)
 
 **When does a compiled model plan help?** Follow a Gemma request through Plow’s compiler and runtime, then compare its published measurements with vLLM and inspect the features that matter for an SGLang baseline. [Read the Plow comparison](https://siddhu1716.github.io/LLM_Inference_from_scratch/engines/plow.html)

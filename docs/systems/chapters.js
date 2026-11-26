@@ -1,6 +1,6 @@
 "use strict";
 
-const chapterLinks = Array.from(document.querySelectorAll(".chapters a"));
+const chapterLinks = Array.from(document.querySelectorAll('.chapters a[href^="#"]'));
 const chapters = chapterLinks.map((link) => document.getElementById(link.hash.slice(1)));
 let chapterUpdatePending = false;
 function updateChapter() {

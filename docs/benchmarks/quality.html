@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#112c2a">
+  <meta name="description" content="Choose a quality benchmark for an inference workload. Work through pass@k, test resolution, long-context scores, answer accuracy, agent reliability and retrieval metrics.">
+  <title>Model and agent quality benchmarks · Inference from Scratch</title>
+  <link rel="icon" href="../assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../systems/systems.css">
+  <link rel="stylesheet" href="benchmarks.css">
+  <script src="../theme.js" defer></script>
+  <script src="../systems/chapters.js" defer></script>
+  <script src="../notes/scroll-regions.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#content">Skip to quality benchmarks</a>
+  <header class="site-header"><div class="wrap header-inner">
+    <a class="brand" href="../index.html"><img src="../assets/mark.svg" alt="" width="32" height="32">Inference from Scratch</a>
+    <nav aria-label="Site"><a href="index.html">Benchmark guide</a><a href="metrics.html">Serving metrics</a><a href="../models/index.html">Model atlas</a><button class="theme-switch" type="button" data-theme-toggle aria-label="Change color theme"><span data-theme-icon aria-hidden="true">◐</span></button></nav>
+  </div></header>
+  <main id="content">
+    <div class="hero"><div class="wrap hero-inner">
+      <div><p class="kicker">Benchmark field guide</p><h1>Measuring answer quality</h1>
+        <p class="lede">A model writes a function, finds a fact in a book, or changes an order through a tool. Each task leaves different evidence of success. Choose the evidence first, then read the score.</p>
+        <a class="action" href="#scoring">Work through the formulas</a></div>
+      <figure class="hero-diagram">
+        <div class="diagram-head"><span>Worked coding evaluation</span><span>5 samples</span></div>
+        <div class="hero-wire"><b>One task</b><span aria-hidden="true">→</span><b>5 candidate programs</b></div>
+        <div class="hero-wire"><b>Tests pass on 2</b><span aria-hidden="true">→</span><b>pass@1 = 40%</b></div>
+        <figcaption>Pick two candidates uniformly without replacement. Seven of the ten possible pairs contain a passing program, so estimated pass@2 is 70% for this task.</figcaption>
+      </figure>
+    </div></div>
+    <div class="wrap guide-grid">
+      <aside><nav class="chapters" aria-label="In this guide"><h2>In this guide</h2>
+        <a href="#scoring">Scoring formulas</a><a href="#coding">Code and repository tasks</a>
+        <a href="#long-context">Long-context understanding</a><a href="#reasoning">Reasoning and knowledge</a>
+        <a href="#agents">Tools, retrieval and agents</a><a href="#protocol">Compare two runs</a>
+      </nav></aside>
+      <article>
+        <section id="scoring">
+          <p class="kicker">From one response to a score</p><h2>Keep the item, the attempt and the grader separate</h2>
+          <p>An <strong>item</strong> is one question, program specification, or task environment. An <strong>attempt</strong> is one sampled answer or agent trajectory. A <strong>grader</strong> maps the submitted result to a number. Record which items were attempted and how parsing failures, timeouts and missing results enter the denominator.</p>
+
+          <h3>Exact match and accuracy</h3><p>Let <i>N</i> be the number of evaluated items. The indicator <i>I</i> equals 1 when a condition holds and 0 otherwise. Let <i>f</i> be the benchmark’s specified normalization, such as parsing a final answer letter.</p>
+          <p class="formula">EMᵢ = I[f(predictionᵢ) = f(referenceᵢ)]<br>Accuracy (%) = 100 × Σ EMᵢ / N</p>
+          <p>If 72 of 80 questions are correct and the other eight include three unparseable answers scored wrong, accuracy is 90%. Normalizing “The Blue Door” to “blue door” may be valid for an English QA task. Case, punctuation and spacing can be meaningful in code or identifiers. Use the evaluator for the task.</p>
+          <details class="explain"><summary>Three different meanings of normalization</summary>
+            <ul><li><strong>Normalize the text.</strong> A QA scorer may lowercase and remove articles before matching. For multiple gold aliases, take the maximum match over allowed references.</li>
+            <li><strong>Normalize a multiple-choice likelihood.</strong> For a scorer that divides by string length, choose argmax<sub>j</sub> log P(choice<sub>j</sub> | prompt) / length(choice<sub>j</sub>), then compute accuracy. With log scores −2 and −3 for strings of one and three characters, raw likelihood picks the first. Length normalization picks the second (−1 &gt; −2). Check the harness and task for the length unit and prompt delimiters. <a href="https://github.com/EleutherAI/lm-evaluation-harness/blob/main/lm_eval/api/task.py">EleutherAI scoring implementation</a></li>
+            <li><strong>Adjust a reported score for chance.</strong> When a report specifies this adjustment, score = (accuracy − chance) / (1 − chance). For a four-choice task, 55% raw accuracy becomes (0.55 − 0.25)/0.75 = 0.40, meaning 40% of the gap from chance to perfect accuracy. Below-chance accuracy can give a negative result.</li></ul>
+          </details>
+
+          <h3 id="pass-at-k">Sampled programs, a selector, and repeated reliability</h3>
+          <p>For one item, generate <i>n</i> candidates and let <i>c</i> pass the official tests. C(<i>n</i>, <i>k</i>) counts distinct groups of <i>k</i> candidates. For 1 ≤ <i>k</i> ≤ <i>n</i>, the share of groups containing at least one passing candidate is</p>
+          <p class="formula">pass@k estimate = 1 − C(n − c, k) / C(n, k)</p>
+          <p>Compute it per item, then average across items. At <i>k</i> = 1 the estimate is <i>c</i>/<i>n</i>. When <i>c</i> = 0 it is zero. If fewer than <i>k</i> failures exist, every group contains a pass and the estimate is one. With fewer than <i>k</i> attempts, this estimate is undefined. State the sampling temperature and sample count. <a href="https://github.com/openai/human-eval/blob/master/human_eval/evaluation.py">HumanEval estimator</a></p>
+          <div class="worked"><h3>What reaches the user?</h3><p><strong>Selected best-of-k.</strong> A selector <i>S</i> must choose one output from the <i>k</i> candidates using information available at selection time. Selected success = Σ I[the chosen output passes] / N. If the selector chooses a failing patch when another candidate passes, that item scores zero. Record the selector and its cost. Using held-out answers to choose measures an oracle.</p>
+          <p><strong>pass^k.</strong> In the original τ-bench convention, all <i>k</i> runs must succeed. Its per-item estimate is C(c, k)/C(n, k), with zero when c &lt; k. In the five-run example with two passes, pass^2 = 1/10 = 10%, compared with 70% for pass@2. <a href="https://github.com/sierra-research/tau-bench/blob/main/tau_bench/run.py">τ-bench estimator</a></p></div>
+
+          <h3>Average the intended unit</h3>
+          <p>Micro accuracy = Σ correct / Σ items. An equally weighted macro average = Σ group accuracy / number of groups. If a run gets 90/100 in one language and 1/10 in another, micro accuracy is 91/110 ≈ 82.7%. Macro accuracy is (90% + 10%)/2 = 50%. Show the subgroup scores and counts alongside either aggregate.</p>
+        </section>
+
+        <section id="coding">
+          <p class="kicker">Executable feedback</p><h2>From one function to a repository change</h2>
+          <p>For a function, the scorer can often call the output directly. For a repository task, a harness must restore the correct base revision, apply the proposed change, and verify behavior. Tools, context, environment and time limits become part of what earns the score.</p>
+          <dl class="exchange-list">
+            <div><dt><strong>HumanEval, MBPP and EvalPlus</strong></dt>
+            <dd>HumanEval asks for Python function completions. MBPP uses short programming specifications with tests. A candidate passes an item when the benchmark’s required tests pass. Use pass@1 for a single-sample estimate and pass@k for sampled coverage. EvalPlus supplies stronger test suites for these families. An implementation that handles positive integers but fails on zero can pass the base tests and fail additional cases. Report the named dataset, split, test suite and generation protocol. <a href="https://github.com/openai/human-eval">HumanEval</a> · <a href="https://arxiv.org/abs/2108.07732">MBPP paper</a> · <a href="https://github.com/evalplus/evalplus">EvalPlus harness</a></dd></div>
+            <div><dt><strong>LiveCodeBench</strong></dt>
+            <dd>Programming contest problems arrive in dated releases. In code generation, a submitted program must pass the tests under the evaluation limits. The suite also includes code execution, test-output prediction, and self-repair scenarios. Compare the same scenario and date interval. Recent release dates help investigate training overlap, while hidden tests check only the cases they exercise. <a href="https://github.com/LiveCodeBench/LiveCodeBench">LiveCodeBench scenarios and releases</a></dd></div>
+            <div><dt><strong>SWE-bench Verified</strong></dt>
+            <dd>An agent receives a repository snapshot and an issue. The harness grades the submitted patch using the designated fail-to-pass tests and pass-to-pass regression tests. Verified is a 500-instance human-reviewed subset of SWE-bench. For a fixed split, <strong>resolved (%) = 100 × fully resolved instances / evaluated instances</strong>. One failed required test can make the item unresolved. If 64 of 100 scheduled issues resolve and four time out, reporting 64% includes those failures. Reporting 64/96 describes a different denominator. <a href="https://www.swebench.com/SWE-bench/">Official harness overview</a> · <a href="https://openai.com/index/introducing-swe-bench-verified/">Verified selection process</a></dd></div>
+            <div><dt><strong>SWE-bench Pro</strong></dt>
+            <dd>Pro is a separate long-horizon repository benchmark. Its public V2 release has 642 validated tasks and includes a named HARD-51 subset. Pin the split and protocol, including how the agent workspace becomes a patch and how a clean verifier grades it. Two “resolved” percentages are comparable only against matching task sets and grading rules. <a href="https://github.com/scaleapi/SWE-bench_Pro-os">SWE-bench Pro releases and protocol</a></dd></div>
+          </dl>
+
+          <div class="worked" id="deepswe"><h3>Which DeepSWE?</h3>
+            <p><strong>Datacurve DeepSWE is a benchmark.</strong> Its published collection contains 113 original long-horizon tasks in existing open-source repositories. In v1.1, the agent works in an isolated environment, then its committed patch is applied to a pristine verifier environment. The verifier emits a binary reward and diagnostic pass fractions. Mean binary reward × 100 gives the percentage solved under that protocol. Passing eight of ten checks can help debug a failed item, while its binary reward can still be zero. <a href="https://github.com/datacurve-ai/deep-swe">Datacurve task format and verifier</a> · <a href="https://arxiv.org/abs/2607.07946">DeepSWE benchmark paper</a></p>
+            <p><strong>Agentica DeepSWE-Preview is a coding agent.</strong> Its checkpoint is based on Qwen3-32B and trained using reinforcement learning with R2E-Gym tasks. Its model card reports 42.2% for its agent protocol on <em>SWE-bench Verified</em>, averaging single-attempt performance over 16 runs, and 59% with a hybrid selector over 16 candidates. These are two inference budgets on SWE-bench Verified. The evaluation name, candidate budget and selector belong next to each number. <a href="https://huggingface.co/agentica-org/DeepSWE-Preview">Agentica model card and evaluation table</a></p>
+          </div>
+        </section>
+
+        <section id="long-context">
+          <p class="kicker">Context quality</p><h2>Can the model use the evidence it receives?</h2>
+          <p>Recording a server’s maximum accepted input length tells you which prompts fit. To learn what the model can recover, vary document length, evidence position and task. Record the tokenizer, input truncation or retrieval strategy, actual input tokens and output budget. A benchmark may measure source length in words.</p>
+          <h3 id="longbench">LongBench v1 and v2 ask different questions</h3>
+          <p><strong>LongBench v1</strong> combines English and Chinese tasks including QA, summarization, classification, retrieval and code completion. The official script dispatches to a metric per dataset. For example, NarrativeQA uses token-overlap F1, while a summarization dataset such as GovReport uses a ROUGE-L scorer. With multiple references, the script takes the best per-item reference score, then averages the items for that dataset. <a href="https://arxiv.org/abs/2308.14508">LongBench paper</a> · <a href="https://github.com/THUDM/LongBench/blob/main/LongBench/eval.py">Task-to-metric mapping</a></p>
+          <div class="worked"><h3>Compute a LongBench QA score</h3><p>After the specified text normalization and tokenization, let <i>m</i> be the number of shared tokens, with multiplicity limited by their counts in both texts. Precision <i>P</i> = m / predicted tokens. Recall <i>R</i> = m / reference tokens. <strong>F1 = 2PR/(P + R)</strong>, with zero when there is no overlap in the v1 QA scorer. “Blue access badge” against “blue badge” has P = 2/3, R = 1 and F1 = 0.8. The dataset percentage is 100 × mean<sub>items</sub>(max<sub>references</sub> F1). Preserve the scorer’s Chinese segmentation and normalization where applicable. <a href="https://github.com/THUDM/LongBench/blob/main/LongBench/metrics.py">LongBench metric definitions</a></p></div>
+          <details class="explain"><summary>How ROUGE-L handles word order</summary><p>For a single candidate/reference sequence pair, let <i>L</i> be their longest common subsequence length. Its matched tokens must have the same order and may have intervening words. ROUGE-L F1 uses P = L / candidate length, R = L / reference length, and 2PR/(P + R). For candidate “server restarts safely” and reference “server safely restarts”, L = 2, so F1 = 2/3. An unordered token-overlap score would be 1. Follow the released scorer for tokenization, empty inputs, and multi-sentence summary variants.</p></details>
+          <p><strong>LongBench v2</strong> has 503 four-option questions across six task families, including long dialogues, code repositories and structured data. Its published bands are short (up to approximately 32K words), medium (32K–128K words) and long (128K–2M words). Use the supplied length label. With the default uncompensated scoring, overall accuracy is 100 × correct extracted choices / all questions. Slice accuracy is 100 × correct in slice / items in slice. For example, 8/10 short and 2/5 long gives 10/15 = 66.7% overall and 40% on the long slice. Keep direct-answer, chain-of-thought and retrieval settings visible. <a href="https://longbench2.github.io/">LongBench v2 task and length definitions</a> · <a href="https://github.com/THUDM/LongBench/blob/main/result.py">Official aggregation</a></p>
+          <div class="cases">
+            <details open><summary>Needle-in-a-haystack and RULER</summary><p>Plant a rare fact, such as “locker 47 uses cobalt”, at several depths and lengths. For a controlled exact-keyword variant, cell hit rate = trials returning the expected keyword / trials in that cell. Draw a length-by-depth grid. The original Needle implementation can use an evaluator model, so record its rubric when reproducing a heatmap. <a href="https://github.com/gkamradt/needle-in-a-haystack">Original Needle implementation</a></p>
+            <p>RULER adds synthetic tracking, aggregation and QA to retrieval probes. For its multi-reference retrieval matcher, item score = number of reference strings found case-insensitively / number required. The QA matcher awards one if any allowed reference appears. Two targets found out of three therefore give 2/3 on the first kind of item. Report each length, alongside the task average and distractor construction. <a href="https://github.com/NVIDIA/RULER">RULER</a> · <a href="https://github.com/NVIDIA/RULER/blob/main/scripts/eval/synthetic/constants.py">Exact string-match rules</a></p></details>
+            <details open><summary>HELMET and InfiniteBench</summary><p>HELMET compares multiple context lengths on task families such as retrieval, reranking, citation, summarization and long-document QA. Inspect the metric attached to each family. A list containing the right passage but placing it last can earn full set recall and poor ranked utility. <a href="https://github.com/princeton-nlp/HELMET">HELMET tasks, configurations and graders</a></p>
+            <p>HELMET’s MS MARCO reranking evaluation reports nDCG@10. For one query, DCG@k = Σ gain<sub>r</sub> / log₂(r + 1), summing ranks r = 1 through k. nDCG@k divides this by the ideal DCG@k from ordering known items by decreasing relevance. For a binary example with one relevant item, returning it second gives 1/log₂(3) ≈ 0.631. Returning it first gives 1. Use the harness’s relevance labels, gain convention and handling for queries without positive gains. <a href="https://arxiv.org/html/2410.02694v3">HELMET passage-ranking protocol</a></p>
+            <p>InfiniteBench mixes synthetic and real-world long-input tasks beyond 100K tokens. Its release specifies distinct scorers for tasks such as passkey retrieval, book QA and English summarization. For English book summaries it uses ROUGE-Lsum, which uses longest common subsequences across summary sentences. Reuse its implementation and sentence handling when comparing runs. <a href="https://github.com/OpenBMB/InfiniteBench">InfiniteBench data and metrics</a> · <a href="https://arxiv.org/abs/2402.13718">Paper</a></p></details>
+          </div>
+        </section>
+
+        <section id="reasoning">
+          <p class="kicker">Answer evaluation</p><h2>Match the answer checker to the skill</h2>
+          <div class="cases">
+            <details open><summary>Knowledge and reasoning · MMLU, MMLU-Pro, GPQA</summary><p>These use answer choices across different domains and difficulty levels. MMLU spans academic subjects, MMLU-Pro adds more candidates per question, and GPQA emphasizes expert science. For ordinary choice accuracy, compare the selected option with the key. State whether the harness uses option likelihoods or a generated letter, whether invalid outputs score zero and how subjects are aggregated. Option shuffling, chat formatting, few-shot examples and output budgets can all change what gets selected. <a href="https://arxiv.org/abs/2009.03300">MMLU</a> · <a href="https://arxiv.org/abs/2406.01574">MMLU-Pro</a> · <a href="https://arxiv.org/abs/2311.12022">GPQA</a></p></details>
+            <details open><summary>Mathematical answers · GSM8K, MATH, AIME</summary><p>GSM8K uses grade-school word problems. MATH includes competition-style solutions and final answers. AIME has year- and event-specific problems with integer answers. State the answer extractor, allowed equivalences and exact year or split. An exact checker can accept “004” as 4 if it parses integers, while two equivalent algebraic expressions need an appropriate equivalence test. A correct final answer scores one even if its rationale contains a mistake under an answer-only protocol. <a href="https://arxiv.org/abs/2110.14168">GSM8K</a> · <a href="https://github.com/hendrycks/math">MATH</a> · <a href="https://maa.org/maa-invitational-competitions/">AIME format</a></p>
+            <p><strong>Majority vote.</strong> When a run samples several solutions, select the most frequent extracted answer, then grade that single answer. For samples [4, 6, 6] with gold 4, coverage is successful and majority voting selects 6. Record tie-breaking, the candidate count, and total generated tokens.</p></details>
+            <details><summary>Instruction following · IFEval</summary><p>IFEval uses verifiable instructions such as required keywords or a response-length condition. Prompt-level strict accuracy averages I[all instructions in a prompt pass]. Instruction-level strict accuracy averages individual checks. If two prompts have two and three checks and only the last check fails, prompt accuracy is 1/2 = 50%, while instruction accuracy is 4/5 = 80%. The loose protocol also tests specified output transformations. Publish the named variant. <a href="https://arxiv.org/abs/2311.07911">IFEval paper</a> · <a href="https://github.com/google-research/google-research/tree/master/instruction_following_eval">Official checker</a></p></details>
+            <details><summary>Multilingual and multimodal work · MGSM and MMMU</summary><p>MGSM translates grade-school math items into multiple languages. Compare matched item IDs, prompt language and rationale policy, then report per-language answer accuracy. A macro average gives each language equal influence. MMMU tests expert-level multimodal reasoning across academic subjects, including image-based questions. Preserve image preprocessing, question format, and its official answer parser when comparing checkpoints. <a href="https://arxiv.org/abs/2210.03057">MGSM</a> · <a href="https://arxiv.org/abs/2311.16502">MMMU</a></p></details>
+          </div>
+        </section>
+
+        <section id="agents">
+          <p class="kicker">Tool use and grounded generation</p><h2>Inspect the action and the state it leaves behind</h2>
+          <dl class="exchange-list">
+            <div><dt>Function calling<span>Berkeley Function Calling Leaderboard</span></dt><dd>A tool response can have valid JSON and still call the wrong function. BFCL uses category-specific checks, including abstract-syntax-tree matching and executable or stateful evaluation. For example, a task requesting a forecast for Pune should distinguish the named city and the required units. For a binary category, accuracy = accepted calls or tasks / evaluated items. Use the published category aggregation and version for an overall result. <a href="https://gorilla.cs.berkeley.edu/leaderboard.html">BFCL methodology and versions</a></dd></div>
+            <div><dt>Multi-turn service agents<span>τ-bench and τ²-bench</span></dt><dd>A simulated customer and an agent interact through policy-constrained tools. Evaluate the task’s required actions or final database state. A polished confirmation can leave a reservation unchanged. Use repeated trials to report pass^k reliability and fix the user simulator, domain version, tool schema and step budget. τ² adds dual-control tasks in which the user can also act. <a href="https://arxiv.org/abs/2406.12045">τ-bench</a> · <a href="https://arxiv.org/abs/2506.07982">τ²-bench</a></dd></div>
+            <div><dt>Browser and assistant tasks<span>WebArena and GAIA</span></dt><dd>WebArena evaluates tasks in controlled websites with functional checks. GAIA asks realistic questions that may require retrieval, files and tools, ultimately producing a gradable answer. Record initial site state, allowed tools and whether evaluation checks the final state or extracted answer. A correct GAIA answer and a successful browser workflow measure different outcomes. <a href="https://github.com/web-arena-x/webarena">WebArena environments</a> · <a href="https://arxiv.org/abs/2311.12983">GAIA paper</a></dd></div>
+            <div><dt>Retrieval-augmented QA<span>CRAG</span></dt><dd>Score evidence retrieval separately from the generated answer. With labeled relevant documents, recall@k = relevant documents in the top k / all relevant documents. Finding two of three supporting documents gives 2/3, even if the final answer is wrong. CRAG’s automatic answer evaluation gives +1 for correct, 0 for missing and −1 for incorrect. For the simple unweighted sample mean, 60 correct, 25 missing and 15 incorrect give (60 − 15)/100 = 0.45. Preserve any official weighting when reproducing a published aggregate. <a href="https://github.com/facebookresearch/CRAG">CRAG task and grading rules</a></dd></div>
+          </dl>
+          <details class="explain"><summary>When an evaluator model supplies the label</summary><p>For an explicitly tie-split, direct pairwise comparison, the candidate’s raw win fraction is (wins + 0.5 × ties) / comparisons. Four wins, two ties and four losses yield 50%. Other leaderboards fit a rating model or adjust for response length, so a raw win fraction may use a different scale. Save the judge model, prompt, reference answer, ordering and version. Swap answer order, inspect ties and manually review a sample of disputed judgments. <a href="https://github.com/tatsu-lab/alpaca_eval">AlpacaEval evaluation protocols</a></p></details>
+        </section>
+
+        <section id="protocol">
+          <p class="kicker">Applying the results</p><h2>Compare a serving change on the same items</h2>
+          <ol class="sequence"><li><strong>Pick a decision and freeze the inputs.</strong><p>For a weight-precision change, keep checkpoint revision, tokenizer, prompts, few-shot examples, dataset release, tools and grading code fixed. Include the application’s real prompt lengths and languages.</p></li>
+            <li><strong>Match the inference budget.</strong><p>Record sampling configuration, seeds or replicate IDs, reasoning budget, context limit, stop conditions, agent timeouts, allowed tool calls, retries and candidates per task. Save task IDs and attempted outputs, including failures.</p></li>
+            <li><strong>Compare paired changes.</strong><p>If version B fixes eight of 100 items that A missed but regresses five that A solved, its accuracy delta is (8 − 5)/100 = +3 percentage points. Show both sets. For uncertainty, resample paired item IDs together and recompute the difference. Keep related translations or attempts together when they share the same underlying problem.</p></li>
+            <li><strong>Measure the cost of the decision.</strong><p>A selector using 16 candidates adds serving work. Report total input and generated tokens, time to final usable answer, completed items, and the quality score for the same run. <a href="metrics.html">Calculate serving metrics</a> · <a href="index.html">Benchmark field guide</a></p></li></ol>
+        </section>
+      </article>
+    </div>
+  </main>
+  <footer><div class="wrap"><a class="brand" href="index.html">Benchmark field guide</a><a href="#content">Back to top</a></div></footer>
+</body>
+</html>

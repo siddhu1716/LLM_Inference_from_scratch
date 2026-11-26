@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#112c2a">
+  <meta name="description" content="Choose a serving benchmark, run bounded vLLM and SGLang examples, interpret MLPerf scores, and measure the teaching engine on a CPU.">
+  <title>Serving benchmark runners · Inference from Scratch</title>
+  <link rel="icon" href="../assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../systems/systems.css">
+  <link rel="stylesheet" href="benchmarks.css">
+  <script src="../theme.js" defer></script>
+  <script src="../systems/chapters.js" defer></script>
+  <script src="../notes/scroll-regions.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#content">Skip to benchmark runners</a>
+  <header class="site-header"><div class="wrap header-inner">
+    <a class="brand" href="../index.html"><img src="../assets/mark.svg" alt="" width="32" height="32">Inference from Scratch</a>
+    <nav aria-label="Site"><a href="index.html">Benchmark guide</a><a href="metrics.html">Metric formulas</a><a href="quality.html">Model quality</a><button class="theme-switch" type="button" data-theme-toggle aria-label="Change color theme"><span data-theme-icon aria-hidden="true">◐</span></button></nav>
+  </div></header>
+  <main id="content">
+    <div class="hero"><div class="wrap hero-inner">
+      <div><p class="kicker">Systems benchmarks</p><h1>Measure a<br>serving engine</h1>
+        <p class="lede">Eight people ask the same model a question. How quickly does each see a first token? How much work gets done before the last reply finishes? Choose a runner that can observe both.</p>
+        <a class="action" href="#local">Try it on a CPU</a> <a class="secondary-action" href="#scope">Choose a runner</a>
+      </div>
+      <figure class="hero-diagram score-sheet">
+        <div class="diagram-head"><span>Example serving run</span><span>4 seconds</span></div>
+        <div class="sheet-row"><div><strong>Eight replies</strong><span>8 completed ÷ 4 seconds</span></div><b>2<span> req/s</span></b></div>
+        <div class="sheet-row"><div><strong>Sixteen tokens each</strong><span>128 generated ÷ 4 seconds</span></div><b>32<span> tok/s</span></b></div>
+        <figcaption>Both numbers describe the same run. To find out who waited, keep the timing of each reply.</figcaption>
+      </figure>
+    </div></div>
+    <div class="wrap guide-grid">
+      <aside><nav class="chapters" aria-label="In this guide"><h2>Benchmark runners</h2>
+        <a href="#scope">Choose the boundary</a><a href="#local">Run the CPU examples</a>
+        <a href="#vllm">vLLM</a><a href="#sglang">SGLang</a><a href="#clients">AIPerf and GuideLLM</a>
+        <a href="#workloads">Build a workload</a><a href="#mlperf">MLPerf Inference</a>
+        <a href="#plow">Read a Plow campaign</a><a href="#compare">Compare two runs</a>
+      </nav></aside>
+      <article>
+        <section id="scope"><p class="kicker">Measurement boundary</p><h2>Where does the stopwatch start?</h2>
+          <div class="bench-routes">
+            <a href="#clients"><span class="route-tag">HTTP client</span><h3>What does a user experience?</h3><p>Time the request through the network, queue, model and response stream. Both local servers and compatible hosted endpoints expose this boundary.</p><span class="route-link">Choose a serving client →</span></a>
+            <a href="#vllm"><span class="route-tag">Offline engine</span><h3>How much work fits in a batch?</h3><p>Give the engine a prepared set of prompts in one process. The engine schedules them as work becomes available. HTTP and real arrivals sit outside this measurement.</p><span class="route-link">Try offline throughput →</span></a>
+            <a href="#sglang"><span class="route-tag">Fixed batch</span><h3>Which phase slows down?</h3><p>Time a controlled prefill or decode shape. Hold batch size and sequence length fixed to investigate a kernel, model layout or memory change.</p><span class="route-link">Inspect SGLang’s microbenchmark →</span></a>
+            <a href="#mlperf"><span class="route-tag">Standardized system</span><h3>Can a system meet published rules?</h3><p>Use a release-specific model, dataset, quality target, load generator and validity checks. Published results identify the hardware and submission division.</p><span class="route-link">Read an MLPerf score →</span></a>
+          </div>
+          <p>On a managed endpoint the client sees API behavior. Batching, hardware, queue depth and cache policy require provider telemetry. For a self-hosted comparison, send the same request records from one client to each server. <a href="metrics.html#measurement">Timing conventions</a> · <a href="../systems/index.html#measurement">Deployment measurements</a>.</p>
+        </section>
+        <section id="local"><p class="kicker">Included in this repository</p><h2>Measure two requests on your CPU.</h2>
+          <p>From the repository root, use Python 3.10 or newer in a virtual environment. The first command installs the teaching package and its test tools. The walkthrough runs two sequences through an in-process scheduler with a deterministic next-token callback. The two tests check the metric arithmetic and exercise the HTTP server on loopback.</p>
+          <pre aria-label="Install the teaching package and run the CPU walkthrough and tests"><code>python -m pip install -e ".[dev]"
+python examples/engine_walkthrough.py
+python -m pytest -q tests/test_engine.py::test_metrics_compute_ttft_inter_token_latency_and_throughput tests/test_serving.py::test_http_completion_and_health</code></pre>
+          <div class="worked"><h3>Check the denominator by hand</h3><p>The timing test submits at 0 s, starts at 1 s, emits at 2 s and 3 s, and finishes at 4 s. First-token latency is <b>2 − 0 = 2 s</b>. The only inter-token gap is <b>3 − 2 = 1 s</b>. The collector uses the first engine start to the last finish, giving <b>2 ÷ (4 − 1) = 0.67 generated tokens/s</b>. A client measuring from submission would get <b>2 ÷ (4 − 0) = 0.50 tokens/s</b>. <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/e25f8676300206314593678309cc5f3d1e86570a/src/mini_infer/engine/metrics.py">Collector</a> · <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/e25f8676300206314593678309cc5f3d1e86570a/tests/test_engine.py">Timestamp test</a>.</p></div>
+          <details class="explain"><summary>Send eight short HTTP requests to the teaching model</summary>
+            <p>Start <code>python -m mini_infer.cli serve --port 8765</code> in a terminal. In a second terminal run the Python snippet below as a script. It sends eight non-streaming completions, with at most two in flight and four generated tokens each. Stop the server with Ctrl+C when done.</p>
+            <pre aria-label="A bounded local load test in Python"><code>from concurrent.futures import ThreadPoolExecutor
+import json
+from time import perf_counter
+from urllib.request import Request, urlopen
+
+def complete(number):
+    body = json.dumps({"prompt": f"Hi {number}", "max_tokens": 4}).encode()
+    request = Request("http://127.0.0.1:8765/v1/completions", data=body,
+                      headers={"Content-Type": "application/json"})
+    with urlopen(request, timeout=30) as response:
+        return json.load(response)["usage"]["completion_tokens"]
+
+start = perf_counter()
+with ThreadPoolExecutor(max_workers=2) as pool:
+    counts = list(pool.map(complete, range(8)))
+seconds = perf_counter() - start
+print(f"{len(counts)} replies, {sum(counts)} generated tokens")
+print(f"{len(counts) / seconds:.2f} req/s, {sum(counts) / seconds:.2f} tok/s")</code></pre>
+            <p>A successful run prints eight replies and 32 generated tokens. The rate depends on the host. This exercise times complete HTTP responses. The teaching server builds all output pieces before writing its streaming events, so their spacing cannot reveal per-step model decode latency. <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/e25f8676300206314593678309cc5f3d1e86570a/src/mini_infer/serving/http_server.py">Teaching server implementation</a>.</p>
+          </details>
+          <details class="explain"><summary>Time a tiny forward pass without an HTTP server</summary>
+            <p>Run this Python snippet in the same environment. It builds the pure-Python model once and passes two token IDs with a fresh cache at each invocation. Each of three trials runs three forward passes. Dividing the trial time by three gives seconds per pass.</p>
+            <pre aria-label="Time a two-token forward pass in Python"><code>from timeit import repeat
+from mini_infer.backends.python import Transformer
+from mini_infer.common import ModelConfig
+
+model = Transformer(ModelConfig(vocab_size=256, dim=16, n_layers=1,
+                                n_heads=2, n_kv_heads=1, hidden_dim=32))
+trials = repeat(lambda: model.forward_with_cache([72, 105]), number=3, repeat=3)
+print("Milliseconds per two-token pass:", [round(t * 1000 / 3, 2) for t in trials])</code></pre>
+            <p>Save all three values. The timed region includes cache construction and the forward computation. It omits model initialization, HTTP and sampling. <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/e25f8676300206314593678309cc5f3d1e86570a/examples/compare_backends.py">Reference model and cache example</a>.</p>
+          </details>
+          <p>The other included demonstrations inspect Python/PyTorch output shapes, incremental KV-cache shapes, quantization, attention and speculative verification. The PyTorch comparison is optional. The two timing snippets above are page exercises. Production engine packages, model weights, MLPerf datasets and published GPU campaign logs come from the upstream projects. <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/tree/e25f8676300206314593678309cc5f3d1e86570a/examples">Repository examples</a> · <a href="https://github.com/siddhu1716/LLM_Inference_from_scratch/blob/e25f8676300206314593678309cc5f3d1e86570a/tests/test_serving.py">HTTP integration test</a>.</p>
+        </section>
+        <section id="vllm"><p class="kicker">vLLM benchmark CLI</p><h2>One engine, three clocks.</h2>
+          <p>Use an isolated vLLM environment with its benchmark dependencies, a supported device and a small supported causal model with tokenizer files already saved in <code>./model</code>. Run the commands from the same working directory. The examples use a POSIX shell. Each online test needs its own terminal alongside the server. Stop that server before starting a separate offline engine on the same GPU. <a href="https://docs.vllm.ai/en/stable/cli/index.html">vLLM installation extra and CLI reference</a>.</p>
+          <h3>1. Time the complete HTTP path</h3>
+          <pre aria-label="Start vLLM on loopback"><code>vllm serve ./model --host 127.0.0.1 --port 8000</code></pre>
+          <pre aria-label="Run an eight-request vLLM online benchmark"><code>vllm bench serve --model ./model --base-url http://127.0.0.1:8000 \
+  --backend openai --endpoint /v1/completions --dataset-name random \
+  --random-input-len 64 --random-output-len 16 --ignore-eos \
+  --num-prompts 8 --max-concurrency 2 --request-rate 2 --num-warmups 1 \
+  --save-result --result-filename vllm-smoke.json</code></pre>
+          <p>The client targets two arrivals per second, caps in-flight work at two, and requests sixteen output tokens per measured request. Ignoring an early end-of-sequence token helps keep the output shape fixed. Inspect successes, failures, actual output tokens, request rate and first-token latencies in the report. Initialization checks and warm-up add traffic outside those eight measured prompts. <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/benchmarks/serve.py">Pinned serving runner</a>.</p>
+          <h3>2. Measure offline throughput</h3>
+          <pre aria-label="Run an eight-request offline throughput benchmark"><code>vllm bench throughput --model ./model --dataset-name random \
+  --random-input-len 64 --random-output-len 16 --num-prompts 8</code></pre>
+          <p>The engine receives the prompt set locally. Its output distinguishes requests/s, total tokens/s and output tokens/s. With eight 64-token inputs and sixteen actual outputs each, a four-second run would yield <b>(512 + 128) ÷ 4 = 160 total tokens/s</b>, including <b>32 generated tokens/s</b>. Verify the measured lengths before using that example. <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/benchmarks/throughput.py">Pinned throughput runner and token accounting</a>.</p>
+          <h3>3. Time one batch repeatedly</h3>
+          <pre aria-label="Measure the latency of a fixed batch"><code>vllm bench latency --model ./model --batch-size 1 \
+  --input-len 64 --output-len 16 --num-iters-warmup 1 --num-iters 3</code></pre>
+          <p>This reports elapsed time for processing the batch across repeated iterations, with prefix caching disabled by default in this runner at the source pin. Three trials are enough to check configuration. Tail estimates require far more observations. <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/vllm/benchmarks/latency.py">Pinned batch-latency runner</a> · <a href="../engines/vllm.html">Trace vLLM’s scheduler and model runner</a>.</p>
+        </section>
+        <section id="sglang"><p class="kicker">SGLang benchmark modules</p><h2>Separate serving from execution.</h2>
+          <p>Use a separate SGLang installation on a supported GPU, with the same checkpoint and tokenizer in <code>./model</code>. These module names match the linked source revision. Older examples call <code>sglang.bench_serving</code>, which forwards to the new serving module at this pin. <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/bench_serving.py">Compatibility wrapper</a>.</p>
+          <pre aria-label="Start an SGLang server on loopback"><code>python -m sglang.launch_server --model-path ./model --host 127.0.0.1 --port 30000</code></pre>
+          <pre aria-label="Run a bounded SGLang serving benchmark"><code>python -m sglang.benchmark.serving --backend sglang --model ./model \
+  --base-url http://127.0.0.1:30000 --dataset-name random-ids --tokenize-prompt \
+  --random-input-len 64 --random-output-len 16 --random-range-ratio 1 \
+  --num-prompts 8 --max-concurrency 2 --request-rate 2 --warmup-requests 1 \
+  --output-file sglang-smoke.jsonl</code></pre>
+          <p>This native <code>/generate</code> test sends token IDs to hold input length fixed. The runner’s <code>random</code> mode instead draws text from ShareGPT and can download that corpus. Read the JSONL for actual input/output counts, TTFT, TPOT and request success. For a matched HTTP comparison, replay identical text, endpoint protocol, tokenizer and arrival times against both engines. Native ID input skips server-side text tokenization. <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/benchmark/datasets/random.py">Random dataset implementation</a> · <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/docs/docs/developer_guide/bench_serving.mdx">Serving flags, output and backends</a>.</p>
+          <h3>Isolate a static batch on the device</h3>
+          <pre aria-label="Run the SGLang fixed-batch microbenchmark"><code>python -m sglang.benchmark.one_batch --model-path ./model \
+  --batch-size 1 --input-len 64 --output-len 16</code></pre>
+          <p>Stop the HTTP server first. This low-level module times prefill and repeated decode steps without a serving queue. Use <code>sglang.benchmark.one_batch_server</code> for a controlled batch through a server, or <code>sglang.benchmark.offline_throughput</code> to process a prompt set through the offline engine. Keep prefill tokens/s separate from decode tokens/s when reading a static-batch result. <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/benchmark/one_batch.py">Static batch</a> · <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/benchmark/one_batch_server.py">Server batch</a> · <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/benchmark/offline_throughput.py">Offline runner</a> · <a href="../engines/sglang.html">SGLang request trace</a>.</p>
+        </section>
+        <section id="clients"><p class="kicker">Cross-engine clients</p><h2>Keep one client on both sides.</h2>
+          <h3>NVIDIA AIPerf and GenAI-Perf</h3>
+          <p>With AIPerf installed in the client environment, reuse a running local OpenAI-compatible chat server that advertises <code>./model</code> and has a working chat template. Use the same tokenizer as the server. This example requests a small synthetic workload and enables streaming so the client can observe first text and subsequent gaps.</p>
+          <pre aria-label="AIPerf example for a local chat endpoint"><code>aiperf profile --model ./model --url http://127.0.0.1:8000 \
+  --endpoint-type chat --streaming --concurrency 2 --request-count 8 \
+  --synthetic-input-tokens-mean 64 --output-tokens-mean 16</code></pre>
+          <p>Check realized lengths and successful requests in the exported profile. A chat template can add prompt tokens and early stopping can shorten replies. AIPerf supports fixed schedules, rate-based loads and per-request SLO filters. NVIDIA is phasing out GenAI-Perf in favor of AIPerf. Keep the tool version and its metric definitions when reproducing a historical GenAI-Perf result. <a href="https://docs.nvidia.com/aiperf/reference/command-line-options">AIPerf CLI</a> · <a href="https://docs.nvidia.com/aiperf/tutorials/model-endpoint-guides/profile-open-ai-compatible-text-ap-is-using-ai-perf">Streaming endpoint setup</a> · <a href="https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/perf_analyzer/genai-perf/README.html">GenAI-Perf project notice</a>.</p>
+          <h3>GuideLLM</h3>
+          <p>GuideLLM can compare synchronous, concurrent, constant-rate and Poisson traffic against a serving API. A sweep locates the region where added load no longer improves usable throughput. For a small local check, the following command bounds a constant-rate profile to eight requests. Configure the served model and matching tokenizer if the endpoint does not advertise an identifiable model.</p>
+          <pre aria-label="GuideLLM constant-rate example"><code>guidellm run --backend kind=openai_http,target=http://127.0.0.1:8000 \
+  --profile kind=constant,rate=2 --constraint kind=max_requests,count=8 \
+  --data kind=synthetic_text,prompt_tokens=64,output_tokens=16</code></pre>
+          <p>Read the per-profile summaries and keep the exported JSON or CSV. When measuring a paid provider, check its request and token limits, record the region and model revision it exposes, and count failed attempts and retries. This page’s commands target loopback. <a href="https://github.com/vllm-project/guidellm/blob/20abd43d0c30625d998ed3dad839ec754a9c24fc/README.md">GuideLLM profiles, constraints and outputs</a>.</p>
+        </section>
+        <section id="workloads"><p class="kicker">Inputs and traffic</p><h2>What kind of day are you replaying?</h2>
+          <p>A workload specifies both <em>what</em> arrives and <em>when</em> it arrives. The same average of 100 tokens per request could describe many short prompts or a mix of short chats and long documents. Keep input sequence length (ISL) and output sequence length (OSL) together for each request. Record output caps and actual generation lengths separately. <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/docs/docs/developer_guide/bench_serving.mdx">Workload options</a>.</p>
+          <div class="cases">
+            <details open><summary>Fixed lengths, conversations and traces</summary><p><b>Fixed or random token IDs</b> isolate repeatable shapes. Use 64 in / 16 out for a smoke check, then vary one dimension. <b>ShareGPT</b> supplies conversational text and a length distribution. Sampling first-turn pairs alone omits the repeated history of a multi-turn chat. <b>Trace replay</b> preserves recorded arrival gaps and lengths where the trace contains them. Some traces contain only metadata. Preserve shared prefixes or real conversation turns when testing cache reuse. <a href="https://docs.vllm.ai/en/latest/cli/bench/serve/">vLLM dataset and timed-trace controls</a> · <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/benchmark/datasets/agentic_trace.py">SGLang multi-turn replay</a>.</p></details>
+            <details><summary>Burst, open-loop rate and closed-loop concurrency</summary><p>A burst submits a group at once. In an <b>open loop</b>, the arrival schedule advances independently of completed responses. At 5 requests/s the expected arrivals in 20 s are <b>5 × 20 = 100</b>. Poisson inter-arrival gaps vary. In a <b>closed loop</b>, each of C clients can issue more work when a request finishes. At C = 4, four continuously busy clients with 0.5 s average response time sustain about <b>4 ÷ 0.5 = 8 requests/s</b>. Record achieved concurrency and any client-side waiting caused by a cap. <a href="https://docs.nvidia.com/aiperf/reference/command-line-options">Arrival patterns and concurrency controls</a>.</p></details>
+            <details><summary>Long context, active memory and prefix hits</summary><p>Lengthen the prompt while holding the output cap and offered load fixed. Record first-token latency, live sequences, resident KV, evictions and peak memory. For a dense decoder caching full keys and values, <b>KV bytes/token = 2 × layers × KV heads × head dimension × bytes/element</b>. At 32 layers, 8 KV heads, head dimension 128 and two-byte elements, one token consumes 128 KiB and 8,192 unique resident tokens consume 1 GiB before pool overhead. A shared prefix, sharding or a sliding window changes the resident total. Test quality across the same context lengths. <a href="../engines/memory.html">KV storage and prefix sharing</a> · <a href="quality.html#long-context">Long-context accuracy tests</a>.</p><p>For a workload-level reuse fraction, divide <b>reused prompt tokens by all prompt tokens</b>. Reusing 400 out of 1,000 is 40%. Engine counters may cover only tokens queried for caching. Label their own denominator and reset or difference cumulative counters over each run. Compare cold and warmed prefixes separately. <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/design/metrics.md">vLLM metric definitions</a>.</p></details>
+            <details><summary>Speculative decoding and variable draft acceptance</summary><p>Hold the target model and decoding policy fixed. Record quality, draft lengths, target verification steps, accepted draft tokens, emitted tokens, TTFT and output tokens/s under load. If a draft proposes 40 tokens and the target accepts 24 across ten verification steps, <b>acceptance = 24 ÷ 40 = 60%</b>. If the target supplies one recovery or bonus token per step, the result is <b>(24 + 10) ÷ 10 = 3.4 emitted tokens/step</b>. Report actual emitted counts with EOS or length truncation. Extra draft computation and memory can outweigh the saved target steps. Repeat with conversational, code and less predictable text. <a href="https://github.com/vllm-project/vllm/blob/7b77ed581d92fa14e34ab43344837bb1ca1b4257/docs/features/speculative_decoding/acceptance_metrics.md">Acceptance metric definitions</a> · <a href="https://github.com/sgl-project/sglang/blob/07a85353d6c6be47a268e33a416ad537985ef262/python/sglang/benchmark/datasets/speed_bench.py">SGLang SPEED-Bench workload</a>.</p></details>
+          </div>
+        </section>
+        <section id="mlperf"><p class="kicker">MLCommons</p><h2>Read an MLPerf Inference result.</h2>
+          <p>Start with the release, benchmark, accuracy tier, division and scenario. MLPerf’s LoadGen selects sample IDs and issues queries according to that scenario. The query sample library supplies inputs. The system under test produces the results and reports completions to LoadGen. The performance run, accuracy run and submission checker have distinct jobs. <a href="https://github.com/mlcommons/inference/blob/v5.0/loadgen/README.md">LoadGen integration</a> · <a href="https://docs.mlcommons.org/inference/benchmarks/language/llama2-70b/">Official Llama 2 run instructions</a>.</p>
+          <div class="flow" aria-label="LoadGen issues a sample ID. The system under test generates tokens. LoadGen checks returned timings and counts.">
+            <div><small>LoadGen</small><b>Schedule a sample</b></div><span aria-hidden="true">→</span>
+            <div><small>System under test</small><b>Generate a reply</b></div><span aria-hidden="true">→</span>
+            <div><small>LoadGen</small><b>Record timed events</b></div>
+          </div>
+          <h3>Worked case · Llama 2 70B, release 5.0</h3>
+          <p><strong>Offline.</strong> The generator issues the workload in one query. The score is <b>generated tokens ÷ whole-query duration in seconds</b>. LoadGen uses the maximum sample latency in that query. If the set produces 1,200,000 tokens in 600 s, its rate is <b>2,000 tokens/s</b>. There is no per-user TTFT target for Offline. <a href="https://github.com/mlcommons/inference/blob/v5.0/loadgen/results.cc#L445-L455">LoadGen’s rate calculation</a> · <a href="https://github.com/mlcommons/inference/blob/v5.0/tools/submission/submission_checker.py#L639-L647">Llama 2 result fields</a>.</p>
+          <p><strong>Server.</strong> LoadGen targets a Poisson arrival rate in samples/s. For this LLM, the reported score is <b>completed generated tokens ÷ elapsed time through final completion</b>. The v5.0 configuration sets a 99th-percentile target, 2,000 ms TTFT and 200 ms TPOT. A high token rate that fails the applicable latency, duration, minimum-query or other validity checks is ineligible. Inspect <code>mlperf_log_summary.txt</code> and the detailed logs. Other models and releases have their own units, arrival rules and thresholds. <a href="https://github.com/mlcommons/inference/blob/v5.0/loadgen/mlperf.conf">v5.0 scenario configuration</a> · <a href="https://github.com/mlcommons/inference/blob/v5.0/loadgen/results.cc#L483-L526">LoadGen validity checks</a>.</p>
+          <p><strong>Accuracy.</strong> Llama 2 70B uses OpenOrca and evaluates ROUGE-1, ROUGE-2 and ROUGE-L against reference targets. For the 99.9 tier, the ROUGE-1 threshold is <b>44.4312 × 0.999 ≈ 44.3868</b>. The v5.0 checker also bounds mean generated tokens per sample against 294.45. Shortening replies can invalidate an apparently fast system. Compare submitted systems within the same division, release and quality tier. <a href="https://github.com/mlcommons/inference/blob/v5.0/tools/submission/submission_checker.py">Release-specific quality and length targets</a> · <a href="https://docs.mlcommons.org/inference/#llama2-70b">Llama 2 reference dataset and accuracy</a>.</p>
+          <details class="explain"><summary>What about Interactive and SingleStream?</summary><p>The later MLCommons rules linked here distinguish conversational and interactive Server limits. For Llama 2 70B the interactive TTFT/TPOT pair is 450/40 ms. SingleStream schedules the next query after the last one completes. Scenario availability is model- and release-specific. Use the matching rule set and published results table when comparing systems. <a href="https://github.com/mlcommons/inference_policies/blob/d3eba2f21026d868ad65cdcad2bb81e4a17ce3d3/inference_rules.adoc">Scenario and benchmark rules</a> · <a href="https://mlcommons.org/benchmarks/inference-datacenter/">MLCommons datacenter results</a>.</p></details>
+        </section>
+        <section id="plow"><p class="kicker">Published campaign</p><h2>What does a 1.11× result mean?</h2>
+          <p>Plow’s project-run campaign tested text-only Gemma 4 E4B against vLLM 0.29.0 on one H100. The strict report used greedy decoding, 1,000 input tokens, 128 output tokens and two repeats. Ratios divide a Plow measurement by the matching vLLM value. At concurrency 32, total throughput was <b>1.11×</b>, p99 TTFT <b>0.74×</b> and p99 TPOT <b>0.93×</b>. Thus throughput was 11% higher and p99 first-token latency was 26% lower in that cell. At concurrency one, p99 TTFT was <b>1.51×</b> and the report flagged high repeat-to-repeat variation.</p>
+          <p>Check the model, binary and packet hashes, KV/cache settings, device, client, correctness gate, sample size and flagged cells in the report. A batch-one decode microbenchmark can exclude prefill and queueing. A serving campaign includes their effect. For an SGLang comparison, a new matched run is required. <a href="https://github.com/infervisor/plow/blob/8e8b0fd708888fd7aa924a170201d2f51b7ca0d6/perf-data/campaign/gemma4-e4b-h100-20261027/comparison.md">Pinned campaign, rows and quality gate</a> · <a href="../engines/plow.html#single-stream">Single-stream measurements</a> · <a href="../engines/plow.html#evaluation">Three-engine evaluation protocol</a>.</p>
+        </section>
+        <section id="compare"><p class="kicker">Reporting a result</p><h2>Find the highest usable load.</h2>
+          <ol class="sequence">
+            <li><strong>Write the service target first.</strong><p>For example, require a valid reply, TTFT ≤ 500 ms and per-request average output gap ≤ 50 ms. Define the observed token event, treatment of one-token completions and any separate task-quality target. Save the scoring policy. <a href="metrics.html#definitions">Latency definitions</a> · <a href="quality.html">Task quality</a>.</p></li>
+            <li><strong>Match the experiment.</strong><p>Record model/tokenizer revisions, chat template, sampling, output caps, weights and KV precision, GPU count, parallelism, power policy and software versions. Replay the same requests and arrival schedule from the same client. Label each run as cold or warm. Confirm the actual generated lengths and compare quality after precision or decoding changes.</p></li>
+            <li><strong>Sweep offered load.</strong><p>Try 1, 2, 4 and 8 requests/s with the same prompt mix. At each point warm separately, wait for outstanding requests to finish and retain timestamps, successes, failures and timeouts. Repeat measured runs. Eight requests demonstrate the harness, while a production p99 needs enough samples to expose a tail. <a href="metrics.html#percentiles">Percentile conventions and sample size</a>.</p></li>
+            <li><strong>Apply the target to each request.</strong><p>Suppose 64 requests are offered over a 60 s measured window including drain, 60 finish successfully and 54 meet every target. Throughput is <b>60 ÷ 60 = 1.00 successful request/s</b>. Goodput is <b>54 ÷ 60 = 0.90 qualifying requests/s</b>. The share of all offered work meeting the target is <b>54 ÷ 64 ≈ 84.4%</b>. Separate p99 statistics cannot identify which requests passed both limits. <a href="metrics.html#throughput">Throughput and goodput worksheet</a>.</p></li>
+            <li><strong>Report the operating point and its cost.</strong><p>Show accepted quality, completed requests/s, generated tokens/s, TTFT and token-gap percentiles, peak memory and cost at the same load. For a fully attributed $3 hardware-hour and 9,000 qualifying replies in that hour, <b>cost per 1,000 qualifying replies = $3 × 1,000 ÷ 9,000 ≈ $0.33</b>. State the actual billing window, retries and idle time. <a href="../systems/index.html">Memory and deployment budgets</a>.</p></li>
+          </ol>
+        </section>
+      </article>
+    </div>
+  </main>
+  <footer><div class="wrap header-inner"><a href="index.html">Benchmark guide</a><a href="metrics.html">Read a serving trace →</a></div></footer>
+</body>
+</html>
